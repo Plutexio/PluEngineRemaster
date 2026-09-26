@@ -13,7 +13,7 @@ PhysicsBody::PhysicsBody(
     JPH::ShapeRefC      Shape,
     const JPH::RVec3&   Position,
     const JPH::Quat&    Rotation,
-    BodyType            Type,
+    PhysicsBodyType            Type,
     float               Friction,
     float               Restitution,
     float               Mass)
@@ -46,7 +46,7 @@ PhysicsBody::PhysicsBody(
     // CollisionGroup::GetGroupID(). No group filter is attached (see PhysicsCollisionRules.h).
     //Settings.mCollisionGroup = JPH::CollisionGroup(nullptr, CollisionProfileIndex, 0); TODO
 
-    mNeedsActivation = Type != BodyType::Static;
+    mNeedsActivation = Type != PhysicsBodyType::Static;
 
     mBodyID = mBodyInterface.CreateAndAddBody(
         Settings,
@@ -135,16 +135,16 @@ void PhysicsBody::AddAngularImpulse(const JPH::Vec3& Impulse) {
     mBodyInterface.AddAngularImpulse(mBodyID, Impulse);
 }
 
-JPH::EMotionType PhysicsBody::ToJoltMotionType(BodyType Type) {
+JPH::EMotionType PhysicsBody::ToJoltMotionType(PhysicsBodyType Type) {
     switch (Type) {
-        case BodyType::Dynamic:   return JPH::EMotionType::Dynamic;
-        case BodyType::Kinematic: return JPH::EMotionType::Kinematic;
+        case PhysicsBodyType::Dynamic:   return JPH::EMotionType::Dynamic;
+        case PhysicsBodyType::Kinematic: return JPH::EMotionType::Kinematic;
         default:                   return JPH::EMotionType::Static;
     }
 }
 
-JPH::ObjectLayer PhysicsBody::ToJoltLayer(BodyType Type) {
-    return Type == BodyType::Static
+JPH::ObjectLayer PhysicsBody::ToJoltLayer(PhysicsBodyType Type) {
+    return Type == PhysicsBodyType::Static
         ? CollisionLayers::STATIC
         : CollisionLayers::DYNAMIC;
 }

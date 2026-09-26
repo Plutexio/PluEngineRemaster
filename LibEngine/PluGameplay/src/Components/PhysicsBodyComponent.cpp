@@ -4,10 +4,10 @@
 
 #include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
 
-void Plu::PhysicsBodyComponent::SetBodyType(BodyType newType)
+void Plu::PhysicsBodyComponent::SetBodyType(PhysicsBodyType newType)
 {
     Type = newType;
-    BodyType bodyType =  newType;
+    PhysicsBodyType bodyType =  newType;
     DispatchEvent("SetBodyType", &bodyType);
 }
 

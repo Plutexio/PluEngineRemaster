@@ -11,8 +11,8 @@
 
 namespace Plu
 {
-    PLU_ENUM(PyNamespace=Plu)
-    enum class BodyType {
+    PLU_ENUM(PyExport, PyNamespace=Plu)
+    enum class PhysicsBodyType {
         Static,
         Dynamic,
         Kinematic
@@ -35,11 +35,11 @@ namespace Plu
         PLU_PROPERTY(Getter=GetRestitution, Setter=SetRestitution, PyExport);
         float Restitution = 0;
         PLU_PROPERTY(Setter=SetBodyType, PyExport)
-        BodyType Type = BodyType::Dynamic;
+        PhysicsBodyType Type = PhysicsBodyType::Dynamic;
 
         float Mass = 10.0f;
 
-        void SetBodyType(BodyType newType);
+        void SetBodyType(PhysicsBodyType newType);
 
         PLU_FUNCTION()
         [[nodiscard]] Vec3 GetLinearVelocity() const;

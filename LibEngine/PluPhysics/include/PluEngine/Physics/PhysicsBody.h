@@ -31,7 +31,7 @@ namespace Plu
 			JPH::ShapeRefC      Shape,
 			const JPH::RVec3&   Position,
 			const JPH::Quat&    Rotation    = JPH::Quat::sIdentity(),
-			BodyType            Type        = BodyType::Static,
+			PhysicsBodyType            Type        = PhysicsBodyType::Static,
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
 			float				Mass         = 10.0f
@@ -81,8 +81,8 @@ namespace Plu
 		JPH::BodyID         mBodyID;
 		bool                mNeedsActivation = false;
 
-		static JPH::EMotionType ToJoltMotionType(BodyType Type);
-		static JPH::ObjectLayer ToJoltLayer(BodyType Type);
+		static JPH::EMotionType ToJoltMotionType(PhysicsBodyType Type);
+		static JPH::ObjectLayer ToJoltLayer(PhysicsBodyType Type);
 	};
 }
 

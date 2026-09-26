@@ -19,7 +19,11 @@ void Plu::InputHandler::TickHandler()
 	for (auto key : mKeyboard) {
 		if (key.second != ButtonState::Held) continue;
 		if (mHoldActions.Contains(key.first)) {
-			mHoldActions[key.first]();
+			try {
+				mHoldActions[key.first]();
+			} catch (pybind11::error_already_set& e) {
+				PLU_CORE_ERROR("Error occurred in Python when calling Key Hold Action. {}", e.what());
+			}
 		}
 	}
 }
@@ -28,10 +32,19 @@ void Plu::InputHandler::UpdateKeyState(Key key, ButtonState state)
 {
 	mKeyboard[key] = state;
 	if (state == ButtonState::Pressed && mPressedActions.Contains(key)) {
-		mPressedActions[key]();
+		try {
+			mPressedActions[key]();
+		} catch (pybind11::error_already_set& e) {
+			PLU_CORE_ERROR("Error occurred in Python when calling Key Press Action. {}", e.what());
+		}
 	}
 	if (state == ButtonState::JustReleased && mReleasedActions.Contains(key)) {
 		mReleasedActions[key]();
+		try {
+			mReleasedActions[key]();
+		} catch (pybind11::error_already_set& e) {
+			PLU_CORE_ERROR("Error occurred in Python when calling Key Release Action. {}", e.what());
+		}
 	}
 }
 
