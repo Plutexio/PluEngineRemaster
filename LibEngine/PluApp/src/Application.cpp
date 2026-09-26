@@ -16,6 +16,7 @@
 #include "PluEngine/Scripting/PythonObjectFactory.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
+#include "PluEngine/Effects/Particles/ParticleParameter.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
@@ -369,6 +370,7 @@ namespace Plu
         // Shared by Editor and Runtime so a Runtime build's factory isn't empty (previously only the
         // editor populated it — see AnimationGraphVariableFactory::RegisterBuiltInTypes).
         AnimationGraphVariableFactory::RegisterBuiltInTypes();
+        ParticleParameterFactory::RegisterBuiltInTypes();
 
 #ifdef PLU_PLATFORM_LINUX
         SDLWindow::InitSDL();
