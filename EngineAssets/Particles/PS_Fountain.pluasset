@@ -1,0 +1,1788 @@
+{
+    "emitters": [
+        {
+            "fields": [
+                {
+                    "name": "Uuid",
+                    "value": 11693442434377499777
+                },
+                {
+                    "name": "EmitterName",
+                    "value": "Water"
+                },
+                {
+                    "name": "Enabled",
+                    "value": true
+                },
+                {
+                    "name": "MaxParticles",
+                    "value": 4096
+                },
+                {
+                    "name": "Loop",
+                    "value": true
+                },
+                {
+                    "name": "Duration",
+                    "value": 0.0
+                }
+            ],
+            "links": [
+                {
+                    "fromNode": 13704614214178451660,
+                    "fromPin": "Out",
+                    "toNode": 2026253476171382944,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 2026253476171382944,
+                    "fromPin": "Out",
+                    "toNode": 8916877430588999731,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 8916877430588999731,
+                    "fromPin": "Out",
+                    "toNode": 7421081923851805864,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 7421081923851805864,
+                    "fromPin": "Out",
+                    "toNode": 11294241614507715925,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 11294241614507715925,
+                    "fromPin": "Out",
+                    "toNode": 6889646091792656340,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 6889646091792656340,
+                    "fromPin": "Out",
+                    "toNode": 1080412486650848531,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 1080412486650848531,
+                    "fromPin": "Out",
+                    "toNode": 9395702770661633968,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 9395702770661633968,
+                    "fromPin": "Out",
+                    "toNode": 2812834874047164699,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 2812834874047164699,
+                    "fromPin": "Out",
+                    "toNode": 1689310960906092283,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 1689310960906092283,
+                    "fromPin": "Out",
+                    "toNode": 4398143159671875227,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 4398143159671875227,
+                    "fromPin": "Out",
+                    "toNode": 5013281286256397744,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 4685474461559165544,
+                    "fromPin": "Result",
+                    "toNode": 7421081923851805864,
+                    "toPin": "Speed"
+                }
+            ],
+            "nodes": [
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 13704614214178451660
+                        },
+                        {
+                            "name": "Rate",
+                            "value": 600.0
+                        }
+                    ],
+                    "typeName": "SpawnRateModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 2026253476171382944
+                        },
+                        {
+                            "name": "Lifetime",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "RandomRange"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 1.2000000476837158
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 1.600000023841858
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        }
+                    ],
+                    "typeName": "InitLifetimeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 8916877430588999731
+                        },
+                        {
+                            "name": "Shape",
+                            "value": "Sphere"
+                        },
+                        {
+                            "name": "Radius",
+                            "value": 0.05000000074505806
+                        },
+                        {
+                            "name": "BoxExtent",
+                            "value": [
+                                0.10000000149011612,
+                                0.10000000149011612,
+                                0.10000000149011612
+                            ]
+                        },
+                        {
+                            "name": "ConeAngle",
+                            "value": 30.0
+                        },
+                        {
+                            "name": "Offset",
+                            "value": [
+                                0.0,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    ],
+                    "typeName": "InitLocationModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 7421081923851805864
+                        },
+                        {
+                            "name": "Direction",
+                            "value": [
+                                0.0,
+                                1.0,
+                                0.0
+                            ]
+                        },
+                        {
+                            "name": "Speed",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 5.0
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 0.0
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        },
+                        {
+                            "name": "ConeAngle",
+                            "value": 10.0
+                        },
+                        {
+                            "name": "Randomness",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    }
+                                ],
+                                "typeName": "ParticleParamVec3"
+                            }
+                        }
+                    ],
+                    "typeName": "InitVelocityModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 11294241614507715925
+                        },
+                        {
+                            "name": "Size",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 0.03999999910593033
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 0.0
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        },
+                        {
+                            "name": "AspectRatio",
+                            "value": 1.0
+                        }
+                    ],
+                    "typeName": "InitSizeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 6889646091792656340
+                        },
+                        {
+                            "name": "Color",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": [
+                                            0.550000011920929,
+                                            0.7799999713897705,
+                                            1.0,
+                                            0.8500000238418579
+                                        ]
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": [
+                                            1.0,
+                                            1.0,
+                                            1.0,
+                                            1.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": [
+                                            1.0,
+                                            1.0,
+                                            1.0,
+                                            1.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Gradient",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Color",
+                                                                    "value": [
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "typeName": "ColorKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Color",
+                                                                    "value": [
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "typeName": "ColorKey"
+                                                        }
+                                                    ]
+                                                }
+                                            ],
+                                            "typeName": "ColorGradient"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamColor"
+                            }
+                        }
+                    ],
+                    "typeName": "InitColorModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 1080412486650848531
+                        },
+                        {
+                            "name": "Gravity",
+                            "value": [
+                                0.0,
+                                -9.8100004196167,
+                                0.0
+                            ]
+                        }
+                    ],
+                    "typeName": "GravityModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 9395702770661633968
+                        },
+                        {
+                            "name": "Drag",
+                            "value": 0.30000001192092896
+                        }
+                    ],
+                    "typeName": "DragModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 2812834874047164699
+                        },
+                        {
+                            "name": "Scale",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Keys",
+                                        "value": [
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "Value",
+                                                        "value": 1.7999999523162842
+                                                    },
+                                                    {
+                                                        "name": "InTangent",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "OutTangent",
+                                                        "value": 0.0
+                                                    }
+                                                ],
+                                                "typeName": "CurveKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 1.0
+                                                    },
+                                                    {
+                                                        "name": "Value",
+                                                        "value": 0.6000000238418579
+                                                    },
+                                                    {
+                                                        "name": "InTangent",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "OutTangent",
+                                                        "value": 0.0
+                                                    }
+                                                ],
+                                                "typeName": "CurveKey"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Interp",
+                                        "value": "Linear"
+                                    }
+                                ],
+                                "typeName": "Curve"
+                            }
+                        },
+                        {
+                            "name": "MaxSpeed",
+                            "value": 8.0
+                        }
+                    ],
+                    "typeName": "SizeBySpeedModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 1689310960906092283
+                        },
+                        {
+                            "name": "Gradient",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Keys",
+                                        "value": [
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            1.0,
+                                                            1.0,
+                                                            1.0,
+                                                            1.0
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.699999988079071
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            0.800000011920929,
+                                                            0.8999999761581421,
+                                                            1.0,
+                                                            0.800000011920929
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 1.0
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            0.6000000238418579,
+                                                            0.800000011920929,
+                                                            1.0,
+                                                            0.0
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "typeName": "ColorGradient"
+                            }
+                        }
+                    ],
+                    "typeName": "ColorOverLifeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 4398143159671875227
+                        },
+                        {
+                            "name": "Texture",
+                            "value": 6190432511239744101
+                        },
+                        {
+                            "name": "Blend",
+                            "value": "AlphaBlend"
+                        },
+                        {
+                            "name": "Facing",
+                            "value": "CameraFacing"
+                        },
+                        {
+                            "name": "SubUVColumns",
+                            "value": 1
+                        },
+                        {
+                            "name": "SubUVRows",
+                            "value": 1
+                        },
+                        {
+                            "name": "StretchFactor",
+                            "value": 0.05000000074505806
+                        }
+                    ],
+                    "typeName": "SpriteRendererModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 5013281286256397744
+                        }
+                    ],
+                    "typeName": "ParticleEmitterOutputNode"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 4685474461559165544
+                        },
+                        {
+                            "name": "ValueType",
+                            "value": "Float"
+                        },
+                        {
+                            "name": "A",
+                            "value": {
+                                "type": "Float",
+                                "value": 4.0
+                            }
+                        },
+                        {
+                            "name": "B",
+                            "value": {
+                                "type": "Float",
+                                "value": 1.75
+                            }
+                        }
+                    ],
+                    "typeName": "MathMultiplyNode"
+                }
+            ],
+            "typeName": "ParticleEmitter"
+        },
+        {
+            "fields": [
+                {
+                    "name": "Uuid",
+                    "value": 6286148631009839879
+                },
+                {
+                    "name": "EmitterName",
+                    "value": "Mist"
+                },
+                {
+                    "name": "Enabled",
+                    "value": true
+                },
+                {
+                    "name": "MaxParticles",
+                    "value": 128
+                },
+                {
+                    "name": "Loop",
+                    "value": true
+                },
+                {
+                    "name": "Duration",
+                    "value": 0.0
+                }
+            ],
+            "links": [
+                {
+                    "fromNode": 1124271779810777861,
+                    "fromPin": "Out",
+                    "toNode": 12243694363346694129,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 12243694363346694129,
+                    "fromPin": "Out",
+                    "toNode": 14335722114010861165,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 14335722114010861165,
+                    "fromPin": "Out",
+                    "toNode": 11538524234608548882,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 11538524234608548882,
+                    "fromPin": "Out",
+                    "toNode": 875072024512357959,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 875072024512357959,
+                    "fromPin": "Out",
+                    "toNode": 12395306786285496571,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 12395306786285496571,
+                    "fromPin": "Out",
+                    "toNode": 10074871630973714537,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 10074871630973714537,
+                    "fromPin": "Out",
+                    "toNode": 5033010292075575925,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 5033010292075575925,
+                    "fromPin": "Out",
+                    "toNode": 6238429651518395977,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 6238429651518395977,
+                    "fromPin": "Out",
+                    "toNode": 14630222068579003,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 14630222068579003,
+                    "fromPin": "Out",
+                    "toNode": 236304842724219277,
+                    "toPin": "In"
+                },
+                {
+                    "fromNode": 236304842724219277,
+                    "fromPin": "Out",
+                    "toNode": 2983330745685249838,
+                    "toPin": "In"
+                }
+            ],
+            "nodes": [
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 1124271779810777861
+                        },
+                        {
+                            "name": "Rate",
+                            "value": 20.0
+                        }
+                    ],
+                    "typeName": "SpawnRateModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 12243694363346694129
+                        },
+                        {
+                            "name": "Lifetime",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "RandomRange"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 2.0
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 3.0
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        }
+                    ],
+                    "typeName": "InitLifetimeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 14335722114010861165
+                        },
+                        {
+                            "name": "Shape",
+                            "value": "Box"
+                        },
+                        {
+                            "name": "Radius",
+                            "value": 0.10000000149011612
+                        },
+                        {
+                            "name": "BoxExtent",
+                            "value": [
+                                0.800000011920929,
+                                0.05000000074505806,
+                                0.800000011920929
+                            ]
+                        },
+                        {
+                            "name": "ConeAngle",
+                            "value": 30.0
+                        },
+                        {
+                            "name": "Offset",
+                            "value": [
+                                0.0,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    ],
+                    "typeName": "InitLocationModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 11538524234608548882
+                        },
+                        {
+                            "name": "Direction",
+                            "value": [
+                                0.0,
+                                1.0,
+                                0.0
+                            ]
+                        },
+                        {
+                            "name": "Speed",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 0.30000001192092896
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 0.0
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        },
+                        {
+                            "name": "ConeAngle",
+                            "value": 40.0
+                        },
+                        {
+                            "name": "Randomness",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": [
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ]
+                                    }
+                                ],
+                                "typeName": "ParticleParamVec3"
+                            }
+                        }
+                    ],
+                    "typeName": "InitVelocityModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 875072024512357959
+                        },
+                        {
+                            "name": "Size",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "RandomRange"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 0.30000001192092896
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 0.6000000238418579
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        },
+                        {
+                            "name": "AspectRatio",
+                            "value": 1.0
+                        }
+                    ],
+                    "typeName": "InitSizeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 12395306786285496571
+                        },
+                        {
+                            "name": "Rotation",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "RandomRange"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": 1.0
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": 0.0
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": 6.283199787139893
+                                    },
+                                    {
+                                        "name": "ValueCurve",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Value",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "InTangent",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "OutTangent",
+                                                                    "value": 0.0
+                                                                }
+                                                            ],
+                                                            "typeName": "CurveKey"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "name": "Interp",
+                                                    "value": "Linear"
+                                                }
+                                            ],
+                                            "typeName": "Curve"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamFloat"
+                            }
+                        }
+                    ],
+                    "typeName": "InitRotationModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 10074871630973714537
+                        },
+                        {
+                            "name": "Color",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Mode",
+                                        "value": "Constant"
+                                    },
+                                    {
+                                        "name": "Value",
+                                        "value": [
+                                            0.8999999761581421,
+                                            0.949999988079071,
+                                            1.0,
+                                            1.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Min",
+                                        "value": [
+                                            1.0,
+                                            1.0,
+                                            1.0,
+                                            1.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Max",
+                                        "value": [
+                                            1.0,
+                                            1.0,
+                                            1.0,
+                                            1.0
+                                        ]
+                                    },
+                                    {
+                                        "name": "Gradient",
+                                        "value": {
+                                            "fields": [
+                                                {
+                                                    "name": "Keys",
+                                                    "value": [
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 0.0
+                                                                },
+                                                                {
+                                                                    "name": "Color",
+                                                                    "value": [
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "typeName": "ColorKey"
+                                                        },
+                                                        {
+                                                            "fields": [
+                                                                {
+                                                                    "name": "Time",
+                                                                    "value": 1.0
+                                                                },
+                                                                {
+                                                                    "name": "Color",
+                                                                    "value": [
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0,
+                                                                        1.0
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "typeName": "ColorKey"
+                                                        }
+                                                    ]
+                                                }
+                                            ],
+                                            "typeName": "ColorGradient"
+                                        }
+                                    },
+                                    {
+                                        "name": "Source",
+                                        "value": "NormalizedAge"
+                                    },
+                                    {
+                                        "name": "SourceRange",
+                                        "value": 1.0
+                                    }
+                                ],
+                                "typeName": "ParticleParamColor"
+                            }
+                        }
+                    ],
+                    "typeName": "InitColorModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 5033010292075575925
+                        },
+                        {
+                            "name": "Rate",
+                            "value": 0.30000001192092896
+                        }
+                    ],
+                    "typeName": "RotationRateModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 6238429651518395977
+                        },
+                        {
+                            "name": "Scale",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Keys",
+                                        "value": [
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "Value",
+                                                        "value": 1.0
+                                                    },
+                                                    {
+                                                        "name": "InTangent",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "OutTangent",
+                                                        "value": 0.0
+                                                    }
+                                                ],
+                                                "typeName": "CurveKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 1.0
+                                                    },
+                                                    {
+                                                        "name": "Value",
+                                                        "value": 2.0
+                                                    },
+                                                    {
+                                                        "name": "InTangent",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "OutTangent",
+                                                        "value": 0.0
+                                                    }
+                                                ],
+                                                "typeName": "CurveKey"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Interp",
+                                        "value": "Linear"
+                                    }
+                                ],
+                                "typeName": "Curve"
+                            }
+                        }
+                    ],
+                    "typeName": "SizeOverLifeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 14630222068579003
+                        },
+                        {
+                            "name": "Gradient",
+                            "value": {
+                                "fields": [
+                                    {
+                                        "name": "Keys",
+                                        "value": [
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.0
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            1.0,
+                                                            1.0,
+                                                            1.0,
+                                                            0.0
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 0.30000001192092896
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            1.0,
+                                                            1.0,
+                                                            1.0,
+                                                            0.15000000596046448
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            },
+                                            {
+                                                "fields": [
+                                                    {
+                                                        "name": "Time",
+                                                        "value": 1.0
+                                                    },
+                                                    {
+                                                        "name": "Color",
+                                                        "value": [
+                                                            1.0,
+                                                            1.0,
+                                                            1.0,
+                                                            0.0
+                                                        ]
+                                                    }
+                                                ],
+                                                "typeName": "ColorKey"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "typeName": "ColorGradient"
+                            }
+                        }
+                    ],
+                    "typeName": "ColorOverLifeModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 236304842724219277
+                        },
+                        {
+                            "name": "Texture",
+                            "value": 8811264200719930477
+                        },
+                        {
+                            "name": "Blend",
+                            "value": "AlphaBlend"
+                        },
+                        {
+                            "name": "Facing",
+                            "value": "CameraFacing"
+                        },
+                        {
+                            "name": "SubUVColumns",
+                            "value": 1
+                        },
+                        {
+                            "name": "SubUVRows",
+                            "value": 1
+                        },
+                        {
+                            "name": "StretchFactor",
+                            "value": 0.05000000074505806
+                        }
+                    ],
+                    "typeName": "SpriteRendererModule"
+                },
+                {
+                    "fields": [
+                        {
+                            "name": "Uuid",
+                            "value": 2983330745685249838
+                        }
+                    ],
+                    "typeName": "ParticleEmitterOutputNode"
+                }
+            ],
+            "typeName": "ParticleEmitter"
+        }
+    ],
+    "fields": [
+        {
+            "name": "Uuid",
+            "value": 14981760370316696282
+        },
+        {
+            "name": "FixedBoundsRadius",
+            "value": 2.0
+        },
+        {
+            "name": "Emitters",
+            "value": [
+                11693442434377499777,
+                6286148631009839879
+            ]
+        }
+    ],
+    "parameters": [],
+    "typeName": "ParticleSystem",
+    "uuid": 14981760370316696282
+}

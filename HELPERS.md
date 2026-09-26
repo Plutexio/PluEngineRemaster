@@ -1557,6 +1557,8 @@ nie jest powtarzalny; każdy inny seed daje ten sam wynik przy tych samych argum
 
 Particle rework: asset + node modules + parameters + loader, compiler + CPU executor, spawner component + render-thread simulation, sprite and ribbon renderers.
 
+Example assets in `EngineAssets/Particles/` (constants `EngineAssets::PS_*`, textures `Particles/Textures/T_Particle_*`): `PS_MuzzleFlash` (one-shot, 3 emitters, `FlashTint` parameter), `PS_Tracer` (sprite + per-particle ribbon, `TracerColor` / `TracerSpeed` parameters), `PS_BulletImpact` (sparks with trails + Kill When Slow, sub-UV dust, flash; forward = surface normal), `PS_MagicTrail` (per-emitter ribbon — use Preview → Orbit; sparkle colour sampled from a gradient over Seed), `PS_SubUVShowcase` (numbered atlas by frame rate vs by lifetime), `PS_Fountain` (Math Multiply feeding a pin, Size By Speed, box mist), `PS_Snowfall` (18k particles, untextured soft discs).
+
 | Helper | Purpose |
 |---|---|
 | `Curve` / `ColorGradient` (`Curves/Curve.h`) | Generic scalar curve / RGBA gradient. `Evaluate(t)`, `BakeLUT(inMin, inMax, out)` (64 samples, 128 for cubic), `SortKeys()`, `Curve::Constant/Ramp`, `ColorGradient::Constant`. Reflected structs, serialized by the generic serializer. |
