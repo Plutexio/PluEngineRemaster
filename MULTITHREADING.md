@@ -142,6 +142,65 @@ the request and publishes a `ParticleDebugStats` copy (per-spawner `ParticleSpaw
 under a mutex in `RenderParticleStats.cpp`; the panel reads it with `GetParticleDebugStats()` and joins it
 with the components by UUID. Not a gameplay channel — it is a frame behind, published only while
 requested, at most every 0.1 s (the gather walks every particle), and only for fresh snapshots.
+Asset-driven spawners ride the same publish as `ParticleDebugStats::SystemSpawners` (render-side lifecycle
+counters, the parameter block the emitters ran with, per-emitter storage / memory / bounds), gathered by
+`Renderer::GatherParticleSystemDebugStats`. Per-op times need a second renew-every-frame flag,
+`RequestParticleOpTimings()`, consumed once per particle tick: only that tick is timed.
+
+**Particle systems (asset-driven spawners).** A `ParticleSpawnerComponent` with a `ParticleSystemAsset` takes a
+second path through the same channel; without an asset it is the legacy spawner above, untouched.
+Everything below is written in English on purpose (repo rule for new sections).
+
+- *Program transport.* Main compiles the asset (`ParticleSystemCompiler::GetCompiled`, cached by uuid +
+  `ParticleSystem::CompileRevision`) and hands render the flat `CompiledParticleSystem`, never the asset graph
+  (`TOwningPointer`s are owner-thread-checked, and `operator->` asserts on the wrong thread). Copying it per spawner
+  per frame is not an option (KB of LUTs x N spawners x 60 Hz), so `RenderSnapshot::ParticleSystems` is a
+  **resident cache inside each of the three TripleBuffer slots**: `RenderSnapshotBuilder` does a linear find by
+  `SystemUuid`, appends or overwrites an entry only when its `Revision` differs, and drops entries no spawner used
+  this frame. `RenderSnapshot::Clear()` deliberately does NOT clear it (and does clear `ParticleParameterValues`,
+  which is per-frame data) — both need their comment, or the next person "fixes" one of them.
+  **Invariant:** every published snapshot holds a superset of the systems its `ParticleSpawners` name, at the
+  revisions they name. It holds because each slot is written only by main and read by render only after
+  `Publish()`: a dropped snapshot loses nothing (data stays in the slot) and a replayed old one is self-sufficient.
+  Steady-state cost: zero copies. Render (`SyncParticleSystemSpawner`) copies a `CompiledEmitter` into its
+  `ParticleEmitterInstance` only when the revision changes and must never keep a pointer into the snapshot array
+  across frames (main overwrites the slot). Emitters are matched by `EmitterUuid`, so adding/removing/reordering an
+  emitter keeps the survivors' particles.
+- *Parameters.* Live values live in main's `ParticleSystemInstance` (`ParticleParameterStore`); the builder writes
+  them as one flat float block per spawner into `ParticleParameterValues` (O(parameters) per spawner per frame,
+  layout order = `CompiledParticleSystem::ParameterLayout`). Render tolerates a count that disagrees with the
+  program for a frame (recompile landed between block write and program adoption): missing indices fall back to
+  `ParameterDefaults`.
+- *Lifecycle, main -> render (state, never impulses).* `EmissionState` (Stopped/Playing/Paused) plus two
+  monotonic counters: `ActivationVersion` (`Play()`: restart) and `ClearVersion` (`Stop()`: clear now).
+  `Deactivate`, `Pause` and `Resume` bump neither. Render compares them with what it last synced: an activation
+  change resets the emitters and **rebases `SyncedRequested`** onto the incoming counter (a burst requested before
+  `Play()` must not fire again), a clear change only drops the particles. Paused ticks with dt = 0; Stopped ticks
+  normally without emitting. `SpawnParticles(n)` still works (counter diff) and adds n to every emitter.
+- *Feedback, render -> main.* `RenderParticleLiveness.h`: always on, O(spawners), one mutex + one copy (same
+  mechanism as `RenderParticleStats`, but no request flag, no throttle, no per-particle gather).
+  `TickParticleSpawners` publishes `{alive, emitting emitters, CompletedActivationVersion}` per spawner every tick.
+  `CompletedActivationVersion` is monotonic, so a lost or replayed publish cannot make main see a run finish twice.
+  Main reads it **once per world per frame** in `SceneWorld::UpdateParticleLiveness()` (called from the builder
+  right before packing) and only applies it when `SceneHandle` matches that world. The `mSeenByRenderer` latch is
+  mandatory: no entry means "not created yet", never "finished" — without it an `AutoDestroyWhenFinished` effect
+  is deleted on its first frame, before render ever creates it. Deletion goes through the deferred
+  `DeleteGameObject` queue.
+- *Attach to bone/socket* needs nothing new: `GetAttachParentWorldMatrix` resolves the socket and
+  `EvaluateSkeletalPosesAndAttachments` invalidates attached children's world matrices before the particle block is
+  packed, so `GetWorldLocation()` / `GetWorldRotation()` already report the muzzle's transform of the same frame.
+  Caveat: that invalidation is driven by the pose-cache miss, so a socket moved by something other than a pose
+  rebuild would need its own invalidation.
+- *Drawing.* All of it on the render thread, after the tick: an emitter with a Sprite renderer module is packed
+  into `ParticleInstanceGPU`s (`PackParticleSpriteInstances`, which also projects the velocity-stretch direction
+  with this frame's camera view) and uploaded to its own `ParticleInstanceBuffer` (SSBO, binding 7); a Ribbon
+  emitter likewise (`PackParticleRibbonInstances`), plus its per-particle trail history, which the render-side
+  `ParticleBlockStorage` already keeps in the GPU layout, into a `ParticleRibbonHistoryBuffer` (binding 8); an
+  emitter without a renderer module is packed as interleaved xyz into a `ParticlePointBuffer` and drawn by
+  `ParticlePointProgram`. All buffers are plain copyable handles freed by `DestroyRenderParticleSpawner`.
+  The sprite texture is resolved on render with `GetAssetDataNoLoad` + `GetTextureForInfo`; a miss requests the
+  load and skips that emitter for the frame, never I/O. Asset-driven emitters neither cast nor receive shadows and
+  stay out of the depth prepass; `DrawParticleShadowCasters` and the receive path remain legacy-only.
 
 **Ustawienia cieni światła kierunkowego:** `DirLight` niesie POD `DirectionalLightShadowSettings`
 (`CastShadows`, `ShadowDistance`, `CascadeCount`, `SplitLambda`, `Resolution`, `NormalBias`,

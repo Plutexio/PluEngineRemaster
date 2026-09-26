@@ -10,6 +10,7 @@
 namespace
 {
 	std::atomic<bool> gParticleDebugStatsRequested{false};
+	std::atomic<bool> gParticleOpTimingsRequested{false};
 
 	// Variable-size payload, so a mutex instead of the atomics the fixed-size stats use. Held only
 	// for a move in and a copy out.
@@ -38,4 +39,14 @@ Plu::ParticleDebugStats Plu::GetParticleDebugStats()
 {
 	std::lock_guard<std::mutex> lock(gParticleDebugStatsMutex);
 	return gParticleDebugStats;
+}
+
+void Plu::RequestParticleOpTimings()
+{
+	gParticleOpTimingsRequested.store(true, std::memory_order_relaxed);
+}
+
+bool Plu::ConsumeParticleOpTimingsRequest()
+{
+	return gParticleOpTimingsRequested.exchange(false, std::memory_order_relaxed);
 }

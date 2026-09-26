@@ -25,7 +25,12 @@
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Effects/Particles/ParticleSpawner.h"
+#include "PluEngine/Render/RenderParticleLiveness.h"
+#include <cstring>
 #include "PluEngine/Render/RenderParticleStats.h"
+#include "PluEngine/AssetTypes/Texture/Texture.h"
+#include "PluEngine/Render/GLTexture.h"
+#include <algorithm>
 
 namespace
 {
@@ -96,6 +101,127 @@ namespace
     }
 }
 
+namespace
+{
+    UInt32 PackUnorm8(float value)
+    {
+        value = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+        return static_cast<UInt32>(value * 255.0f + 0.5f);
+    }
+
+    // Grows geometrically: an emitter whose count creeps up by a few particles every frame would
+    // otherwise reallocate (and copy tens of MB) every frame.
+    template <typename T>
+    void ResizeScratch(DynamicArray<T>& scratch, UInt32 count)
+    {
+        if (count > scratch.Capacity()) scratch.Reserve(std::max<UInt32>(count, scratch.Capacity() * 2));
+        scratch.Resize(count);
+    }
+
+    // SoA columns of one sprite emitter -> ParticleInstanceGPU (layout of ParticleSprite.vert). Also returns
+    // the mean position of the live particles: the sprite pass sorts emitters by it.
+    void PackParticleSpriteInstances(const Plu::ParticleEmitterInstance& emitter, const Matrix4& view,
+                                     DynamicArray<Plu::ParticleInstanceGPU>& out, Vec3& outCentroid)
+    {
+        PLU_PROFILE_SCOPE("Particles/SpritePack");
+        using Plu::EParticleColumn;
+        const Plu::ParticleBlockStorage& storage = emitter.GetStorage();
+        const UInt32 count = storage.Alive();
+        ResizeScratch(out, count);
+        if (count == 0) return;
+
+        const float* px = storage.Column(EParticleColumn::PosX);
+        const float* py = storage.Column(EParticleColumn::PosY);
+        const float* pz = storage.Column(EParticleColumn::PosZ);
+        const float* vx = storage.Column(EParticleColumn::VelX);
+        const float* vy = storage.Column(EParticleColumn::VelY);
+        const float* vz = storage.Column(EParticleColumn::VelZ);
+        const float* sx = storage.Column(EParticleColumn::SizeX);
+        const float* sy = storage.Column(EParticleColumn::SizeY);
+        const float* cr = storage.Column(EParticleColumn::ColR);
+        const float* cg = storage.Column(EParticleColumn::ColG);
+        const float* cb = storage.Column(EParticleColumn::ColB);
+        const float* ca = storage.Column(EParticleColumn::ColA);
+        // On-demand columns: null when no module asked for them.
+        const float* rotation = storage.Column(EParticleColumn::Rotation);
+        const float* frame = storage.Column(EParticleColumn::SubUVFrame);
+
+        // Velocity stretch runs in view space: store the on-screen part of the velocity (the first two
+        // rows of the view rotation). Moving straight at the camera correctly gives no stretch.
+        const bool stretched = emitter.GetProgram().Sprite.Facing == Plu::EParticleFacingMode::VelocityStretched;
+        const float rx0 = view[0][0], rx1 = view[1][0], rx2 = view[2][0];
+        const float ry0 = view[0][1], ry1 = view[1][1], ry2 = view[2][1];
+
+        float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
+        Plu::ParticleInstanceGPU* dst = out.Data();
+        for (UInt32 i = 0; i < count; ++i) {
+            Plu::ParticleInstanceGPU& instance = dst[i];
+            instance.PositionRotation.x = px[i];
+            instance.PositionRotation.y = py[i];
+            instance.PositionRotation.z = pz[i];
+            instance.PositionRotation.w = rotation ? rotation[i] : 0.0f;
+            instance.SizeAndVelocity.x = sx[i] * 0.5f;
+            instance.SizeAndVelocity.y = sy[i] * 0.5f;
+            instance.SizeAndVelocity.z = stretched ? rx0 * vx[i] + rx1 * vy[i] + rx2 * vz[i] : 0.0f;
+            instance.SizeAndVelocity.w = stretched ? ry0 * vx[i] + ry1 * vy[i] + ry2 * vz[i] : 0.0f;
+            instance.ColorRGBA8 = PackUnorm8(cr[i]) | (PackUnorm8(cg[i]) << 8) | (PackUnorm8(cb[i]) << 16) | (PackUnorm8(ca[i]) << 24);
+            instance.SubUVFrameFlags = frame ? (static_cast<UInt32>(frame[i]) & 0xFFFFu) : 0u;
+            instance.Pad0 = 0;
+            instance.Pad1 = 0;
+            sumX += px[i]; sumY += py[i]; sumZ += pz[i];
+        }
+        const float inv = 1.0f / static_cast<float>(count);
+        outCentroid = Vec3(sumX * inv, sumY * inv, sumZ * inv);
+    }
+
+    // SoA columns of one ribbon emitter -> ParticleInstanceGPU in the ribbon meaning (ParticleRibbon.vert):
+    // w = texture u (normalised age), x = half width. Storage is ordered, so the output is in spawn order.
+    void PackParticleRibbonInstances(const Plu::ParticleEmitterInstance& emitter,
+                                     DynamicArray<Plu::ParticleInstanceGPU>& out, Vec3& outCentroid)
+    {
+        PLU_PROFILE_SCOPE("Particles/RibbonPack");
+        using Plu::EParticleColumn;
+        const Plu::ParticleBlockStorage& storage = emitter.GetStorage();
+        const UInt32 count = storage.Alive();
+        ResizeScratch(out, count);
+        if (count == 0) return;
+
+        const float* px = storage.Column(EParticleColumn::PosX);
+        const float* py = storage.Column(EParticleColumn::PosY);
+        const float* pz = storage.Column(EParticleColumn::PosZ);
+        const float* age = storage.Column(EParticleColumn::NormalizedAge);
+        const float* size = storage.Column(EParticleColumn::SizeX);
+        const float* cr = storage.Column(EParticleColumn::ColR);
+        const float* cg = storage.Column(EParticleColumn::ColG);
+        const float* cb = storage.Column(EParticleColumn::ColB);
+        const float* ca = storage.Column(EParticleColumn::ColA);
+        // Present only with Size Over Life / Size By Speed: they taper the ribbon (size / size at birth).
+        const float* baseSize = storage.Column(EParticleColumn::BaseSizeX);
+        const float halfWidth = 0.5f * emitter.GetProgram().Ribbon.RibbonWidth;
+
+        float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
+        Plu::ParticleInstanceGPU* dst = out.Data();
+        for (UInt32 i = 0; i < count; ++i) {
+            Plu::ParticleInstanceGPU& instance = dst[i];
+            instance.PositionRotation.x = px[i];
+            instance.PositionRotation.y = py[i];
+            instance.PositionRotation.z = pz[i];
+            instance.PositionRotation.w = age[i];
+            instance.SizeAndVelocity.x = baseSize ? halfWidth * size[i] / std::max(baseSize[i], 1e-6f) : halfWidth;
+            instance.SizeAndVelocity.y = 0.0f;
+            instance.SizeAndVelocity.z = 0.0f;
+            instance.SizeAndVelocity.w = 0.0f;
+            instance.ColorRGBA8 = PackUnorm8(cr[i]) | (PackUnorm8(cg[i]) << 8) | (PackUnorm8(cb[i]) << 16) | (PackUnorm8(ca[i]) << 24);
+            instance.SubUVFrameFlags = 0;
+            instance.Pad0 = 0;
+            instance.Pad1 = 0;
+            sumX += px[i]; sumY += py[i]; sumZ += pz[i];
+        }
+        const float inv = 1.0f / static_cast<float>(count);
+        outCentroid = Vec3(sumX * inv, sumY * inv, sumZ * inv);
+    }
+}
+
 void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
 {
     PLU_PROFILE_SCOPE("Particle Spawners Sync");
@@ -117,11 +243,46 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
 
     // The snapshot lists every live spawner of this world, so syncing is idempotent: a stale
     // snapshot rendered again, or a dropped one, changes nothing (see ParticleSpawnerRenderObject).
+    // Compiled programs of this frame, by system uuid. Valid for THIS call only: main overwrites the
+    // snapshot slot afterwards, so nothing below may keep a pointer into it (copy on adoption instead).
+    HashMap<UInt64, const CompiledParticleSystem*> programs;
+    for (const CompiledParticleSystem& program : snapshot->ParticleSystems)
+        programs.InsertOrAssign(program.SystemUuid.getUUID(), &program);
+
     HashSet<UInt64> liveSpawners;
     for (const ParticleSpawnerRenderObject& state : snapshot->ParticleSpawners) {
         liveSpawners.Insert(state.UUID.getUUID());
 
         RenderParticleSpawner* existing = spawners->Find(state.UUID.getUUID());
+        const bool wantsSystem = state.SystemUuid != 0;
+
+        // The component was pointed at an asset (or lost it): the other kind of spawner is rebuilt.
+        if (existing && static_cast<bool>(existing->System) != wantsSystem) {
+            DestroyRenderParticleSpawner(*existing);
+            spawners->Remove(state.UUID.getUUID());
+            existing = nullptr;
+        }
+
+        if (wantsSystem) {
+            const CompiledParticleSystem* const* found = programs.Find(state.SystemUuid.getUUID());
+            if (!found) {
+                // Cannot happen for a published snapshot (see RenderSnapshot::ParticleSystems), but a
+                // missing program must never crash the render thread: leave the spawner as it is.
+                PLU_CORE_WARN("Particle spawner {} refers to system {} that is not in the snapshot",
+                              state.UUID.getUUID(), state.SystemUuid.getUUID());
+                continue;
+            }
+            if (!existing) {
+                RenderParticleSpawner created;
+                created.System = CreateOwning<RenderParticleSystem>();
+                spawners->Insert(state.UUID.getUUID(), created);
+                existing = spawners->Find(state.UUID.getUUID());
+                PLU_CORE_TRACE("New Particle System Spawner UUID: {}", state.UUID.getUUID());
+            }
+            SyncParticleSystemSpawner(state, **found, snapshot->ParticleParameterValues, *existing);
+            continue;
+        }
+
         TUsePointer<ParticleSpawner> spawner;
         if (existing) {
             spawner = existing->Spawner;
@@ -158,6 +319,86 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
     }
 }
 
+void Plu::Renderer::SyncParticleSystemSpawner(const ParticleSpawnerRenderObject& state,
+                                              const CompiledParticleSystem& program,
+                                              const DynamicArray<float>& snapshotParameterValues,
+                                              RenderParticleSpawner& spawner)
+{
+    RenderParticleSystem& system = *spawner.System;
+
+    // New revision (or first sight): copy the program in. Emitters are matched by UUID so an edit that
+    // adds/removes/reorders emitters keeps the survivors' particles; SetProgram itself only restarts an
+    // emitter whose column layout or particle cap changed.
+    if (system.SystemUuid != state.SystemUuid.getUUID() || system.Revision != program.Revision) {
+        PLU_PROFILE_SCOPE("Particles/AdoptProgram");
+        DynamicArray<TOwningPointer<ParticleEmitterInstance>> nextEmitters;
+        DynamicArray<RenderParticleEmitterGPU> nextBuffers;
+        DynamicArray<bool> reused;
+        reused.Resize(system.Emitters.Size());
+        for (UInt32 i = 0; i < reused.Size(); ++i) reused[i] = false;
+
+        for (const CompiledEmitter& compiled : program.Emitters) {
+            UInt32 match = system.Emitters.Size();
+            for (UInt32 i = 0; i < system.Emitters.Size(); ++i) {
+                if (!reused[i] && system.Emitters[i]->GetProgram().EmitterUuid == compiled.EmitterUuid) { match = i; break; }
+            }
+            if (match < system.Emitters.Size()) {
+                reused[match] = true;
+                nextEmitters.PushBack(system.Emitters[match]);
+                nextBuffers.PushBack(system.EmitterBuffers[match]);
+            } else {
+                nextEmitters.PushBack(CreateOwning<ParticleEmitterInstance>());
+                nextBuffers.PushBack(RenderParticleEmitterGPU());
+            }
+            nextEmitters[nextEmitters.Size() - 1]->SetProgram(compiled);
+        }
+        for (UInt32 i = 0; i < reused.Size(); ++i) {
+            if (!reused[i]) system.EmitterBuffers[i].Destroy(); // emitter removed from the asset
+        }
+        system.Emitters = std::move(nextEmitters);
+        system.EmitterBuffers = std::move(nextBuffers);
+        system.ParameterDefaults = program.ParameterDefaults;
+        system.ParameterLayout = program.ParameterLayout;
+        system.SystemUuid = state.SystemUuid.getUUID();
+        system.Revision = program.Revision;
+    }
+
+    // Lifecycle: compare the monotonic counters with what was synced last. Restart wins over clear.
+    if (state.ActivationVersion != system.SyncedActivation) {
+        for (auto& emitter : system.Emitters) emitter->Reset();
+        for (auto& buffers : system.EmitterBuffers) buffers.ClearCounts();
+        system.SyncedActivation = state.ActivationVersion;
+        system.SyncedClear = state.ClearVersion;
+        // Rebase: a burst requested before Play() belongs to the previous run and must not fire again.
+        system.SyncedRequested = state.RequestedParticles;
+        system.PendingExtraSpawn = 0;
+    } else if (state.ClearVersion != system.SyncedClear) {
+        for (auto& emitter : system.Emitters) emitter->ClearParticles();
+        for (auto& buffers : system.EmitterBuffers) buffers.ClearCounts();
+        system.SyncedClear = state.ClearVersion;
+    }
+
+    // Exactly-once bursts from SpawnParticles(): the difference to the counter seen last.
+    if (state.RequestedParticles > system.SyncedRequested) {
+        system.PendingExtraSpawn += static_cast<UInt32>(state.RequestedParticles - system.SyncedRequested);
+        system.SyncedRequested = state.RequestedParticles;
+    }
+
+    system.State = state.EmissionState;
+    system.Location = state.Location;
+    system.Rotation = state.Rotation;
+
+    // Parameter block: tolerate a count that disagrees with the program for one frame (a recompile
+    // landed between the block write and the program adoption) — the executor falls back to defaults.
+    system.ParameterValues.Clear();
+    if (state.ParameterValueCount > 0 &&
+        state.ParameterValueOffset + state.ParameterValueCount <= snapshotParameterValues.Size()) {
+        system.ParameterValues.Resize(state.ParameterValueCount);
+        std::memcpy(system.ParameterValues.Data(), snapshotParameterValues.Data() + state.ParameterValueOffset,
+                    sizeof(float) * state.ParameterValueCount);
+    }
+}
+
 Plu::ParticleDebugStats Plu::Renderer::GatherParticleDebugStats(Plu::RenderSnapshot *snapshot, float deltaTime) const
 {
     PLU_PROFILE_SCOPE("Particle Debug Stats Gather");
@@ -167,6 +408,15 @@ Plu::ParticleDebugStats Plu::Renderer::GatherParticleDebugStats(Plu::RenderSnaps
     for (const auto& world : mParticleSpawners) {
         const bool isRenderedWorld = world.first == snapshot->SceneHandle;
         for (const auto& spawner : world.second) {
+            if (spawner.second.System) {
+                if (isRenderedWorld) {
+                    stats.SystemSpawners.PushBack(GatherParticleSystemDebugStats(spawner.first, *spawner.second.System));
+                } else {
+                    stats.OtherWorldSpawners++;
+                    for (const auto& emitter : spawner.second.System->Emitters) stats.OtherWorldAliveParticles += emitter->Alive();
+                }
+                continue;
+            }
             if (!spawner.second.Spawner) continue;
             ParticleSpawnerDebugStats spawnerStats = spawner.second.Spawner->GatherDebugStats();
             if (isRenderedWorld) {
@@ -180,6 +430,70 @@ Plu::ParticleDebugStats Plu::Renderer::GatherParticleDebugStats(Plu::RenderSnaps
     return stats;
 }
 
+Plu::ParticleSystemSpawnerDebugStats Plu::Renderer::GatherParticleSystemDebugStats(UInt64 spawnerUuid, const RenderParticleSystem& system) const
+{
+    ParticleSystemSpawnerDebugStats out;
+    out.UUID = spawnerUuid;
+    out.SystemUuid = system.SystemUuid;
+    out.Revision = system.Revision;
+    out.Location = system.Location;
+    out.State = system.State;
+    out.ActivationVersion = system.SyncedActivation;
+    out.ClearVersion = system.SyncedClear;
+    out.CompletedActivationVersion = system.CompletedActivation;
+    out.SyncedRequestedParticles = system.SyncedRequested;
+    out.ParameterLayout = system.ParameterLayout;
+    // What the executor actually read: the snapshot block, or the defaults when it did not fit the program.
+    out.UsingDefaults = system.ParameterValues.Size() != system.ParameterDefaults.Size();
+    out.ParameterValues = out.UsingDefaults ? system.ParameterDefaults : system.ParameterValues;
+
+    for (UInt32 e = 0; e < system.Emitters.Size(); ++e) {
+        const ParticleEmitterInstance& emitter = *system.Emitters[e];
+        const CompiledEmitter& program = emitter.GetProgram();
+        const ParticleBlockStorage& storage = emitter.GetStorage();
+        ParticleEmitterDebugStats emitterStats;
+        emitterStats.Name = program.Name;
+        emitterStats.Enabled = program.Enabled;
+        emitterStats.AliveParticles = emitter.Alive();
+        emitterStats.MaxParticles = program.MaxParticles;
+        emitterStats.Time = emitter.GetTime();
+        emitterStats.EmissionDone = emitter.IsEmissionDone();
+        emitterStats.SpawnRate = program.SpawnRate;
+        emitterStats.BurstCount = program.BurstCount;
+        emitterStats.HasSprite = program.HasSprite();
+        emitterStats.HasRibbon = program.HasRibbon();
+        emitterStats.RibbonMode = program.Ribbon.RibbonMode;
+        emitterStats.OrderedStorage = storage.IsOrdered();
+        emitterStats.HistorySamples = storage.HistoryFloats() / kRibbonHistorySampleFloats;
+        emitterStats.SpawnOpCount = program.SpawnOps.Size();
+        emitterStats.UpdateOpCount = program.UpdateOps.Size();
+        for (UInt32 c = 0; c < kParticleColumnCount; ++c) if (storage.UsedColumns() & (1u << c)) emitterStats.UsedColumns++;
+        emitterStats.CpuBytes = storage.GetAllocatedBytes();
+        if (e < system.EmitterBuffers.Size()) {
+            const RenderParticleEmitterGPU& buffers = system.EmitterBuffers[e];
+            emitterStats.GpuBytes = static_cast<UInt64>(buffers.Points.Capacity) * 3 * sizeof(float)
+                                  + buffers.SpriteInstances.GetAllocatedBytes() + buffers.RibbonInstances.GetAllocatedBytes()
+                                  + buffers.History.CapacityBytes;
+        }
+        emitterStats.HasBounds = emitter.ComputeBounds(emitterStats.BoundsMin, emitterStats.BoundsMax);
+
+        const ParticleOpTimings& timings = emitter.GetLastTickOpTimings();
+        auto addOps = [&](const char* stage, const DynamicArray<ParticleOp>& ops, const DynamicArray<double>& ms) {
+            for (UInt32 i = 0; i < ops.Size() && i < ms.Size(); ++i) {
+                ParticleOpDebugRow row;
+                row.Name = String(stage) + " " + String::FromInt(i) + " " + ParticleOpName(ops[i].Code) + " -> col " +
+                           String::FromInt(ops[i].Dst);
+                row.Ms = static_cast<float>(ms[i]);
+                emitterStats.Ops.PushBack(row);
+            }
+        };
+        addOps("spawn", program.SpawnOps, timings.SpawnMs);
+        addOps("update", program.UpdateOps, timings.UpdateMs);
+        out.Emitters.PushBack(emitterStats);
+    }
+    return out;
+}
+
 void Plu::Renderer::DestroyRenderParticleSpawner(RenderParticleSpawner& spawner)
 {
     if (spawner.Spawner) {
@@ -187,6 +501,12 @@ void Plu::Renderer::DestroyRenderParticleSpawner(RenderParticleSpawner& spawner)
         spawner.Spawner = nullptr;
     }
     spawner.PointBuffer.Destroy();
+    if (spawner.System) {
+        // Asset-driven spawner: GL buffers per emitter. The column storage frees with the pointer.
+        for (RenderParticleEmitterGPU& buffers : spawner.System->EmitterBuffers) buffers.Destroy();
+        spawner.System->EmitterBuffers.Clear();
+        spawner.System = nullptr;
+    }
 }
 
 void Plu::Renderer::DestroyParticleSpawners()
@@ -199,17 +519,103 @@ void Plu::Renderer::DestroyParticleSpawners()
     mParticleSpawners.Clear();
 }
 
-void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float deltaTime)
+void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float deltaTime, const Matrix4& view)
 {
     PLU_PROFILE_SCOPE("Particles Tick");
     SyncParticleSpawners(snapshot);
+    // Per-op timing only while the Debug Particles panel asks for it (renewed every frame).
+    const bool profileOps = ConsumeParticleOpTimingsRequest();
     HashMap<UInt64, RenderParticleSpawner>* spawners = mParticleSpawners.Find(snapshot->SceneHandle);
-    if (!spawners) return;
-    for (auto& spawner : *spawners) {
-        if (!spawner.second.Spawner) continue;
-        spawner.second.Spawner->TickParticles(deltaTime);
-        spawner.second.PointBuffer.Upload(spawner.second.Spawner->GetPositions(), spawner.second.Spawner->GetAliveCount());
+
+    // Feedback for main (RenderParticleLiveness.h): O(spawners), from counters the tick keeps anyway.
+    ParticleLivenessFrame liveness;
+    liveness.SceneHandle = snapshot->SceneHandle;
+
+    if (spawners) {
+        for (auto& entry : *spawners) {
+            RenderParticleSpawner& spawner = entry.second;
+            ParticleSpawnerLiveness alive;
+            alive.SpawnerUuid = entry.first;
+
+            if (spawner.System) {
+                RenderParticleSystem& system = *spawner.System;
+                const bool paused = system.State == EParticleEmissionState::Paused;
+
+                ParticleTickParams params;
+                params.DeltaTime = paused ? 0.0f : deltaTime; // Pause: tick with dt 0, nothing advances
+                params.Location = system.Location;
+                params.Rotation = system.Rotation;
+                params.Emit = system.State == EParticleEmissionState::Playing;
+                params.ParameterValues = system.ParameterValues.Data();
+                params.ParameterValueCount = system.ParameterValues.Size();
+                params.ParameterDefaults = system.ParameterDefaults.Data();
+                params.ParameterDefaultCount = system.ParameterDefaults.Size();
+                // A SpawnParticles() burst goes to every emitter of the system.
+                params.ExtraSpawn = system.PendingExtraSpawn;
+                system.PendingExtraSpawn = 0;
+
+                bool allDone = true;
+                for (UInt32 e = 0; e < system.Emitters.Size(); ++e) {
+                    ParticleEmitterInstance& emitter = *system.Emitters[e];
+                    emitter.SetProfileOps(profileOps);
+                    emitter.Tick(params);
+                    alive.AliveParticles += emitter.Alive();
+
+                    const bool stillEmitting = system.State == EParticleEmissionState::Playing &&
+                                               emitter.GetProgram().Enabled && !emitter.IsEmissionDone();
+                    if (stillEmitting) alive.EmittingEmitters++;
+                    // Done = nothing alive and nothing more to emit (finished, disabled or soft-stopped).
+                    // A paused system is never done.
+                    const bool emissionOver = emitter.IsEmissionDone() || !emitter.GetProgram().Enabled ||
+                                              system.State == EParticleEmissionState::Stopped;
+                    if (paused || emitter.Alive() > 0 || !emissionOver) allDone = false;
+
+                    RenderParticleEmitterGPU& buffers = system.EmitterBuffers[e];
+                    const CompiledEmitter& program = emitter.GetProgram();
+                    buffers.ClearCounts();
+                    // Sprite and ribbon may both be in use: the same particles packed twice, one layout each.
+                    if (program.HasSprite()) {
+                        PackParticleSpriteInstances(emitter, view, system.InstanceScratch, buffers.Centroid);
+                        buffers.SpriteInstances.Upload(system.InstanceScratch.Data(), emitter.Alive());
+                    }
+                    if (program.HasRibbon()) {
+                        PackParticleRibbonInstances(emitter, system.InstanceScratch, buffers.Centroid);
+                        buffers.RibbonInstances.Upload(system.InstanceScratch.Data(), emitter.Alive());
+                        // Per-particle trails: the storage keeps them in exactly the GPU layout (vec4 samples).
+                        const ParticleBlockStorage& storage = emitter.GetStorage();
+                        const UInt32 samples = storage.HistoryFloats() / kRibbonHistorySampleFloats;
+                        if (samples > 0) buffers.History.Upload(storage.History(), emitter.Alive(), samples);
+                    }
+                    if (!program.HasSprite() && !program.HasRibbon()) {
+                        // No renderer module: plain points.
+                        PLU_PROFILE_SCOPE("Particles/PointPack");
+                        const UInt32 count = emitter.Alive();
+                        const ParticleBlockStorage& storage = emitter.GetStorage();
+                        if (count == 0) {
+                            buffers.Points.Count = 0;
+                        } else {
+                            ResizeScratch(system.PointScratch, count * 3);
+                            const float* x = storage.Column(EParticleColumn::PosX);
+                            const float* y = storage.Column(EParticleColumn::PosY);
+                            const float* z = storage.Column(EParticleColumn::PosZ);
+                            float* out = system.PointScratch.Data();
+                            for (UInt32 i = 0; i < count; ++i) { out[3 * i] = x[i]; out[3 * i + 1] = y[i]; out[3 * i + 2] = z[i]; }
+                            buffers.Points.Upload(out, count);
+                        }
+                    }
+                }
+                // Monotonic: the run this state belongs to has no work left.
+                if (allDone) system.CompletedActivation = system.SyncedActivation;
+                alive.CompletedActivationVersion = system.CompletedActivation;
+            } else if (spawner.Spawner) {
+                spawner.Spawner->TickParticles(deltaTime);
+                spawner.PointBuffer.Upload(spawner.Spawner->GetPositions(), spawner.Spawner->GetAliveCount());
+                alive.AliveParticles = spawner.Spawner->GetAliveCount();
+            }
+            liveness.Spawners.PushBack(alive);
+        }
     }
+    PublishParticleLiveness(std::move(liveness));
 }
 
 void Plu::Renderer::RenderParticles(Plu::RenderSnapshot *snapshot, const Matrix4 &view, const Matrix4 &viewProj)
@@ -248,7 +654,162 @@ void Plu::Renderer::RenderParticles(Plu::RenderSnapshot *snapshot, const Matrix4
         glPointSize(std::max(particleClass.PointSize, 1.0f));
         spawner.second.PointBuffer.Draw();
     }
+    // Asset-driven emitters without a renderer module: one point cloud per emitter, coloured by its first
+    // particle. No shadows (DrawParticleShadowCasters and the receive path are legacy-only).
+    for (const auto& spawner : *spawners) {
+        if (!spawner.second.System) continue;
+        const RenderParticleSystem& system = *spawner.second.System;
+        shader->SetIntUniform("uReceiveShadows", 0);
+        shader->SetFloatUniform("uShadowSize", 0.0f);
+        for (UInt32 e = 0; e < system.Emitters.Size(); ++e) {
+            if (system.EmitterBuffers[e].Points.Count == 0) continue;
+            const ParticleBlockStorage& storage = system.Emitters[e]->GetStorage();
+            shader->SetVec3Uniform("uColor", Vec3(storage.Column(EParticleColumn::ColR)[0],
+                                                 storage.Column(EParticleColumn::ColG)[0],
+                                                 storage.Column(EParticleColumn::ColB)[0]));
+            glPointSize(3.0f);
+            system.EmitterBuffers[e].Points.Draw();
+        }
+    }
     glPointSize(1.0f);
+}
+
+void Plu::Renderer::RenderTransparentParticles(Plu::RenderSnapshot *snapshot, const Matrix4 &view, const Matrix4 &projection)
+{
+    HashMap<UInt64, RenderParticleSpawner>* spawners = mParticleSpawners.Find(snapshot->SceneHandle);
+    if (!spawners || spawners->IsEmpty()) return;
+
+    // Draw list: every sprite / ribbon emitter with something to draw, back to front by the distance of
+    // its particles' centroid. Emitters, never particles — Additive does not care about order, and
+    // AlphaBlend within one emitter is accepted as unsorted.
+    mParticleSpriteDraws.Clear();
+    for (const auto& spawner : *spawners) {
+        if (!spawner.second.System) continue;
+        const RenderParticleSystem& system = *spawner.second.System;
+        for (UInt32 e = 0; e < system.Emitters.Size(); ++e) {
+            const RenderParticleEmitterGPU& buffers = system.EmitterBuffers[e];
+            const CompiledEmitter& program = system.Emitters[e]->GetProgram();
+            const Vec3 toCamera = buffers.Centroid - snapshot->CameraLocation;
+            const float distanceSq = glm::dot(toCamera, toCamera);
+            // A ribbon needs two points: two particles (PerEmitter) or a trail (PerParticle).
+            if (program.HasRibbon()) {
+                const bool perEmitter = program.Ribbon.RibbonMode == EParticleRibbonMode::PerEmitter;
+                if (perEmitter ? buffers.RibbonInstances.Count >= 2 : buffers.History.Particles > 0)
+                    mParticleSpriteDraws.PushBack(ParticleSpriteDraw{ &buffers, &program.Ribbon, distanceSq, 0 });
+            }
+            if (program.HasSprite() && buffers.SpriteInstances.Count > 0)
+                mParticleSpriteDraws.PushBack(ParticleSpriteDraw{ &buffers, &program.Sprite, distanceSq, 1 });
+        }
+    }
+    if (mParticleSpriteDraws.IsEmpty()) return;
+
+    PLU_PROFILE_SCOPE("Renderer::RenderTransparentParticles");
+    PLU_PROFILE_SCOPE_GPU("Renderer::RenderTransparentParticles");
+
+    // Lazy compile on the render thread (same as DebugLine); a program that is not ready yet skips its
+    // emitters this frame.
+    auto resolveProgram = [this](UInt64 uuid) -> TUsePointer<ShaderProgram> {
+        TUsePointer<ShaderProgram> program = mApplicationInfo->AppShaderManager->GetShaderProgram(uuid);
+        if (!program) return nullptr;
+        if (!program->IsLoaded()) {
+            mApplicationInfo->AppShaderManager->LoadShader(program->Uuid);
+            return nullptr;
+        }
+        return program;
+    };
+    TUsePointer<ShaderProgram> spriteShader = resolveProgram(EngineAssets::ParticleSpriteProgram);
+    TUsePointer<ShaderProgram> ribbonShader = resolveProgram(EngineAssets::ParticleRibbonProgram);
+
+    // Back to front; within one emitter (equal distance) the ribbon first, so its sprites sit on top.
+    mParticleSpriteDraws.Sort([](const ParticleSpriteDraw& a, const ParticleSpriteDraw& b) {
+        return a.DistanceSq != b.DistanceSq ? a.DistanceSq > b.DistanceSq : a.Layer < b.Layer;
+    });
+
+    const Matrix4 viewProj = projection * view;
+    if (spriteShader) {
+        spriteShader->Bind();
+        spriteShader->SetMatrix4Uniform("uView", view);
+        spriteShader->SetMatrix4Uniform("uProjection", projection);
+    }
+    if (ribbonShader) {
+        ribbonShader->Bind();
+        ribbonShader->SetMatrix4Uniform("uViewProj", viewProj);
+        ribbonShader->SetVec3Uniform("uCameraPos", snapshot->CameraLocation);
+    }
+
+    // Transparent: test against the opaque depth, never write it. Quads and ribbons are camera-facing and
+    // may come out mirrored, so no face culling either.
+    const GLboolean cullWasOn = glIsEnabled(GL_CULL_FACE);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_FALSE);
+    glBindVertexArray(mParticleSpriteVao);
+
+    for (const ParticleSpriteDraw& draw : mParticleSpriteDraws) {
+        const ParticleRenderParams& params = *draw.Params;
+        const bool isRibbon = params.Kind == EParticleRendererKind::Ribbon;
+        ShaderProgram* shader = isRibbon ? ribbonShader.GetRaw() : spriteShader.GetRaw();
+        if (!shader) continue;
+
+        // Texture: asset data and GL texture both resolved without I/O; a miss requests the load and
+        // skips the emitter for this frame (same rule as RenderFromMaterial).
+        TUsePointer<Texture> texture;
+        if (params.TextureUuid != 0) {
+            TUsePointer<TextureInfo> textureInfo = mApplicationInfo->AppAssetManager->GetAssetDataNoLoad(PluUUID(params.TextureUuid));
+            if (!textureInfo) {
+                mApplicationInfo->AppAssetManager->RequestAssetDataLoad(PluUUID(params.TextureUuid));
+                continue;
+            }
+            texture = mApplicationInfo->AppRenderingManager->GetTextureForInfo(textureInfo);
+            if (!texture) {
+                mApplicationInfo->AppRenderingManager->RequestTextureFromInfo(textureInfo);
+                continue;
+            }
+            texture->Bind(0);
+        }
+
+        shader->Bind();
+        shader->SetIntUniform("uHasTexture", texture ? 1 : 0);
+
+        // Destination alpha stays as it is (ZERO, ONE): the main buffer is RGBA and ImGui shows it with
+        // blending, so a sprite lowering its alpha would punch a see-through hole into the viewport image.
+        if (params.Blend == EParticleBlendMode::Additive) glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ZERO, GL_ONE);
+        else glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+
+        if (isRibbon) {
+            draw.Buffers->RibbonInstances.Bind();
+            if (params.RibbonMode == EParticleRibbonMode::PerEmitter) {
+                // One strip through every live particle, oldest first (ordered storage).
+                const UInt32 points = draw.Buffers->RibbonInstances.Count;
+                shader->SetIntUniform("uRibbonMode", 1);
+                shader->SetIntUniform("uPointCount", static_cast<int>(points));
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, static_cast<GLsizei>(points * 2));
+            } else {
+                // One strip per particle through its trail; instances never join into one strip.
+                const ParticleRibbonHistoryBuffer& history = draw.Buffers->History;
+                history.Bind();
+                shader->SetIntUniform("uRibbonMode", 0);
+                shader->SetIntUniform("uPointCount", static_cast<int>(history.SamplesPerParticle));
+                glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, static_cast<GLsizei>(history.SamplesPerParticle * 2),
+                                      static_cast<GLsizei>(history.Particles));
+            }
+        } else {
+            draw.Buffers->SpriteInstances.Bind();
+            shader->SetIntUniform("uFacingMode", params.Facing == EParticleFacingMode::VelocityStretched ? 1 : 0);
+            shader->SetFloatUniform("uStretchFactor", params.StretchFactor);
+            shader->SetIntUniform("uSubUVColumns", static_cast<int>(params.SubUVColumns));
+            shader->SetIntUniform("uSubUVRows", static_cast<int>(params.SubUVRows));
+            glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(draw.Buffers->SpriteInstances.Count));
+        }
+        snapshot->StatDrawCalls++;
+    }
+
+    // Restore what OpenGLRenderState set once for the whole app.
+    glBindVertexArray(0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_TRUE);
+    if (cullWasOn) glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Plu::Renderer::DrawParticleShadowCasters(Plu::RenderSnapshot *snapshot, const Matrix4 &viewProj,
@@ -339,6 +900,8 @@ void Plu::Renderer::Initialize(ApplicationInfo *applicationInfo)
 
     // Empty VAO for the attribute-less editor grid pass (see mGridVao in Renderer.h).
     glGenVertexArrays(1, &mGridVao);
+    // Same for the attribute-less particle sprite draw (see mParticleSpriteVao).
+    glGenVertexArrays(1, &mParticleSpriteVao);
 
     mSkeletalMatricesBuffer.Create(100);
     mInstanceBuffer.Create(100);
@@ -1651,7 +2214,7 @@ void Plu::Renderer::RenderSnapshot(Plu::RenderSnapshot *snapshot, float deltaTim
 
     // Particles tick before any pass draws them: the shadow passes below and the main pass must
     // all see this frame's positions, or the shadows would trail the particles by a frame.
-    TickParticleSpawners(snapshot, deltaTime);
+    TickParticleSpawners(snapshot, deltaTime, view);
 
     // Both shadow passes are planned BEFORE either draws: the caster culling below covers every
     // frustum of the frame in one sweep, so the cascade matrices and the spot slot matrices both
@@ -1846,7 +2409,13 @@ void Plu::Renderer::RenderSnapshot(Plu::RenderSnapshot *snapshot, float deltaTim
     // Pass 3: editor grid, blended over the scene. Before debug geometry, so physics
     // wireframes/points draw on top of the grid.
     RenderEditorGrid(snapshot, view);
+#endif
 
+    // Transparent particle sprites and ribbons: after everything opaque (they test against its depth without
+    // writing their own) and after the grid, so the grid does not paint over them.
+    RenderTransparentParticles(snapshot, view, snapshot->CameraProjectionMatrix);
+
+#ifdef PLU_ENGINE_EDITOR_BUILD
     // Pass 4: debugowa geometria fizyki (linie + punkty) do tego samego bufora.
     RenderDebugGeometry(snapshot, snapshot->CameraProjectionMatrix * view);
 #endif
@@ -1984,6 +2553,7 @@ void Plu::Renderer::Shutdown()
     if (mDebugVao) { glDeleteVertexArrays(1, &mDebugVao); mDebugVao = 0; }
     if (mDebugVbo) { glDeleteBuffers(1, &mDebugVbo); mDebugVbo = 0; }
     if (mGridVao) { glDeleteVertexArrays(1, &mGridVao); mGridVao = 0; }
+    if (mParticleSpriteVao) { glDeleteVertexArrays(1, &mParticleSpriteVao); mParticleSpriteVao = 0; }
 
     mApplicationInfo->AppObjectManager->DestroyObject(mMainBuffer->GetObjectHandle());
     mMainBuffer->Destroy();

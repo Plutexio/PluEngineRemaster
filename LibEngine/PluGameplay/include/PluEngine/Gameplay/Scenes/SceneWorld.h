@@ -114,6 +114,11 @@ namespace Plu
 		// render thread — read those through GetParticleDebugStats (RenderParticleStats.h).
 		[[nodiscard]] const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& GetParticleSpawnerComponents() const { return mParticleSpawnerComponents; }
 
+		// Reads the render thread's particle liveness ONCE for the whole world (not per component) and
+		// applies it: latches each spawner as seen, mirrors its alive count, and deletes objects whose
+		// AutoDestroyWhenFinished run completed. Runs every frame right before the snapshot is built.
+		void UpdateParticleLiveness();
+
 		void AddDebugLine(Vec3 start, Vec3 end, Vec3 color);
 		void AddDebugPoint(Vec3 point, Vec3 color);
 		DynamicArray<float>* GetRawDebugPointArray();

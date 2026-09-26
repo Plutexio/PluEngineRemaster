@@ -3,6 +3,8 @@
 //
 
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
+#include "PluEngine/Render/RenderParticleLiveness.h"
+#include "PluEngine/Timer.h"
 #include "HashSet/HashSet.h"
 #include "PluEngine/Timer.h"
 #include "../../include/PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
@@ -262,6 +264,35 @@ namespace Plu
 
 		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
 			mParticleSpawnerComponents[component->Uuid] = component;
+		}
+	}
+
+	void SceneWorld::UpdateParticleLiveness()
+	{
+		PLU_PROFILE_SCOPE("Particle Liveness");
+		if (mParticleSpawnerComponents.IsEmpty()) return;
+
+		ParticleLivenessFrame frame;
+		ReadParticleLiveness(frame);
+		// The channel carries the world the render thread ticked last. Anything else says nothing about
+		// this world, and "no entry" must never be read as "finished".
+		if (frame.SceneHandle != GetObjectHandle()) return;
+
+		HashMap<UInt64, const ParticleSpawnerLiveness*> byUuid;
+		for (const ParticleSpawnerLiveness& entry : frame.Spawners) byUuid.InsertOrAssign(entry.SpawnerUuid, &entry);
+
+		for (auto& entry : mParticleSpawnerComponents) {
+			ParticleSpawnerComponent* component = entry.second.GetRaw();
+			if (!component) continue;
+			const ParticleSpawnerLiveness* const* found = byUuid.Find(component->Uuid.getUUID());
+			if (!found) continue;
+
+			component->ApplyLiveness((*found)->AliveParticles, (*found)->CompletedActivationVersion);
+			if (component->AutoDestroyWhenFinished && component->IsFinished()) {
+				TUsePointer<GameObject> owner = component->GetParentGameObject();
+				// Deferred: DeleteGameObject queues the destroy for the next scene update.
+				if (owner) DeleteGameObject(owner->GetObjectHandle());
+			}
 		}
 	}
 

@@ -33,6 +33,8 @@
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
 #include "HashSet/HashSet.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
+#include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
+#include <glm/gtc/quaternion.hpp>
 
 namespace
 {
@@ -905,9 +907,14 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
     //Particles
     {
         PLU_PROFILE_SCOPE("Particle Spawners Packing");
+        // Render -> main feedback first (latch "seen", alive mirror, AutoDestroyWhenFinished): one read
+        // for the whole world, before this frame's state is packed.
+        sceneWorld->UpdateParticleLiveness();
+
         // Full state of every spawner, every snapshot — the render thread reconciles against it
         // (see ParticleSpawnerRenderObject), so nothing here is one-shot.
         snapshot->ParticleSpawners.Reserve(static_cast<UInt32>(sceneWorld->mParticleSpawnerComponents.Size()));
+        HashSet<UInt64> usedSystems;
         for (const auto& entry : sceneWorld->mParticleSpawnerComponents) {
             const TOwningPointer<ParticleSpawnerComponent>& spawnerComponent = entry.second;
             if (!spawnerComponent) continue;
@@ -915,10 +922,55 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
             renderObject.UUID = spawnerComponent->Uuid;
             renderObject.ParticleClassData = spawnerComponent->SpawnerParticleClass;
             renderObject.Location = spawnerComponent->GetWorldLocation();
+            renderObject.Rotation = Quaternion(glm::radians(spawnerComponent->GetWorldRotation()));
             renderObject.LaunchDirection = spawnerComponent->GetLaunchDirection();
             renderObject.RequestedParticles = spawnerComponent->GetRequestedParticles();
             renderObject.LastBurstSize = spawnerComponent->GetLastBurstSize();
+            renderObject.EmissionState = spawnerComponent->GetEmissionState();
+            renderObject.ActivationVersion = spawnerComponent->GetActivationVersion();
+            renderObject.ClearVersion = spawnerComponent->GetClearVersion();
+
+            if (ParticleSystem* system = spawnerComponent->ParticleSystemAsset.GetRaw()) {
+                // Binds the live parameter values to the asset (a no-op unless the parameter layout changed).
+                ParticleSystemInstance* instance = spawnerComponent->EnsureSystemInstance();
+
+                const CompiledParticleSystem& compiled = ParticleSystemCompiler::GetCompiled(*system);
+                const UInt64 systemUuid = system->Uuid.getUUID();
+                usedSystems.Insert(systemUuid);
+
+                // Resident cache in this slot: write the program only when it is new or its revision moved.
+                UInt32 slotIndex = snapshot->ParticleSystems.Size();
+                for (UInt32 i = 0; i < snapshot->ParticleSystems.Size(); ++i) {
+                    if (snapshot->ParticleSystems[i].SystemUuid.getUUID() == systemUuid) { slotIndex = i; break; }
+                }
+                if (slotIndex == snapshot->ParticleSystems.Size()) {
+                    snapshot->ParticleSystems.PushBack(compiled);
+                } else if (snapshot->ParticleSystems[slotIndex].Revision != compiled.Revision) {
+                    snapshot->ParticleSystems[slotIndex] = compiled;
+                }
+
+                renderObject.SystemUuid = system->Uuid;
+                renderObject.SystemRevision = compiled.Revision;
+
+                // Parameter values: one flat block per spawner, in ParameterLayout order.
+                const UInt32 floatCount = compiled.ParameterFloatCount;
+                renderObject.ParameterValueOffset = snapshot->ParticleParameterValues.Size();
+                renderObject.ParameterValueCount = floatCount;
+                if (floatCount > 0) {
+                    const UInt32 offset = renderObject.ParameterValueOffset;
+                    snapshot->ParticleParameterValues.Resize(offset + floatCount);
+                    float* block = snapshot->ParticleParameterValues.Data() + offset;
+                    for (UInt32 i = 0; i < floatCount; ++i) block[i] = compiled.ParameterDefaults[i];
+                    if (instance) instance->GetParameters().WriteValueBlock(block, floatCount);
+                }
+            }
             snapshot->ParticleSpawners.PushBack(renderObject);
+        }
+
+        // Drop cached programs no spawner used this frame.
+        for (UInt32 i = snapshot->ParticleSystems.Size(); i > 0; --i) {
+            if (!usedSystems.Contains(snapshot->ParticleSystems[i - 1].SystemUuid.getUUID()))
+                snapshot->ParticleSystems.RemoveAt(i - 1);
         }
     }
 

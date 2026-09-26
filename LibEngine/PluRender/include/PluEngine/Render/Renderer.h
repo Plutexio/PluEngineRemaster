@@ -12,6 +12,8 @@
 #include "GLShaderStorageBuffer.h"
 #include "GLUniformBuffer.h"
 #include "ParticlePointBuffer.h"
+#include "ParticleInstanceBuffer.h"
+#include "PluEngine/Effects/Particles/ParticleEmitterInstance.h"
 #include "HashSet/HashSet.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
@@ -23,6 +25,7 @@ namespace Plu
 {
     class ParticleSpawner;
     struct ParticleDebugStats;
+    struct ParticleSystemSpawnerDebugStats;
     class ShaderProgram;
     struct MaterialInfo;
     struct RenderSnapshot;
@@ -434,26 +437,97 @@ namespace Plu
         // warning raz, nie per klatkę (analogicznie do mWarnedNonSkeletalPrograms).
         HashSet<UInt64> mWarnedNonInstancedPrograms;
 
-        // A simulated spawner plus the GL buffer its particles are drawn from. The buffer is a plain
-        // handle (copied on rehash) — DestroyRenderParticleSpawner frees both, exactly once.
+        // GPU side of one emitter of an asset-driven spawner. Which buffers are filled follows the emitter's
+        // renderer modules: Sprite -> SpriteInstances; Ribbon -> RibbonInstances (+ History for per-particle
+        // trails); both may be in use at once; neither -> Points. The two instance buffers hold the same
+        // particles with different field meanings (ParticleInstanceGPU). Plain handles, freed by
+        // DestroyRenderParticleSpawner.
+        struct RenderParticleEmitterGPU
+        {
+            ParticlePointBuffer Points;
+            ParticleInstanceBuffer SpriteInstances;
+            ParticleInstanceBuffer RibbonInstances;
+            ParticleRibbonHistoryBuffer History;
+            // Mean position of the live particles, from the packing loop: sorting key of the transparent pass.
+            Vec3 Centroid = Vec3(0.0f);
+            void Destroy() { Points.Destroy(); SpriteInstances.Destroy(); RibbonInstances.Destroy(); History.Destroy(); }
+            void ClearCounts() { Points.Count = 0; SpriteInstances.Count = 0; RibbonInstances.Count = 0; History.Particles = 0; }
+        };
+
+        // Render-side state of one spawner driven by a ParticleSystem asset. Lives on the heap behind a
+        // TOwningPointer: the spawner map is rehashed and copied by value, and the particle columns
+        // (tens of MB) must not move with it. Emitters are matched to the asset's by emitter UUID.
+        struct RenderParticleSystem
+        {
+            UInt64 SystemUuid = 0;
+            UInt32 Revision = 0;
+            DynamicArray<TOwningPointer<ParticleEmitterInstance>> Emitters;
+            DynamicArray<RenderParticleEmitterGPU> EmitterBuffers; // parallel to Emitters
+            DynamicArray<float> PointScratch;                      // interleaved xyz, reused every frame
+            DynamicArray<ParticleInstanceGPU> InstanceScratch;     // sprite instances, reused every frame
+            DynamicArray<float> ParameterDefaults;                 // copied from the program on adoption
+            DynamicArray<CompiledParameterSlot> ParameterLayout;   // same, for the Debug Particles panel only
+
+            // Last values synced from the snapshot (see ParticleSpawnerRenderObject).
+            UInt32 SyncedActivation = 0;
+            UInt32 SyncedClear = 0;
+            UInt64 SyncedRequested = 0;
+            UInt32 CompletedActivation = 0;
+
+            // This frame's inputs, filled by SyncParticleSpawners, consumed by TickParticleSpawners.
+            EParticleEmissionState State = EParticleEmissionState::Stopped;
+            Vec3 Location = Vec3(0.0f);
+            Quaternion Rotation = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);
+            DynamicArray<float> ParameterValues;
+            UInt32 PendingExtraSpawn = 0;
+        };
+
+        // A simulated spawner plus the GL buffer its particles are drawn from: either the legacy
+        // ParticleSpawner (System is null) or an asset-driven RenderParticleSystem (Spawner is null). The
+        // buffer is a plain handle (copied on rehash) — DestroyRenderParticleSpawner frees both, exactly once.
         struct RenderParticleSpawner
         {
             TOwningPointer<ParticleSpawner> Spawner;
             ParticlePointBuffer PointBuffer;
+            TOwningPointer<RenderParticleSystem> System;
         };
         HashMap<EngineObjectHandle, HashMap<UInt64, RenderParticleSpawner>> mParticleSpawners;
+        void SyncParticleSystemSpawner(const ParticleSpawnerRenderObject& state,
+                                       const CompiledParticleSystem& program,
+                                       const DynamicArray<float>& snapshotParameterValues, RenderParticleSpawner& spawner);
         // Reconciles mParticleSpawners[snapshot->SceneHandle] with snapshot->ParticleSpawners.
         void SyncParticleSpawners(RenderSnapshot* snapshot);
         void DestroyRenderParticleSpawner(RenderParticleSpawner& spawner);
         void DestroyParticleSpawners();
-        // Ticks the spawners of snapshot's world and uploads their positions. Runs before the
-        // shadow passes, which draw the same buffers.
-        void TickParticleSpawners(RenderSnapshot* snapshot, float deltaTime);
+        // Ticks the spawners of snapshot's world and uploads their positions / sprite instances. Runs
+        // before the shadow passes, which draw the same buffers. view projects the velocity-stretch
+        // direction of sprite instances.
+        void TickParticleSpawners(RenderSnapshot* snapshot, float deltaTime, const Matrix4& view);
         // Draws the spawners of snapshot's world as points (ParticlePointProgram) into the bound
         // main buffer. Not editor-only: particles are a gameplay effect.
         // Also darkens the spawners whose ParticleClass receives shadows, from the directional
         // cascades already bound for the main pass.
         void RenderParticles(RenderSnapshot* snapshot, const Matrix4& view, const Matrix4& viewProj);
+        // Transparent pass of the asset-driven emitters: sprites (ParticleSpriteProgram, instanced quads)
+        // and ribbons (ParticleRibbonProgram, triangle strips), all from the emitters' SSBOs. Depth test on,
+        // depth writes off; Additive or AlphaBlend per emitter, emitters of both kinds sorted back to front
+        // together (never per particle). Sets and RESTORES the blend function and depth mask — the editor
+        // grid, debug lines and ImGui inherit them. Neither casts nor receives shadows, and both stay out of
+        // the depth prepass.
+        void RenderTransparentParticles(RenderSnapshot* snapshot, const Matrix4& view, const Matrix4& projection);
+        // Empty VAO for the attribute-less sprite / ribbon draws (core profile requires one bound).
+        unsigned int mParticleSpriteVao = 0;
+        // Draw list of RenderTransparentParticles, reused every frame.
+        // One renderer of one emitter: an emitter with both a ribbon and sprites gives two entries.
+        struct ParticleSpriteDraw
+        {
+            const RenderParticleEmitterGPU* Buffers = nullptr;
+            const ParticleRenderParams* Params = nullptr;
+            float DistanceSq = 0.0f;
+            // Tie-break within one emitter (same centroid): the ribbon (0) under its sprites (1).
+            UInt8 Layer = 0;
+        };
+        DynamicArray<ParticleSpriteDraw> mParticleSpriteDraws;
         // Draws the shadow-casting spawners of snapshot's world into the bound depth target (one
         // cascade or spot slot) with mParticleShadowShader. projection and resolution size each
         // particle's shadow square to ParticleClass::ShadowSize metres. The caller owns the GL
@@ -463,6 +537,9 @@ namespace Plu
                                        const Matrix4& projection, Int32 resolution);
         // Debug Particles panel: copies the state of every spawner (see RenderParticleStats.h).
         [[nodiscard]] ParticleDebugStats GatherParticleDebugStats(RenderSnapshot* snapshot, float deltaTime) const;
+        // One asset-driven spawner's part of it: lifecycle, parameter block, per-emitter rows. Walks the live
+        // particles (bounds), so it runs only on request like the rest of the gather.
+        [[nodiscard]] ParticleSystemSpawnerDebugStats GatherParticleSystemDebugStats(UInt64 spawnerUuid, const RenderParticleSystem& system) const;
         // Seconds since the last Debug Particles publish (throttle, see RenderSnapshot).
         float mParticleDebugStatsTimer = 0.0f;
         EngineObjectHandle mLastFrameSceneHandle;
