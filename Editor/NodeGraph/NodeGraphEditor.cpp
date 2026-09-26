@@ -54,7 +54,7 @@ namespace Plu
 	// ---- NodeViewRegistry ---------------------------------------------------------------------
 	void NodeViewRegistry::Register(const String& typeName, INodeView* view)
 	{
-		if (view) mViews.Insert(typeName, view);
+		if (view) mViews.InsertOrAssign(typeName, view);
 	}
 
 	INodeView* NodeViewRegistry::For(GraphNode* node)
@@ -382,6 +382,7 @@ namespace Plu
 		{ "LogicGraphNode",   "Logic",     "Logic"   },
 		{ "ConvertGraphNode", "Convert",   "Convert" },
 		{ "AnimGraphNode",    "Animation", "Anim"    },
+		{ "ParticleModuleNode", "Particle",  "Particle" },
 	};
 
 	static const PaletteCategory* PaletteCategoryFor(TypeInfo* type)
