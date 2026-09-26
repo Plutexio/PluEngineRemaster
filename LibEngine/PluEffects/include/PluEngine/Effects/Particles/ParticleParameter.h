@@ -78,7 +78,11 @@ namespace Plu
 #ifdef PLU_ENGINE_EDITOR_BUILD
 		bool DrawEditorControl(const String& label) override
 		{
-			return TypeSerializer<T>::EditorControl(&mValue, label);
+			// Vec4 parameters are the "Color" type: a picker with an alpha bar, not four drags.
+			if constexpr (std::is_same_v<T, Vec4>)
+				return ImGui::ColorEdit4(label.CStr(), &mValue.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+			else
+				return TypeSerializer<T>::EditorControl(&mValue, label);
 		}
 #endif
 

@@ -90,6 +90,30 @@ namespace Plu
 		ParticleParamColor() = default;
 		explicit ParticleParamColor(const Vec4& value) : Value(value) {}
 	};
+
+	// Mode combo, then only what the mode uses: a colour picker (Constant), two pickers (RandomRange), or
+	// the gradient + source attribute (CurveOverSource). The generic reflected editor would draw every field
+	// and Value/Min/Max as four plain drags. Returns true on change. No-op outside the editor build.
+	PLUEFFECTS_API bool ParticleParamColorEditorControl(ParticleParamColor& param, const String& label);
+
+	// Hand-written only for the editor control (same pattern as TypeSerializer<Curve>): JSON stays the generic
+	// reflected-struct form, so saved assets are unaffected.
+	template <>
+	struct TypeSerializer<ParticleParamColor>
+	{
+		static nlohmann::json Serialize(void* data)
+		{
+			return TypeRegistry::GetInstance()->serializeForTypeInfo(ParticleParamColor::GetStaticClass(), data);
+		}
+		static void Deserialize(DeserializationContext* dc, const nlohmann::json& json, void* out)
+		{
+			TypeRegistry::GetInstance()->deserializeForTypeInfo(dc, json, ParticleParamColor::GetStaticClass(), out);
+		}
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ParticleParamColorEditorControl(*static_cast<ParticleParamColor*>(value), name);
+		}
+	};
 }
 
 #endif //PLUENGINE_PARTICLEPARAM_H
