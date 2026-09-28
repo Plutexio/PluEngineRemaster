@@ -34,12 +34,15 @@ namespace Plu
 			PhysicsBodyType            Type        = PhysicsBodyType::Static,
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
-			float				Mass         = 10.0f
+			float				Mass         = 10.0f,
+			bool                DeferAdd     = false
 		);
 
 		// Whether this body wants EActivation::Activate when it is added (non-static bodies do).
 		// The batch add takes one activation mode per batch, so the caller partitions on this.
 		[[nodiscard]] bool NeedsActivation() const { return mNeedsActivation; }
+
+		PhysicsBodyType GetBodyType() const { return mBodyType; }
 
 		// Whether the body was still active at the previous transform sync (PhysicsWorld::OnUpdate).
 		// Jolt deactivates a body at the end of the step that brought it to rest, so the sync needs
@@ -80,6 +83,8 @@ namespace Plu
 		JPH::BodyInterface& mBodyInterface;
 		JPH::BodyID         mBodyID;
 		bool                mNeedsActivation = false;
+
+		PhysicsBodyType mBodyType;
 
 		static JPH::EMotionType ToJoltMotionType(PhysicsBodyType Type);
 		static JPH::ObjectLayer ToJoltLayer(PhysicsBodyType Type);

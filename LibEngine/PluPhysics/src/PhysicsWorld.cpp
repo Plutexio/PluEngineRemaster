@@ -31,7 +31,7 @@
 #include "PluEngine/Physics/PhysicsWireframeRenderer.h"
 #include "PluEngine/Physics/StaticMeshCollision.h"
 
-void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid)
+void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
 {
     PLU_PROFILE_SCOPE("CreatePhysicsBody");
     TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
@@ -179,20 +179,30 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid)
         bodyComponent->Type,
         bodyComponent->Friction,
         bodyComponent->Restitution,
-        bodyComponent->Mass
+        bodyComponent->Mass,
+        deferAdd
     );
 
     mBodyPerObject.Insert(gameObject->GetObjectUUID(), body);
+    if (deferAdd) mPendingBodyObjects.Insert(gameObject->GetObjectUUID());
 
     if (!mRotLocChangesEventsPerObject.Contains(gameObject->GetObjectUUID())) {
         Int32 locEvent = gameObject->SubscribeToEvent("LocationChange", [this, gameObject](void*) {
             if (mBodyPerObject.Contains(gameObject->GetObjectUUID()) && !mIsUpdatingObjectsFromPhysics) {
-                mBodyPerObject[gameObject->GetObjectUUID()]->SetPosition(ToJPH(gameObject->GetObjectLocation()));
+                if (mBodyPerObject[gameObject->GetObjectUUID()]->GetBodyType() == PhysicsBodyType::Static) {
+                    RebuildObjectCollision(gameObject->GetObjectUUID());
+                } else {
+                    mBodyPerObject[gameObject->GetObjectUUID()]->SetPosition(ToJPH(gameObject->GetObjectLocation()));
+                }
             }
         });
         Int32 rotEvent = gameObject->SubscribeToEvent("RotationChange", [this, gameObject](void*) {
             if (mBodyPerObject.Contains(gameObject->GetObjectUUID()) && !mIsUpdatingObjectsFromPhysics) {
-                mBodyPerObject[gameObject->GetObjectUUID()]->SetRotation(ToJPHRotation(gameObject->GetObjectRotation()));
+                if (mBodyPerObject[gameObject->GetObjectUUID()]->GetBodyType() == PhysicsBodyType::Static) {
+                    RebuildObjectCollision(gameObject->GetObjectUUID());
+                } else {
+                    mBodyPerObject[gameObject->GetObjectUUID()]->SetRotation(ToJPHRotation(gameObject->GetObjectRotation()));
+                }
             }
         });
         Int32 scaleEvent = gameObject->SubscribeToEvent("ScaleChange", [this, gameObject](void*) {
@@ -215,14 +225,15 @@ void Plu::PhysicsWorld::RebuildObjectsThatUseMesh(StaticMesh *staticMesh)
 
 Plu::PhysicsWorld::PhysicsWorld()
 {
-    mAllocator = CreateOwning<JPH::TempAllocatorImpl>(10 * 1024 * 1024);
+    // Falls back to malloc instead of aborting when a step outgrows the preallocated block.
+    mAllocator = CreateOwning<JPH::TempAllocatorImplWithMallocFallback>(kTempAllocatorSize);
     mBPLayerInterface = CreateOwning<BPLayerInterfaceImpl>();
     mObjVsBPFilter = CreateOwning<ObjectVsBroadPhaseLayerFilterImpl>();
     mObjVsObjFilter = CreateOwning<ObjectLayerPairFilterImpl>();
 
     mPhysicsSystem = CreateOwning<JPH::PhysicsSystem>();
     mPhysicsSystem->Init(
-        1024, 0, 1024, 1024,
+        kMaxBodies, 0, kMaxBodyPairs, kMaxContactConstraints,
         *mBPLayerInterface,
         *mObjVsBPFilter,
         *mObjVsObjFilter
@@ -358,10 +369,12 @@ void Plu::PhysicsWorld::Init()
 void Plu::PhysicsWorld::OnUpdate(float deltaTime, bool updateBodies)
 {
     if (!mObjectsToCheck.IsEmpty()) {
+        PLU_PROFILE_SCOPE("Physics RebuildPendingObjects");
         for (auto uuid : mObjectsToCheck) {
-            RebuildObjectCollision(uuid);
+            RebuildObjectCollision(uuid, true);
         }
         mObjectsToCheck.Clear();
+        FlushPendingBodies();
     }
     PLU_PROFILE_SCOPE("Physics Tick");
     if (updateBodies) mPhysicsSystem->Update(deltaTime, 1, mAllocator.GetRaw(), JoltPhysics::GetJoltThreadPool().GetRaw());
@@ -429,6 +442,41 @@ void Plu::PhysicsWorld::OnUpdate(float deltaTime, bool updateBodies)
 
     mWireframeRenderer->PackInto(sceneWorld->GetRawDebugLineArray());
     mPointRenderer->PackInto(sceneWorld->GetRawDebugPointArray());
+}
+
+void Plu::PhysicsWorld::FlushPendingBodies()
+{
+    if (mPendingBodyObjects.IsEmpty()) return;
+    PLU_PROFILE_SCOPE("Physics FlushPendingBodies");
+
+    JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+    DynamicArray<JPH::BodyID> activeBodies;
+    DynamicArray<JPH::BodyID> inactiveBodies;
+
+    // Looked up by object rather than stored as IDs: a deferred body may have been replaced or
+    // destroyed since it was created, and handing a destroyed ID to AddBodiesPrepare is fatal.
+    for (UInt64 uuid : mPendingBodyObjects) {
+        if (!mBodyPerObject.Contains(uuid)) continue;
+        TUsePointer<PhysicsBody> body = mBodyPerObject[uuid];
+        if (!body->IsValid() || bodyInterface.IsAdded(body->GetID())) continue;
+
+        (body->NeedsActivation() ? activeBodies : inactiveBodies).PushBack(body->GetID());
+    }
+    mPendingBodyObjects.Clear();
+
+    auto addBatch = [&bodyInterface](DynamicArray<JPH::BodyID>& bodyIds, JPH::EActivation activation) {
+        if (bodyIds.IsEmpty()) return;
+        const int count = static_cast<int>(bodyIds.Size());
+        JPH::BodyInterface::AddState addState = bodyInterface.AddBodiesPrepare(bodyIds.Data(), count);
+        bodyInterface.AddBodiesFinalize(bodyIds.Data(), count, addState, activation);
+    };
+    addBatch(activeBodies, JPH::EActivation::Activate);
+    addBatch(inactiveBodies, JPH::EActivation::DontActivate);
+
+    if (activeBodies.Size() + inactiveBodies.Size() >= kOptimizeBroadPhaseMinBatch) {
+        PLU_PROFILE_SCOPE("Physics OptimizeBroadPhase");
+        mPhysicsSystem->OptimizeBroadPhase();
+    }
 }
 
 unsigned int Plu::PhysicsWorld::GetNumOfBodies() const

@@ -5,6 +5,7 @@
 #include "PluEngine/Physics/PhysicsBody.h"
 #include <Jolt/Physics/Body/Body.h> // CreateBody hands back a Body*, we only need its ID
 #include "PluEngine/Physics/PhysicsLayers.h"
+#include "PluEngine/Log.h"
 
 using namespace Plu;
 
@@ -16,7 +17,8 @@ PhysicsBody::PhysicsBody(
     PhysicsBodyType            Type,
     float               Friction,
     float               Restitution,
-    float               Mass)
+    float               Mass,
+    bool                DeferAdd)
     : mBodyInterface(BodyInterface)
 {
     JPH::BodyCreationSettings Settings(
@@ -48,12 +50,26 @@ PhysicsBody::PhysicsBody(
 
     mNeedsActivation = Type != PhysicsBodyType::Static;
 
-    mBodyID = mBodyInterface.CreateAndAddBody(
-        Settings,
-        mNeedsActivation
-            ? JPH::EActivation::Activate
-            : JPH::EActivation::DontActivate
-    );
+    if (DeferAdd) {
+        // Created but not inserted — the caller adds this in a batch. Until then the body exists
+        // (it has an ID) but is invisible to simulation and queries.
+        JPH::Body* body = mBodyInterface.CreateBody(Settings);
+        mBodyID = body ? body->GetID() : JPH::BodyID();
+    } else {
+        mBodyID = mBodyInterface.CreateAndAddBody(
+            Settings,
+            mNeedsActivation
+                ? JPH::EActivation::Activate
+                : JPH::EActivation::DontActivate
+        );
+    }
+
+    mBodyType = Type;
+
+    // Jolt hands back no body once PhysicsWorld's kMaxBodies is reached.
+    if (mBodyID.IsInvalid()) {
+        PLU_CORE_ERROR("Failed to create physics body — the physics system is out of bodies");
+    }
 }
 
 PhysicsBody::~PhysicsBody() {
