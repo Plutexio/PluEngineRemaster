@@ -208,18 +208,18 @@
     { "name": "PluDebugLinux-Runtime",     "configurePreset": "PluDebugLinux-Runtime" },
     { "name": "PluDebugLinux-Tests",       "configurePreset": "PluDebugLinux-Tests" },
     { "name": "PluDebugLinux-Tests-TSan",  "configurePreset": "PluDebugLinux-Tests-TSan" },
-    { "name": "PluDebugWindows-Editor",    "configurePreset": "PluDebugWindows-Editor" },
-    { "name": "PluDebugWindows-Runtime",   "configurePreset": "PluDebugWindows-Runtime" },
+    { "name": "PluDebugWindows-Editor",    "configurePreset": "PluDebugWindows-Editor", "configuration": "Debug" },
+    { "name": "PluDebugWindows-Runtime",   "configurePreset": "PluDebugWindows-Runtime", "configuration": "Debug" },
     { "name": "PluReleaseLinux-Editor",    "configurePreset": "PluReleaseLinux-Editor" },
     { "name": "PluReleaseLinux-Runtime",   "configurePreset": "PluReleaseLinux-Runtime" },
-    { "name": "PluReleaseWindows-Editor",  "configurePreset": "PluReleaseWindows-Editor" },
-    { "name": "PluReleaseWindows-Runtime", "configurePreset": "PluReleaseWindows-Runtime" },
+    { "name": "PluReleaseWindows-Editor",  "configurePreset": "PluReleaseWindows-Editor", "configuration": "Release" },
+    { "name": "PluReleaseWindows-Runtime", "configurePreset": "PluReleaseWindows-Runtime", "configuration": "Release" },
     { "name": "PluRelDbgLinux-Editor",     "configurePreset": "PluRelDbgLinux-Editor" },
     { "name": "PluRelDbgLinux-Runtime",    "configurePreset": "PluRelDbgLinux-Runtime" },
-    { "name": "PluRelDbgWindows-Editor",   "configurePreset": "PluRelDbgWindows-Editor" },
-    { "name": "PluRelDbgWindows-Runtime",  "configurePreset": "PluRelDbgWindows-Runtime" },
+    { "name": "PluRelDbgWindows-Editor",   "configurePreset": "PluRelDbgWindows-Editor", "configuration": "RelWithDebInfo" },
+    { "name": "PluRelDbgWindows-Runtime",  "configurePreset": "PluRelDbgWindows-Runtime", "configuration": "RelWithDebInfo" },
 
     { "name": "PluDistLinux-Editor",       "configurePreset": "PluDistLinux-Editor",   "targets": ["DistributeEditor"] },
-    { "name": "PluDistWindows-Editor",     "configurePreset": "PluDistWindows-Editor", "targets": ["DistributeEditor"] }
+    { "name": "PluDistWindows-Editor",     "configurePreset": "PluDistWindows-Editor", "configuration": "Release", "targets": ["DistributeEditor"] }
   ]
 }

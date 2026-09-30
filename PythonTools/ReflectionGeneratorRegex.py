@@ -1110,6 +1110,21 @@ def _NeedsLambda(Params: List[ParamInfo], ReturnType: str, AllClasses: List = []
             return True
     return False
 
+def _AssetUsePointerInner(CppType: str, AllClasses: List = []):
+    """For TUsePointer<T> where T derives from IAssetData returns T's TypeInfo, otherwise None.
+    Such fields cannot use def_readwrite: pybind11 has no caster for TUsePointer, and Python only
+    ever holds assets as raw IAssetData* (e.g. from GetAssetByUUID)."""
+    Clean = re.sub(r"\bPlu::", "", _StripQualifiers(CppType)).strip()
+    M = _RE_USE_POINTER.match(Clean)
+    if not M or not AllClasses:
+        return None
+    InnerT = re.sub(r"\bPlu::", "", M.group(1)).strip()
+    InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerT), None)
+    if InnerTypeInfo and IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
+        return InnerTypeInfo
+    return None
+
+
 def _ReturnsPointer(ReturnType: str) -> bool:
     """Zwraca True jeśli typ zwracany jest surowym wskaźnikiem (nie TUsePointer/TOwningPointer)."""
     RT = ReturnType.strip()
@@ -1573,7 +1588,29 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 # Sprawdź czy typ to TClassPointer<T> – wymaga custom settera przez TypeRegistry
                 CleanPropType = re.sub(r"\bPlu::", "", _StripQualifiers(Prop.Type)).strip()
                 MCP = re.match(r"^(?:Plu::)?TClassPointer\s*<(.+)>$", CleanPropType)
-                if MCP:
+                AssetInner = _AssetUsePointerInner(Prop.Type, AllClasses)
+                if AssetInner and not (Prop.GetterName or Prop.SetterName):
+                    # TUsePointer<T:IAssetData> field: exposed as a raw IAssetData* (pybind11 downcasts to
+                    # the most derived registered type); the setter recovers the TUsePointer from the asset
+                    # manager and rejects assets of the wrong type instead of reinterpreting them.
+                    T = AssetInner.Name
+                    Getter = (f"[]({Cls.Name}& self) {{ return static_cast<IAssetData*>(self.{Prop.Name}.GetRaw()); }}")
+                    if ReadOnly:
+                        B.write(f'        .def_property_readonly("{Prop.Name}", {Getter}, py::return_value_policy::reference')
+                    else:
+                        Setter = (
+                            f"[]({Cls.Name}& self, IAssetData* asset) {{ "
+                            f"TUsePointer<{T}> typed; "
+                            f"if (asset) typed = DynamicCast<{T}>(GetAssetUserAsRaw(asset)); "
+                            f"if (asset && !typed) throw py::type_error(\"{Cls.Name}.{Prop.Name} expects a {T} asset\"); "
+                            f"self.{Prop.Name} = typed; "
+                            f"}}"
+                        )
+                        B.write(f'        .def_property("{Prop.Name}", {Getter}, {Setter}, py::return_value_policy::reference')
+                    if PropDoc:
+                        B.write(f', "{PropDoc}"')
+                    B.write(")\n")
+                elif MCP:
                     # def_property z getterem zwracającym pole i setterem przez TypeRegistry
                     Getter = f"[](const {Cls.Name}& self) {{ return self.{Prop.Name}; }}"
                     if ReadOnly:
@@ -1780,7 +1817,20 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 PyType   = CppTypeToPy(Prop.Type)
                 ReadOnly = HasPyParam(Prop.Params, "PyReadOnly")
                 HasGetterSetter = bool(Prop.GetterName and Prop.SetterName)
-                if ReadOnly or HasGetterSetter:
+                AssetInner = _AssetUsePointerInner(Prop.Type, AllClasses)
+                if AssetInner and not (Prop.GetterName or Prop.SetterName):
+                    # Mirrors the binding: getter yields the asset (as IAssetData when T is not exported),
+                    # setter takes any IAssetData and type-checks it at runtime.
+                    GetType = f"Optional[{GetPyName(AssetInner)}]" if IsPyExported(AssetInner) else "Optional[IAssetData]"
+                    P.write(f"    @property\n")
+                    P.write(f"    def {Prop.Name}(self) -> {GetType}:\n")
+                    if PropDoc:
+                        P.write(f'        """{PropDoc}"""\n')
+                    P.write(f"        ...\n")
+                    if not ReadOnly:
+                        P.write(f"    @{Prop.Name}.setter\n")
+                        P.write(f"    def {Prop.Name}(self, value: Optional[IAssetData]) -> None: ...\n")
+                elif ReadOnly or HasGetterSetter:
                     P.write(f"    @property\n")
                     P.write(f"    def {Prop.Name}(self) -> {PyType}:\n")
                     if PropDoc:

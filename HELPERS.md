@@ -1444,6 +1444,17 @@ Jolt adds a sub-shape's `GetCenterOfMass()` itself when building a compound, so 
 | `TypeInfo* GetTType() const` | `T::GetStaticClass()`. |
 | `operator TypeInfo*()` | Niejawna konwersja do `TypeInfo*`. |
 
+Serialized as the class name; an unset pointer round-trips as `null`. Deserializing a class that no
+longer exists or no longer derives from `T` logs a warning and keeps the field's default. In the
+editor the field shows a combo whose popup is the `TypeTree` picker below.
+
+**Reflection editor widgets** (PluCore, editor build only — `PLU_ENGINE_EDITOR_BUILD`):
+
+| Function | File | Description |
+|---|---|---|
+| `bool ImGuiWidgets::TypeTree(TypeInfo* root, TypeInfo** output, const char* confirmLabel = nullptr)` | `PluEngine/Core/Widgets/TypeTree.h` | Type picker: search box + tree of `root` and every reflected type derived from it (abstract types shown dimmed, not pickable), descendant counts, a refresh button that picks up newly registered Python classes. A click stores the type in `*output`; returns `true` when the pick is confirmed (the `confirmLabel` footer button, a double-click, or a click on the current selection). The hierarchy is cached across calls. |
+| `bool ClassPointerEditorControl(TypeInfo** type, TypeInfo* baseType, const String& name)` | `PluEngine/Core/Reflection/TypeTraits.h` | Combo with a `TypeTree` popup rooted at `baseType` — what `TypeSerializer<TClassPointer<T>>::EditorControl` draws. Writes `*type` and returns `true` only on a confirmed change. |
+
 **Inne:**
 
 | Funkcja | Opis |

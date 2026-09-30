@@ -3,6 +3,7 @@
 //
 
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/Core/Widgets/TypeTree.h"
 
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -98,6 +99,29 @@ bool Plu::ArrayTreeEditorControl(void* arrayId, const String& name, UInt64 count
         ImGui::TreePop();
     }
     ImGui::PopID();
+    return changed;
+}
+
+bool Plu::ClassPointerEditorControl(TypeInfo** type, TypeInfo* baseType, const String& name)
+{
+    // The pick has to survive between frames until it is confirmed, and only one combo popup can be
+    // open at a time, so a single slot is enough. Re-seeded from the field every time the popup opens.
+    static TypeInfo* pending = nullptr;
+
+    bool changed = false;
+    const char* preview = *type ? (*type)->TypeName.CStr() : "None";
+    if (ImGui::BeginCombo(name.CStr(), preview, ImGuiComboFlags_HeightLargest))
+    {
+        if (ImGui::IsWindowAppearing()) {
+            pending = *type;
+        }
+        if (ImGuiWidgets::TypeTree(baseType, &pending, "Select")) {
+            changed = pending != *type;
+            *type = pending;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndCombo();
+    }
     return changed;
 }
 

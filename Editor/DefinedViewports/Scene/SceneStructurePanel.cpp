@@ -20,6 +20,7 @@
 #include "PluEngine/Platform/Window.h"
 #include "UI/IconsFontAwesome7.h"
 #include "Utils/RandomTransformUtils.h"
+#include "PluEngine/Core/Widgets/TypeTree.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
@@ -657,8 +658,6 @@ void Plu::SceneStructurePanel::DrawRandomizeWindow()
 	ImGui::BeginDisabled(nothingToDo);
 	if (ImGui::Button("Apply", ImVec2(120, 0))) {
 		ApplyRandomTransforms();
-		// Okno zostaje otwarte — przy losowym seedzie kolejne kliknięcia pozwalają
-		// "przerzucać" układ aż do skutku.
 	}
 	ImGui::EndDisabled();
 	if (nothingToDo && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -687,27 +686,11 @@ void Plu::SceneStructurePanel::OnUpdate(float deltaTime)
 			TUsePointer<SceneWorld> sceneWorld = gEditorAppContext->EditorScenesManager->GetCurrentWorld();
 			if (ImGui::BeginMenu(ICON_FA_PLUS " Spawn Game Object"))
 			{
-				static DynamicArray<TypeInfo*> componentTypes;
-				if (componentTypes.IsEmpty()) {
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObject::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				if (ImGui::Button("Refresh")) {
-					componentTypes.Clear();
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObject::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				ImGui::Separator();
-				for (auto type : componentTypes) {
-					if (ImGui::Button(type->TypeName.CStr())) {
-						sceneWorld->SpawnGameObject(type);
-					}
+				static TypeInfo* selected = nullptr;
+				if (ImGuiWidgets::TypeTree(GameObject::GetStaticClass(), &selected, ICON_FA_PLUS " Spawn")) {
+					gEditorAppContext->EditorScenesManager->GetCurrentWorld()->SpawnGameObject(selected);
+					ImGui::CloseCurrentPopup();
+					selected = nullptr;
 				}
 				ImGui::EndMenu();
 			}

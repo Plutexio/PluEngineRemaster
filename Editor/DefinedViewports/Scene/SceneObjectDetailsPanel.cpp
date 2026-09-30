@@ -21,6 +21,7 @@
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "Utils/RGBTransformDragger.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
+#include "PluEngine/Core/Widgets/TypeTree.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
@@ -278,27 +279,19 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 			TUsePointer<GameObject> gameObj = gEngineObjectManager->GetObjectAsUser<GameObject>(gEditorAppContext->EditorState.SelectedGameObject);
 
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0,1,0,1));
-			if (ImGui::BeginMenu(ICON_FA_PLUS "")) {
-				//obj->AddComponent(WorldComponent::GetStaticClass());
-				static DynamicArray<TypeInfo*> componentTypes;
-				if (componentTypes.IsEmpty()) {
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObjectComponent::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				for (auto type : componentTypes) {
-					if (ImGui::Button(type->TypeName.CStr())) {
-						gameObj->AddComponent(type, type->TypeName + "New");
-						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
-							PanelChangedAsset();
-						}
+			bool open = ImGui::BeginMenu(ICON_FA_PLUS "");
+			ImGui::PopStyleColor();
+			if (open) {
+				static TypeInfo* selected = nullptr;
+				if (ImGuiWidgets::TypeTree(GameObjectComponent::GetStaticClass(), &selected, "Add Component")) {
+					gameObj->AddComponent(selected, selected->TypeName + "New");
+					selected = nullptr;
+					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
+						PanelChangedAsset();
 					}
 				}
 				ImGui::EndMenu();
 			}
-			ImGui::PopStyleColor();
 
 			//Component Tree
 			// Drag a component onto another one to attach it, or onto this row to detach it back

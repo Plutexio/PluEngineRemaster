@@ -41,6 +41,10 @@ cmake --build --preset PluDebugLinux-Runtime
 
 Other presets follow the pattern `Plu{Debug|Release|RelDbg}{Linux|Windows}-{Editor|Runtime}`.
 
+### vcpkg
+
+`vcpkg/` is a gitignored clone **pinned** to `PLU_VCPKG_COMMIT` in `cmake/PluVcpkg.cmake`. Every configure clones it if missing, fetches + checks out the pin if HEAD differs (refuses if the clone has local changes), and re-runs the bootstrap when the executable doesn't match the checkout. Never `git pull` inside `vcpkg/` (or use CLion's "Update vcpkg"): the tool and `scripts/` feed every package's ABI hash, so moving them rebuilds the whole dependency tree — and the next configure moves it back to the pin anyway. To update vcpkg, change the pin (and optionally `builtin-baseline` in `vcpkg.json`) in a commit. Patch ports only through overlays in `vcpkg-overlays/`; overlays ignore `builtin-baseline` and `overrides`, so their version is whatever the overlay says. `-DPLU_VCPKG_SYNC=OFF` leaves the checkout alone; `-DPLU_VCPKG_USE_ENV_ROOT=ON` uses `$VCPKG_ROOT` unpinned.
+
 ## Reflection Code Generation
 
 **Critical**: any time you add or change `PLU_CLASS`, `PLU_STRUCT`, `PLU_ENUM`, `PLU_PROPERTY`, or `PLU_FUNCTION` annotations in a header, the reflection generator must be re-run before building. It scans header files with regex (no libclang) and writes `*.generated.{h,cpp}` plus `PluEngineBindings.cpp` / `PluEngine.pyi` into `ReflectionCache/`. The build (CMake) runs it automatically as a pre-build step; run it manually only when iterating outside a build. Note: `ReflectionCache/` is gitignored — it is regenerated on every build.

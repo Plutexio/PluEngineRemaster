@@ -29,6 +29,10 @@ namespace Plu
 	PLUCORE_API bool UUIDForAssetUI(void* value, String name, TypeInfo* typeInfo, PropertyInfo* propertyInfo);
 	// Preset dropdown for CollisionProfileRef (editor-only; defined in TypeTraits.cpp).
 	PLUCORE_API bool CollisionProfileRefEditorControl(void* value, const String& name);
+	// Class picker for TClassPointer<T> (editor-only; defined in TypeTraits.cpp): a combo whose popup is
+	// ImGuiWidgets::TypeTree rooted at `baseType`. Writes `*type` and returns true only on a confirmed
+	// change. Type-erased so the tree widget stays out of this header.
+	PLUCORE_API bool ClassPointerEditorControl(TypeInfo** type, TypeInfo* baseType, const String& name);
 
 	// Generic chunked-array editor widget (editor-only; defined in TypeTraits.cpp), used by
 	// TypeSerializer<DynamicArray<T>>::EditorControl below. Type-erased on purpose so the actual
@@ -804,13 +808,32 @@ namespace Plu
 		static nlohmann::json Serialize(void* dataToSerialize)
 		{
 			TClassPointer<T>* classPtr = static_cast<TClassPointer<T> *>(dataToSerialize);
+			// An unset class pointer is legal (default-constructed) and round-trips as null.
+			if (!classPtr->GetRawType()) {
+				return nullptr;
+			}
 			return classPtr->GetRawType()->TypeName.CStr();
 		}
 
 		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
 		{
 			TClassPointer<T>* classPtr = static_cast<TClassPointer<T> *>(outValue);
-			*classPtr = TypeRegistry::GetInstance()->GetTypeOfName(json.get<std::string>().c_str());
+			if (json.is_null()) {
+				*classPtr = TClassPointer<T>();
+				return;
+			}
+			if (!json.is_string()) {
+				return;
+			}
+			// A class that no longer exists, or no longer derives from T, keeps the field's default
+			// instead of tripping TClassPointer's assert.
+			TypeInfo* type = TypeRegistry::GetInstance()->GetTypeOfName(json.get<std::string>().c_str());
+			if (!type || !type->IsDerivedOfOrSame(T::GetStaticClass())) {
+				PLU_CORE_WARN("TClassPointer<{}>: class '{}' not found or not derived from it, keeping the default",
+				              T::GetStaticClass()->TypeName.CStr(), json.get<std::string>());
+				return;
+			}
+			*classPtr = type;
 		}
 
 		static DynamicArray<TypeInfo*> GatherDerivedTypes()
@@ -826,56 +849,18 @@ namespace Plu
 
 		static bool EditorControl(void* value, const String& name)
 		{
-			static HashMap<String, DynamicArray<TypeInfo*>> typesPerT;
-
-			const String typeKey = T::GetStaticClass()->TypeName;
-			if (!typesPerT.Contains(typeKey)) {
-				typesPerT[typeKey] = GatherDerivedTypes();
+#ifdef PLU_ENGINE_EDITOR_BUILD
+			TClassPointer<T>* classPtr = static_cast<TClassPointer<T> *>(value);
+			TypeInfo* type = classPtr->GetRawType();
+			if (!ClassPointerEditorControl(&type, T::GetStaticClass(), name)) {
+				return false;
 			}
-			DynamicArray<TypeInfo*>& types = typesPerT[typeKey];
-
-			String preview;
-			TypeInfo* selectedType = nullptr;
-			TClassPointer<T>* ptr = static_cast<TClassPointer<T> *>(value);
-			if (types.Contains(ptr->GetRawType())) {
-				preview = ptr->GetRawType()->TypeName;
-				selectedType = ptr->GetRawType();
-			}
-
-			if (ImGui::BeginCombo(name.CStr(), preview.CStr(), 0))
-			{
-				// Refresh lives inside the dropdown to keep the row uncluttered.
-				if (ImGui::SmallButton("Refresh")) {
-					types = GatherDerivedTypes();
-				}
-				ImGui::SameLine();
-
-				static ImGuiTextFilter filter;
-				if (ImGui::IsWindowAppearing())
-				{
-					ImGui::SetKeyboardFocusHere();
-					filter.Clear();
-				}
-				ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-				filter.Draw("##Filter", -FLT_MIN);
-
-				bool changed = false;
-
-				for (int n = 0; n < types.Size(); n++)
-				{
-					String objName = types.At(n)->TypeName;
-					const bool is_selected = (types.At(n) == selectedType);
-					if (filter.PassFilter(objName.CStr()))
-						if (ImGui::Selectable(objName.CStr(), is_selected)) {
-							selectedType = types.At(n);
-							*ptr = types.At(n);
-							changed = true;
-						}
-				}
-				ImGui::EndCombo();
-				return changed;
-			}
+			*classPtr = type;
+			return true;
+#else
+			ImGui::Text("No Editor Utils in engine! Cannot show class picker UI");
 			return false;
+#endif
 		}
 	};
 	//Here Serializer

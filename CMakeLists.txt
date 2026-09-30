@@ -1,97 +1,27 @@
 cmake_minimum_required(VERSION 4.0.2)
-# Minimalna wymagana wersja vcpkg (data bazując na commicie/roku)
-set(VCPKG_MIN_VERSION "2024-01-01")
+# vcpkg: pinned checkout in vcpkg/, synced and bootstrapped on every configure. Must run before
+# project(), which loads the toolchain file it sets.
+include("${CMAKE_SOURCE_DIR}/cmake/PluVcpkg.cmake")
 
-# --- Sprawdzenie wersji systemowego vcpkg ---
-function(check_vcpkg_version vcpkg_exe out_ok)
-    execute_process(
-            COMMAND ${vcpkg_exe} version
-            OUTPUT_VARIABLE _vcpkg_ver_output
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    string(REGEX MATCH "[0-9]{4}-[0-9]{2}-[0-9]{2}" _vcpkg_date "${_vcpkg_ver_output}")
-    if(_vcpkg_date STREQUAL "")
-        set(${out_ok} FALSE PARENT_SCOPE)
-        return()
-    endif()
-    if(_vcpkg_date STRLESS "${VCPKG_MIN_VERSION}")
-        message(STATUS "System vcpkg (${_vcpkg_date}) is too old (required >= ${VCPKG_MIN_VERSION})")
-        set(${out_ok} FALSE PARENT_SCOPE)
-    else()
-        message(STATUS "System vcpkg (${_vcpkg_date}) meets requirements (>= ${VCPKG_MIN_VERSION})")
-        set(${out_ok} TRUE PARENT_SCOPE)
-    endif()
-endfunction()
-
-# --- Ustal ścieżkę do vcpkg ---
-set(VCPKG_PATH "")
-
-if(DEFINED ENV{VCPKG_ROOT})
-    set(_sys_vcpkg_exe "$ENV{VCPKG_ROOT}/vcpkg")
-    check_vcpkg_version("${_sys_vcpkg_exe}" _sys_vcpkg_ok)
-    if(_sys_vcpkg_ok)
-        set(VCPKG_PATH "$ENV{VCPKG_ROOT}")
-        message(STATUS "Using system vcpkg (VCPKG_ROOT): ${VCPKG_PATH}")
-    endif()
-endif()
-
-if(VCPKG_PATH STREQUAL "" AND EXISTS "${CMAKE_SOURCE_DIR}/vcpkg/.vcpkg-root")
-    set(_local_vcpkg_exe "${CMAKE_SOURCE_DIR}/vcpkg/vcpkg")
-    check_vcpkg_version("${_local_vcpkg_exe}" _local_vcpkg_ok)
-    if(_local_vcpkg_ok)
-        set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-        message(STATUS "Using local vcpkg copy: ${VCPKG_PATH}")
-    else()
-        message(STATUS "Local vcpkg copy is too old — updating...")
-        execute_process(
-                COMMAND git -C "${CMAKE_SOURCE_DIR}/vcpkg" pull
-                RESULT_VARIABLE _git_pull_result
-        )
-        if(_git_pull_result EQUAL 0)
-            set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-            message(STATUS "Local vcpkg updated successfully.")
-        else()
-            message(WARNING "Failed to update local vcpkg.")
-        endif()
-    endif()
-endif()
-
-if(VCPKG_PATH STREQUAL "")
-    message(STATUS "No suitable vcpkg found. Cloning into ${CMAKE_SOURCE_DIR}/vcpkg...")
-    set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-    execute_process(COMMAND git clone https://github.com/microsoft/vcpkg.git ${VCPKG_PATH})
-    message(STATUS "vcpkg cloned successfully!")
-
-    if(WIN32)
-        execute_process(COMMAND ${VCPKG_PATH}/bootstrap-vcpkg.bat)
-    else()
-        execute_process(COMMAND ${VCPKG_PATH}/bootstrap-vcpkg.sh -disableMetrics)
-    endif()
-endif()
-
-# --- Load toolchain ---
-if(EXISTS "${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake")
-    set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/vcpkg-overlays" CACHE STRING "")
-    # x64-linux-plu lives here: stock x64-linux with Jolt built shared (see the triplet file).
-    set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/vcpkg-triplets" CACHE STRING "")
-    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
-    include("${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake")
-endif()
-
-set(VCPKG_MANIFEST_MODE ON CACHE BOOL "")
 project(PluEngine)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Multi-config generators (Visual Studio) only. Distribution builds are Release + PLU_DISTRIBUTION,
+# not a configuration of their own.
 set(CMAKE_CONFIGURATION_TYPES
         Debug
         Release
-        Distribution
+        RelWithDebInfo
         CACHE STRING "" FORCE
 )
+
+# Reconfigure when a `git pull` changes what vcpkg installs: vcpkg.json is tracked by the vcpkg
+# toolchain itself and cmake/PluVcpkg.cmake (the pin) by include(), but overlay ports are not.
+file(GLOB_RECURSE PLU_VCPKG_OVERLAY_FILES "${CMAKE_SOURCE_DIR}/vcpkg-overlays/*")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PLU_VCPKG_OVERLAY_FILES})
 
 
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
@@ -128,9 +58,16 @@ endif()
 if(EXISTS "${REQ_FILE}")
     if("${REQ_FILE}" IS_NEWER_THAN "${STAMP_FILE}")
         message(STATUS "Aktualizacja pakietów Python...")
-        execute_process(COMMAND "${VENV_PATH}/${VENV_BIN}/pip" install -r "${REQ_FILE}")
-        file(WRITE "${STAMP_FILE}" "")
+        execute_process(COMMAND "${VENV_PATH}/${VENV_BIN}/pip" install -r "${REQ_FILE}"
+                        RESULT_VARIABLE PIP_RESULT)
+        # Stamp only on success, so a failed install is retried on the next configure.
+        if(PIP_RESULT EQUAL 0)
+            file(WRITE "${STAMP_FILE}" "")
+        else()
+            message(WARNING "pip install -r ${REQ_FILE} failed (exit code ${PIP_RESULT}).")
+        endif()
     endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${REQ_FILE}")
 endif()
 
 
