@@ -155,6 +155,15 @@ namespace Plu
 		PLU_FUNCTION()
 		Vec3 GetWorldScale();
 
+		// World-space unit axes of this component, read straight from its world matrix (so they
+		// include every parent's rotation). Same convention as GetForwardVector: forward is -Z.
+		PLU_FUNCTION()
+		Vec3 GetWorldForwardVector();
+		PLU_FUNCTION()
+		Vec3 GetWorldRightVector();
+		PLU_FUNCTION()
+		Vec3 GetWorldUpVector();
+
 		PLU_FUNCTION()
 		void SetWorldLocation(Vec3 newLoc);
 		PLU_FUNCTION()

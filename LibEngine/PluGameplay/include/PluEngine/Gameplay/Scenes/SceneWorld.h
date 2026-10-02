@@ -10,6 +10,7 @@
 #include "PluEngine/Gameplay/Controller.h"
 #include "PluEngine/Gameplay/GameMode.h"
 #include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
+#include "PluEngine/Gameplay/RaycastInfo.h"
 
 namespace Plu
 {
@@ -223,6 +224,17 @@ namespace Plu
 		TUsePointer<GameObject> GetGameObjectOfClass(TClassPointer<GameObject> gameObjectClass);
 		PLU_FUNCTION(PyExport)
 		DynamicArray<TUsePointer<GameObject>> GetAllGameObjectsOfClass(TClassPointer<GameObject> gameObjectClass);
+
+		// Casts a ray against this world's physics bodies and reports the closest hit. Answered by
+		// the physics world through the "Raycast" event; without one (no physics module) it never hits.
+		// Bodies only exist once the physics tick has built them, so objects spawned this frame are
+		// not hit yet. Start/End are world-space, in metres. The bodies of IgnoredObjects are skipped
+		// (null entries are fine) — pass the caster itself when the ray starts inside its own collider.
+		PLU_FUNCTION(PyExport)
+		RaycastHitInfo ShootRaycast(const Vec3& Start, const Vec3& End, const DynamicArray<GameObject*>& IgnoredObjects = DynamicArray<GameObject*>{});
+		// Same as ShootRaycast, with the end point at Start + normalize(Direction) * Length.
+		PLU_FUNCTION(PyExport)
+		RaycastHitInfo ShootRaycastInDirection(const Vec3& Start, const Vec3& Direction, float Length, const DynamicArray<GameObject*>& IgnoredObjects = DynamicArray<GameObject*>{});
 
 		void JoinPlayerLocally(UInt16 playerID);
 	};

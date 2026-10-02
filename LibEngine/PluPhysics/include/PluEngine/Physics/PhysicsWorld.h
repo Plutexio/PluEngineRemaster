@@ -19,6 +19,7 @@ namespace JPH
 
 namespace Plu
 {
+    struct RaycastHitInfo;
     class JoltPointRenderer;
     class JoltWireframeRenderer;
     class PhysicsBody;
@@ -51,7 +52,7 @@ namespace Plu
         HashSet<UInt64> mObjectsToCheck;
 
         HashMap<UInt64, TOwningPointer<PhysicsBody>> mBodyPerObject;
-        // Objects whose body was created with deferAdd and still waits for FlushPendingBodies.
+        HashMap<UInt32, UInt64> mBodyToObjectMap;
         HashSet<UInt64> mPendingBodyObjects;
         HashMap<UInt64, std::pair<Int32, Int32>> mRotLocChangesEventsPerObject;
         HashMap<UInt64, HashMap<UInt64, Int32>> mShapeChangesEventsPerObjectForComponents;
@@ -103,6 +104,10 @@ namespace Plu
 #ifdef PLU_ENGINE_EDITOR_BUILD
         void RebuildObjectsThatUseMesh(StaticMesh* staticMesh);
 #endif
+
+        // Closest hit along the segment, skipping the bodies of the objects in ignoredObjectUuids.
+        RaycastHitInfo ShootRaycast(Vec3 Start, Vec3 End, const DynamicArray<UInt64>& ignoredObjectUuids = {});
+        RaycastHitInfo ShootRaycast(Vec3 Start, Vec3 Direction, float Length, const DynamicArray<UInt64>& ignoredObjectUuids = {});
 
         [[nodiscard]] unsigned int GetNumOfBodies() const;
 

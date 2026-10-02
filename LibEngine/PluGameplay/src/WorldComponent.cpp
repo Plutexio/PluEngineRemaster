@@ -285,6 +285,21 @@ Vec3 Plu::WorldComponent::GetWorldRotation()
 	return glm::degrees(glm::eulerAngles(glm::quat_cast(rotMat)));
 }
 
+Vec3 Plu::WorldComponent::GetWorldForwardVector()
+{
+	return glm::normalize(-Vec3(GetWorldMatrixRef()[2]));
+}
+
+Vec3 Plu::WorldComponent::GetWorldRightVector()
+{
+	return glm::normalize(Vec3(GetWorldMatrixRef()[0]));
+}
+
+Vec3 Plu::WorldComponent::GetWorldUpVector()
+{
+	return glm::normalize(Vec3(GetWorldMatrixRef()[1]));
+}
+
 void Plu::WorldComponent::SetWorldLocation(Vec3 newLoc)
 {
 	Matrix4 parentWorld = (mParentComponent != nullptr)

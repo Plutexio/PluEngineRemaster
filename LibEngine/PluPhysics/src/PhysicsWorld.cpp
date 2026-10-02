@@ -22,6 +22,8 @@
 #include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
 #include "PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
 #include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
+#include "PluEngine/Gameplay/RaycastInfo.h"
+#include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/Physics/JoltIntializer.h"
 #include "PluEngine/Physics/PhysicsCollisionRules.h"
@@ -183,6 +185,8 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
         deferAdd
     );
 
+    mBodyToObjectMap[body->GetID().GetIndexAndSequenceNumber()] = gameObject->GetObjectUUID();
+
     mBodyPerObject.Insert(gameObject->GetObjectUUID(), body);
     if (deferAdd) mPendingBodyObjects.Insert(gameObject->GetObjectUUID());
 
@@ -223,6 +227,43 @@ void Plu::PhysicsWorld::RebuildObjectsThatUseMesh(StaticMesh *staticMesh)
 }
 #endif
 
+Plu::RaycastHitInfo Plu::PhysicsWorld::ShootRaycast(Vec3 Start, Vec3 End, const DynamicArray<UInt64>& ignoredObjectUuids)
+{
+    RaycastHitInfo result;
+    JPH::RRayCast ray;
+    ray.mOrigin = ToJPH(Start);
+    // Jolt's mDirection is the whole ray (direction * length), not the end point.
+    ray.mDirection = ToJPH(End - Start);
+
+    JPH::RayCastResult rayResult;
+
+    JPH::IgnoreMultipleBodiesFilter bodyFilter;
+    bodyFilter.Reserve(static_cast<JPH::uint>(ignoredObjectUuids.Size()));
+    for (UInt64 ignoredUuid : ignoredObjectUuids) {
+        if (mBodyPerObject.Contains(ignoredUuid)) {
+            bodyFilter.IgnoreBody(mBodyPerObject[ignoredUuid]->GetID());
+        }
+    }
+
+    result.Hit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, rayResult, {}, {}, bodyFilter);
+
+    if (result.Hit) {
+        result.HitLocation = ToGLM(ray.GetPointOnRay(rayResult.mFraction));
+        const UInt32 bodyKey = rayResult.mBodyID.GetIndexAndSequenceNumber();
+        if (mBodyToObjectMap.Contains(bodyKey)) {
+            TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
+            result.HitObject = sceneWorld->GetGameObjectByUUID(mBodyToObjectMap[bodyKey]);
+        }
+    }
+
+    return result;
+}
+
+Plu::RaycastHitInfo Plu::PhysicsWorld::ShootRaycast(Vec3 Start, Vec3 Direction, float Length, const DynamicArray<UInt64>& ignoredObjectUuids)
+{
+    return ShootRaycast(Start, Start + Direction * Length, ignoredObjectUuids);
+}
+
 Plu::PhysicsWorld::PhysicsWorld()
 {
     // Falls back to malloc instead of aborting when a step outgrows the preallocated block.
@@ -255,6 +296,11 @@ void Plu::PhysicsWorld::Init()
     sceneWorld->SubscribeToEvent("PhysicsTick", [this](void* data) {
         float deltaTime = *static_cast<float *>(data);
         this->OnUpdate(deltaTime, true);
+    });
+
+    sceneWorld->SubscribeToEvent("Raycast", [this](void* data) {
+        RaycastRequest* request = static_cast<RaycastRequest*>(data);
+        request->Result = ShootRaycast(request->Start, request->End, request->IgnoredObjectUuids);
     });
 
     sceneWorld->SubscribeToEvent("NewComponent", [this](void* data) {

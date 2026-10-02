@@ -69,13 +69,19 @@ void Plu::CharacterPuppet::OnBeginPlay()
 
 bool Plu::CharacterPuppet::CheckGrounded()
 {
-	// The ray starts in the middle of our own capsule, so the body has to be filtered out — Jolt
-	// treats convex shapes as solid and would report a hit at fraction 0 on ourselves.
-	float checkDist = CapsuleHalfHeight + CapsuleRadius + 0.15f;
-	// RaycastHit hit = GetWorld()->GetPhysicsWorld()->Raycast(
-	// 	GetObjectLocation(), Vec3(0.f, -1.f, 0.f), checkDist, RaycastDebugSettings(), { this });
-	// return hit.Hit && hit.HitObject != nullptr; TODO
-	return false;
+	// How far below the bottom of the collider the floor still counts as ground.
+	constexpr float kGroundTolerance = 0.1f;
+
+	TUsePointer<SceneWorld> world = GetWorld();
+	if (!world) return false;
+
+	// The collider is a cylinder (JPH::CylinderShape) centred on the object origin, so its bottom
+	// is CapsuleHalfHeight below it. The ray starts inside our own body, so the body has to be
+	// filtered out — Jolt treats convex shapes as solid and would report a hit at fraction 0 on ourselves.
+	const float checkDist = CapsuleHalfHeight + kGroundTolerance;
+	const RaycastHitInfo hit = world->ShootRaycastInDirection(
+		GetObjectLocation(), Vec3(0.f, -1.f, 0.f), checkDist, { this });
+	return hit.Hit;
 }
 
 void Plu::CharacterPuppet::OnUpdate(float deltaTime)

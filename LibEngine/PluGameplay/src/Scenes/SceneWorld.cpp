@@ -233,6 +233,24 @@ namespace Plu
 		HandleBeginPlay();
 	}
 
+	RaycastHitInfo SceneWorld::ShootRaycast(const Vec3& Start, const Vec3& End, const DynamicArray<GameObject*>& IgnoredObjects)
+	{
+		PLU_PROFILE_SCOPE("SceneWorld ShootRaycast");
+		RaycastRequest request{Start, End, {}, {}};
+		request.IgnoredObjectUuids.Reserve(IgnoredObjects.Size());
+		for (GameObject* ignored : IgnoredObjects) {
+			if (ignored) request.IgnoredObjectUuids.PushBack(ignored->GetObjectUUID());
+		}
+		DispatchEvent("Raycast", &request);
+		return request.Result;
+	}
+
+	RaycastHitInfo SceneWorld::ShootRaycastInDirection(const Vec3& Start, const Vec3& Direction, float Length, const DynamicArray<GameObject*>& IgnoredObjects)
+	{
+		if (glm::length(Direction) <= 0.0f) return {};
+		return ShootRaycast(Start, Start + glm::normalize(Direction) * Length, IgnoredObjects);
+	}
+
 	void SceneWorld::NewGameObjectComponent(const TOwningPointer<GameObjectComponent>& component)
 	{
 		component->OnSetupComponent();

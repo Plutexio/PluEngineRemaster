@@ -217,7 +217,8 @@ namespace Plu
                     const float targetFrameTime = (1.0f / renderFPS) * 0.9f;
                     const float workElapsed = std::chrono::duration<float>(
                         std::chrono::high_resolution_clock::now() - frameStart).count();
-                    const float sleepFor = targetFrameTime - workElapsed;
+                    float sleepFor = targetFrameTime - workElapsed;
+                    sleepFor = ClampF(sleepFor, 0.0f, 10.0f);
                     if (sleepFor > 0.0f) {
                         std::this_thread::sleep_for(std::chrono::duration<float>(sleepFor));
                     }
