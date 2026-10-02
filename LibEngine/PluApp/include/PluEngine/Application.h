@@ -46,6 +46,12 @@ namespace Plu
         // likes and hands the result to the render thread via
         // RenderingManager::SubmitImGuiDrawData(). Apps without UI (e.g. Runtime) skip it.
         virtual void OnTick(float deltaTime) = 0;
+        // Power saving (FrameDemand.h). Run() calls this instead of OnTick() on the iterations where
+        // nothing asked for a frame — roughly four times a second while idle. For cheap housekeeping
+        // that must not stall with the UI (file watchers); call RequestRedraw() if it finds work.
+        virtual void OnIdleTick(float deltaTime) {}
+        // True while the app must produce every frame regardless of demand (a running game).
+        virtual bool WantsContinuousFrames() { return false; }
 
         virtual void OnRequestedGameExit() = 0;
         virtual void OnRequestedWindowClose(TUsePointer<IWindow> window) = 0;

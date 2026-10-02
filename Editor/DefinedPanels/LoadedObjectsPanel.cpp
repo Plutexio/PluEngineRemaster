@@ -3,6 +3,7 @@
 //
 
 #include "LoadedObjectsPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -29,6 +30,8 @@ Plu::String Plu::LoadedObjectsPanel::GetPanelName()
 void Plu::LoadedObjectsPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		EngineObjectManager* objectManager = mApplicationInfo->AppObjectManager.GetRaw();
 		if (!objectManager) {
 			ImGui::TextDisabled("No object manager available.");

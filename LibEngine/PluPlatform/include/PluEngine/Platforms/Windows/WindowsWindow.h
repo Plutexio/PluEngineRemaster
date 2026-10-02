@@ -56,6 +56,11 @@ namespace Plu
 
         void Init() override;
         void OnUpdate(float deltaTime) override;
+        // Power saving (FrameDemand.h). Blocks the calling (main) thread until a message is queued
+        // or the timeout runs out; the message stays queued for OnUpdate().
+        static void WaitForEvents(float timeoutSeconds);
+        // Any thread. Breaks WaitForEvents() out of its wait.
+        static void WakeEventLoop();
         void Shutdown() override;
 
         bool IsRunning() override;

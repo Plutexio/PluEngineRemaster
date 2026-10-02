@@ -3,6 +3,7 @@
 //
 
 #include "LoadedShadersPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
 #include "PluEngine/Application.h"
@@ -19,6 +20,8 @@ Plu::String Plu::LoadedShadersPanel::GetPanelName()
 void Plu::LoadedShadersPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		if (!mApplicationInfo->AppShaderManager) {
 			ImGui::TextDisabled("No shader manager available.");
 			EndPanel();

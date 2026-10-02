@@ -373,6 +373,18 @@ void Plu::RenderSnapshotBuilder::EvaluateSkeletalPose(SkeletalMeshComponent* com
     }
 }
 
+void Plu::RenderSnapshotBuilder::DiscardFrame()
+{
+    if (!mAppInfo) return;
+    TUsePointer<SceneWorld> sceneWorld = mAppInfo->AppScenesManager->GetCurrentWorld();
+    if (!sceneWorld) return;
+#ifdef PLU_ENGINE_EDITOR_BUILD
+    sceneWorld->EditorDebugLineVerts.Clear();
+#endif
+    sceneWorld->mDebugLineVerts.Clear();
+    sceneWorld->mDebugPointVerts.Clear();
+}
+
 void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 {
     if (!mTripleBuffer || !mAppInfo) return;

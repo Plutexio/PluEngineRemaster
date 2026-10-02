@@ -155,8 +155,17 @@ namespace Plu
 		bool mImGuiPassDone = false;      // Render -> Main: that pass is complete.
 		bool mImGuiRenderParked = false;  // Render -> Main: parked, not touching the atlas.
 
+		// Power saving (FrameDemand.h): where the render thread sleeps after an iteration that had
+		// nothing to present. mFrameWorkPending is guarded by the mutex and set by
+		// NotifyFrameAvailable(), so a notify that lands just before the wait is not lost.
+		std::mutex mFrameWorkMtx;
+		std::condition_variable mFrameWorkCv;
+		bool mFrameWorkPending = false;
+		void WaitForFrameWork();
+
 		void RenderThreadEnter();
-		void RenderThreadLoop();
+		// Returns false when the iteration presented nothing (power saving, nothing new).
+		bool RenderThreadLoop();
 		void RenderThreadExit();
 
 		friend PLURENDER_API void DrawStaticMesh(const StaticMesh* staticMesh, RenderingManager* renderingManager);
@@ -212,6 +221,12 @@ namespace Plu
 		void BeginImGuiFrameSubmit();
 		void SubmitImGuiDrawData(UInt32 windowID, ImDrawData* drawData);
 		void EndImGuiFrameSubmit();
+
+		// Any thread. Tells a render thread that is asleep under power saving that there is
+		// something for it: a published snapshot (scene or ImGui) or a queued Request*. Callers
+		// that publish through this manager already do it; call it after publishing a
+		// RenderSnapshot, which the manager does not see.
+		void NotifyFrameAvailable();
 
 		void SetImGuiRenderingIgnorance(bool ignore);
 		bool IsImGuiRenderingIgnored() const;

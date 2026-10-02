@@ -30,6 +30,9 @@ namespace Plu
         // EditorSettingsPanel::IsDisplayProperty.
         PLU_PROPERTY()
         bool VSync = true;
+        // Frames on demand while the editor sits idle (FrameDemand.h). Never applies in PIE.
+        PLU_PROPERTY()
+        bool PowerSaving = true;
         PLU_PROPERTY()
         FullscreenType WindowMode = FullscreenType::Windowed;
         // Rozdzielczość dla WindowMode == Fullscreen. {0,0} = natywna rozdzielczość pulpitu.

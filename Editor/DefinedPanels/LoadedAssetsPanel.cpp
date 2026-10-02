@@ -3,6 +3,7 @@
 //
 
 #include "LoadedAssetsPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -33,6 +34,8 @@ Plu::String Plu::LoadedAssetsPanel::GetPanelName()
 void Plu::LoadedAssetsPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		if (!mApplicationInfo->AppAssetManager) {
 			ImGui::TextDisabled("No asset manager available.");
 			EndPanel();

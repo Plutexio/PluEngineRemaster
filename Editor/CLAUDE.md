@@ -147,6 +147,25 @@ Zakres jest celowo minimalny: **sam widok, nic o tym co się renderuje**. Viewpo
 
 Docelowo: wiele scen otwartych naraz + widok per viewport w snapshocie (własny FBO + własny świat + własna kamera). Uwaga na sprzężenie: **przy równoległych widokach każdy viewport potrzebuje żywej kamery co klatkę**, więc opisany wyżej model „jedna kamera + zapamiętany stan" przestaje wystarczać i zamienia się w realną kamerę per viewport (tak miały Skeleton/Animation przed ujednoliceniem). Skeleton/Animation działają w PIE, bo rysują ImGui draw listami i nie dotykają ścieżki renderu w ogóle.
 
+## Power saving: ask for your frames
+
+With `Power Saving` on (default) the editor only builds frames on demand: every OS event buys one second
+of them, and after that the UI stands still until the next event. A panel or viewport that changes on its
+own has to say so, each frame it draws (`PluEngine/FrameDemand.h`, table in `HELPERS.md`):
+
+- animating at full rate (playing preview, simulation, progress of a running job) → `RequestContinuousRedraw()`;
+- slowly changing numbers (stats, profiler) → `RequestRedrawAfter(kStatsRefreshSeconds)`;
+- background work that just finished and changes what is shown → `RequestRedraw()`.
+
+Call it only while the thing is actually visible and running (inside `BeginPanel()`, guarded by the
+"is playing" flag) — an unconditional call turns power saving off for as long as the panel is open.
+PIE is exempt: it always runs every frame.
+
+A bare pointer move (no button held) only buys **probe frames**: the UI is built, shown only if its draw
+data changed, and the scene is not re-rendered. So anything that changes the *scene* on plain hover (not
+the ImGui draw data) must call `RequestRedraw()` itself, and a tick that queues per-frame data for the
+render snapshot should expect it to be discarded on such frames (`IsProbeFrame()`).
+
 ## Zapis na żądanie (NIE zapisuj od razu)
 
 Nie zapisuj assetu natychmiast po mutacji. Oznacz go brudnym i zostaw zapis ścieżce na żądanie (Ctrl+S w `BeginWindow`/`BeginPanel`, albo „Save All"). Wszystko idzie przez jeden punkt:

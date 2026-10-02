@@ -1236,9 +1236,37 @@ Wątek Main (pętla gry/UI) i wątek Render chodzą niezależnie (rozdzielone pr
 | Funkcja | Opis |
 |---|---|
 | `float GetMainThreadFPS()` | FPS wątku Main (z ostatniej delty pętli głównej). `PLU_FUNCTION` (Python). |
-| `float GetRenderThreadFPS()` | FPS wątku Render (z ostatniej delty render loop). `PLU_FUNCTION` (Python). |
+| `float GetRenderThreadFPS()` | Render thread FPS, measured **between presents** (not loop iterations). Gaps over 0.1 s are an idle stretch under power saving and are not published, so the value holds the last real frame rate. `PLU_FUNCTION` (Python). |
 | `void SetMainThreadDeltaTime(float s)` | Publikuje deltę Main (woła silnik — nie ruszaj). |
 | `void SetRenderThreadDeltaTime(float s)` | Publikuje deltę Render (woła silnik — nie ruszaj). |
+
+### Power saving / frames on demand — `PluEngine/FrameDemand.h` (`namespace Plu`)
+
+With power saving on (editor setting `Power Saving`, default on; never in PIE, never in Runtime) the main
+loop sleeps on OS events and the render thread presents only what is new. Frames are produced on demand:
+every OS event asks for them automatically. **Anything that animates without input must ask itself**, or
+it freezes until the mouse moves. All functions are thread-safe.
+
+| Function | Use |
+|---|---|
+| `RequestRedraw()` | Something changed: frames for the next `kRedrawSettleSeconds` (1 s). Called for every OS event except a bare pointer move; call it when background work finishes (asset loaded, file watcher fired). |
+| `RequestProbe()` | Something happened that may not change the picture: **probe frames** for the next second. Called for mouse motion. The UI is built, but published only if its draw data differs from what is on screen, and the scene is not re-rendered. |
+| `IsProbeFrame()` / `SetProbeFrame(bool)` | Whether the frame being built is a probe frame (main thread; set by `Application::Run`). Check it before publishing anything to the render thread from a tick. |
+| `RequestContinuousRedraw()` | Full frame rate for as long as it keeps being called — covers the next frame only. Call each frame you draw while animating (playing preview, running import). |
+| `RequestRedrawAfter(float seconds)` | One frame no later than `seconds` from now. Re-request each frame for a slow periodic refresh; stats panels use `kStatsRefreshSeconds` (0.5 s = 2 Hz). |
+| `SetPowerSavingEnabled(bool)` / `IsPowerSavingEnabled()` | Global switch. Off by default; the editor sets it from `EditorSettings::PowerSaving`. |
+| `ConsumeFrameDemand()` | `Application::Run` only. |
+| `SetFrameDemandWakeCallback(fn)` | `Application` only — how an off-thread request breaks the event wait. |
+
+**Probe frames and the scene.** A pointer move with no button held never re-renders the scene — only a
+changed ImGui frame is presented (over the unchanged scene image). Scene state that reacts to plain hover
+therefore needs `RequestRedraw()` from whoever changes it. `RenderSnapshotBuilder::DiscardFrame()` runs in
+place of `BuildSnapshotAndPublish` on such frames and drops the per-frame debug geometry the tick queued.
+
+Related hooks: `Application::OnIdleTick(dt)` (runs instead of `OnTick` while idle, ~4 Hz — cheap
+housekeeping only), `Application::WantsContinuousFrames()` (editor: `IsInPIE()`),
+`RenderingManager::NotifyFrameAvailable()` (wakes a sleeping render thread; call after publishing a
+`RenderSnapshot`). Thread-side details are in `MULTITHREADING.md`, section "Power saving".
 
 ### Liczniki renderu (draw calls / instancje / culling) — `PluEngine/PluUtils.h` (`namespace Plu`)
 

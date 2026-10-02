@@ -46,9 +46,71 @@ i niszczony w całości na wątku renderu (`RenderingManager::RenderThreadEnter/
    Stale snapshot (main nie opublikował nowego) = identyczne dane wejściowe, a FBO sceny trzyma
    poprzedni obraz — scena **nie jest re-renderowana** (oszczędność GPU, gdy render wyprzedza main).
 5. `AcquireReadBuffer()` ImGui → pętla po oknach klatki: `MakeGLContextCurrent` +
-   `SetCurrentContext` + `ImGui_ImplOpenGL3_NewFrame` → `RenderDrawData` → swap — co klatkę
-   (backbuffer po swapie jest niezdefiniowany, prezentację trzeba powtarzać zawsze)
+   `SetCurrentContext` + `ImGui_ImplOpenGL3_NewFrame` → `RenderDrawData` → swap
 6. Blit FBO sceny na ekran (gdy ImGui nie renderował) + SwapBuffer
+
+Steps 5-6 (the present) run every iteration with power saving off: the backbuffer is undefined after a
+swap, so a loop that swaps has to redraw. With power saving on they run only when the iteration was
+handed something new — see "Power saving" below.
+
+## Power saving (frames on demand)
+
+API and the rule for UI code are in `HELPERS.md` ("Power saving / frames on demand"); this is the thread side.
+Enabled only by the editor (`EditorSettings::PowerSaving`), bypassed while `WantsContinuousFrames()` (PIE).
+
+**Main** (`Application::Run`). At the top of an iteration `ConsumeFrameDemand()` says whether a frame is
+wanted. If not, Main blocks in `SDLWindow::WaitForEvents` / `WindowsWindow::WaitForEvents` for at most
+`kIdleHeartbeatSeconds` (0.25 s), pumps events (each one calls `RequestRedraw()`), and asks again. Still
+nothing: an **idle tick** — `ProcessPendingWindows`, `OnIdleTick`, `ProcessPendingLoads`,
+`ProcessClosingWindows` — and back to sleep. No `OnTick`, no scene update, no `BuildSnapshotAndPublish`,
+so nothing is published and the render thread stays asleep. The first frame after a wait gets a fixed
+delta (`kFrameDeltaAfterIdle`), not the length of the nap.
+
+**Probe frames.** Mouse motion asks for frames through `RequestProbe()` instead of `RequestRedraw()`.
+A frame wanted only by a probe (`FrameDemand::MustPresent == false`, `IsProbeFrame()`) runs the whole
+Main tick, but publishes less: `Application::Run` calls `RenderSnapshotBuilder::DiscardFrame()` instead of
+`BuildSnapshotAndPublish` (no scene re-render; the per-frame debug-line buffers the tick filled are
+dropped, since nothing drains them otherwise), and `PluEditor::OnTick` hashes every window's `ImDrawData`
+(`HashImGuiDrawData`) and submits + publishes the ImGui frame only if the hash differs from the last one
+published. Submission is deferred until after all windows are built — a context's draw data stays valid
+until its own next `NewFrame()` — so an unchanged probe frame skips the deep copy too. Lockstep frames are
+always published. The hash reads the raw `ImTextureRef`, never `GetTexID()`: that asserts on Main for a
+texture the render thread has not uploaded yet. Net effect: moving the pointer over an idle UI costs an
+ImGui build on Main and nothing on the render thread; a hover highlight or tooltip is a changed hash and
+gets presented.
+
+**Render** (`RenderingManager::RenderThreadLoop`). Housekeeping always runs: `PollResults`, `Tick()`
+(request queues), `ProcessImGuiBackendQueues`, the FBO resize check. The present runs only when
+`shouldPresent`: a scene snapshot was rendered (fresh, or the FBO was invalidated by a resize), the ImGui
+snapshot is fresh, or a lockstep pass was granted. Not swapping leaves the last image on screen; damage
+(expose, resize) reaches Main as an OS event and comes back as a fresh ImGui frame. An iteration that
+presented nothing sleeps in `WaitForFrameWork()` — a condvar with a 50 ms timeout.
+
+**Wake-ups, both directions:**
+
+| Direction | Mechanism | Sent by |
+|---|---|---|
+| main → render | `RenderingManager::NotifyFrameAvailable()` (condvar + flag under mutex, so a notify just before the wait is not lost) | `EndImGuiFrameSubmit`, `Application::Run` after `BuildSnapshotAndPublish`, `RequestTextureFromInfo` / `RequestTextureSave` enqueue, window backend queues, `BeginImGuiLockstep`, `Shutdown` |
+| render → main | `RequestRedraw()` off the main thread → wake callback → `SDL_PushEvent(SDL_EVENT_USER)` / `PostThreadMessage(WM_NULL)` | texture loads finished in `ProcessPendingTextureRequests`, `EngineAssetManager::RequestAssetDataLoad` |
+
+The wake event itself does not count as activity (it would re-arm the settle window forever); whoever
+pushed it already stated what it needs. Off-thread wakes are collapsed by a flag that
+`ConsumeFrameDemand()` re-arms.
+
+**Consequences to keep in mind:**
+- **Frozen panel = nobody asked for a frame.** Particles, animation previews, stats: they only advance
+  on frames, and frames only come on demand. See the rule in `HELPERS.md`.
+- `GetRenderThreadFPS()` is the time between **presents**, and gaps over 0.1 s are not published. Main's
+  frame pacing divides by it — an idle render thread must not be able to stretch Main's sleep (which is
+  additionally clamped to 50 ms).
+- The lockstep (`BeginImGuiLockstep`) notifies the idle condvar: a sleeping render thread would otherwise
+  only reach its park point at the next 50 ms timeout. A granted pass presents even on a stale snapshot.
+- The window teardown handshake keeps working while idle: the render thread drains its queues every
+  50 ms, Main polls `ProcessClosingWindows` on every idle tick.
+- File watchers (`CheckForShaderChanges` / `CheckForScriptsChanges`) are polled on a 1.5 s timer from
+  both `OnTick` and `OnIdleTick` — a frame counter would stop with the frames.
+- Noisy input devices (a drifting gamepad axis) produce a steady stream of OS events and keep the loop
+  awake. Not filtered today.
 
 ## Klocki
 

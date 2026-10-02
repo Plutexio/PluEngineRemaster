@@ -3,6 +3,7 @@
 //
 
 #include "ParticlePreviewPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "ParticleSystemViewport.h"
 #include "EditorAppContext.h"
@@ -80,6 +81,8 @@ void Plu::ParticlePreviewPanel::DrawPreview(float deltaTime)
 	ParticleSpawnerComponent* spawner = inPIE ? nullptr : GetPreviewSpawner();
 
 	if (spawner) {
+		// The preview simulates on its own; under power saving it has to ask for its frames.
+		RequestContinuousRedraw();
 		// Follow the asset object (a reload replaces it); the render side keys everything by uuid + revision.
 		spawner->ParticleSystemAsset = viewport ? viewport->GetSystem() : nullptr;
 		if (mLoopPreview && spawner->IsFinished()) spawner->Play();

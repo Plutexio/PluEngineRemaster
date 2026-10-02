@@ -3,6 +3,7 @@
 //
 
 #include "SkeletalMeshViewportPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include <functional>
 #include <glad/glad.h>
@@ -390,8 +391,11 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 
 		// The overlay scene doesn't tick outside PIE, so advance animation playback ourselves.
 		// SkeletalMeshComponent::OnUpdate no-ops when not playing, so calling it every frame is safe.
-		if (meshObject && meshObject->MeshComponent)
+		if (meshObject && meshObject->MeshComponent) {
 			meshObject->MeshComponent->OnUpdate(deltaTime);
+			// Playback advances without input; under power saving it has to ask for its frames.
+			if (meshObject->MeshComponent->IsPlaying) RequestContinuousRedraw();
+		}
 
 		// Before the image is submitted, so the previews ride this frame's pose (the snapshot for
 		// this frame is built after the panels have run).

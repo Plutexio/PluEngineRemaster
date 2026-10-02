@@ -10,6 +10,7 @@
 #include "PluEngine/Platforms/Linux/SdlWindow.h"
 #include "PluEngine/Platforms/Windows/WindowsWindow.h"
 #include "PluEngine/Engine.h"
+#include "PluEngine/FrameDemand.h"
 #include "PluEngine/Log.h"
 #include "PluEngine/Timer.h"
 #include "PluEngine/AssetCore/AssetReflectionHooks.h"
@@ -91,6 +92,31 @@ namespace Plu
                 return std::nullopt;
             }
         }
+
+        // Longest the idle main loop sleeps without looking around (power saving). Bounds how stale
+        // OnIdleTick() housekeeping can get and how long a wake-up that got lost can go unnoticed.
+        constexpr float kIdleHeartbeatSeconds = 0.25f;
+        // Delta handed to the first frame after an idle wait. The real one is the length of the
+        // nap, which would send anything integrating over time (camera, animation) flying.
+        constexpr float kFrameDeltaAfterIdle = 1.0f / 60.0f;
+
+        void WaitForPlatformEvents(float timeoutSeconds)
+        {
+#ifdef PLU_PLATFORM_LINUX
+            SDLWindow::WaitForEvents(timeoutSeconds);
+#elif defined(PLU_PLATFORM_WINDOWS)
+            WindowsWindow::WaitForEvents(timeoutSeconds);
+#endif
+        }
+
+        void WakePlatformEventLoop()
+        {
+#ifdef PLU_PLATFORM_LINUX
+            SDLWindow::WakeEventLoop();
+#elif defined(PLU_PLATFORM_WINDOWS)
+            WindowsWindow::WakeEventLoop();
+#endif
+        }
     }
 
     void Application::Run()
@@ -137,6 +163,8 @@ namespace Plu
 
         mApplicationInfo.AppWindow->ReleaseGLContext();
         mApplicationInfo.AppRenderingManager->Initialize(&renderTripleBuffer);
+        // Requests for a frame coming from the render thread have to break the idle event wait.
+        SetFrameDemandWakeCallback(&WakePlatformEventLoop);
 
         std::chrono::high_resolution_clock::time_point lastFrame = std::chrono::high_resolution_clock::now();
 
@@ -149,9 +177,42 @@ namespace Plu
         float profilerElapsed = 0.0f;
         bool profilerExported = false;
 
+        // Placed after a frame's work so the dump includes that frame's samples.
+        auto exportProfilerIfDue = [&](float elapsed) {
+            if (!profilerExportAfter || profilerExported) return;
+            profilerElapsed += elapsed;
+            if (profilerElapsed < static_cast<float>(*profilerExportAfter)) return;
+            profilerExported = true;
+            if (DiskManager::SaveText(profilerExportPath.ToWide(), Profiler::GetInstance()->BuildCsv())) {
+                PLU_CORE_INFO("Profiler exported to {} after {}s", profilerExportPath.CStr(), profilerElapsed);
+            } else {
+                PLU_CORE_ERROR("Profiler export to {} failed", profilerExportPath.CStr());
+            }
+        };
+
         while (mApplicationInfo.AppWindow && mApplicationInfo.AppWindow->IsRunning()) {
+            // Power saving: with nothing asking for a frame, sleep on the OS event queue instead of
+            // spinning. Whatever ends the wait (an event, a scheduled redraw, a wake from the render
+            // thread, the heartbeat) is looked at below, after the events have been pumped.
+            bool waitedForEvents = false;
+            float idleSeconds = 0.0f;
+            const bool framesOnDemand = IsPowerSavingEnabled() && !WantsContinuousFrames();
+            FrameDemand demand;
+            if (framesOnDemand) {
+                demand = ConsumeFrameDemand();
+                if (!demand.RenderNow) {
+                    PLU_PROFILE_SCOPE("Main Idle Wait");
+                    const std::chrono::high_resolution_clock::time_point waitStart = std::chrono::high_resolution_clock::now();
+                    WaitForPlatformEvents(demand.WaitSeconds < kIdleHeartbeatSeconds ? demand.WaitSeconds : kIdleHeartbeatSeconds);
+                    idleSeconds = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - waitStart).count();
+                    waitedForEvents = true;
+                }
+            }
+
             const std::chrono::high_resolution_clock::time_point frameStart = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration<float>(frameStart - lastFrame).count();
+            float deltaTime = waitedForEvents
+                ? kFrameDeltaAfterIdle
+                : std::chrono::duration<float>(frameStart - lastFrame).count();
             lastFrame = frameStart;
 
             if (deltaTime > 1.0f) {
@@ -167,6 +228,29 @@ namespace Plu
 #elif defined(PLU_PLATFORM_WINDOWS)
             mApplicationInfo.AppWindow->OnUpdate(deltaTime);
 #endif
+            if (framesOnDemand) {
+                // Again, now that the events are in: a click pumped just above must not ride a
+                // frame that was only going to be a probe.
+                const FrameDemand afterEvents = ConsumeFrameDemand();
+                demand.RenderNow = demand.RenderNow || afterEvents.RenderNow;
+                demand.MustPresent = demand.MustPresent || afterEvents.MustPresent;
+            }
+            // Probe frame: tick and build the UI, but re-render the scene only if something beyond
+            // a pointer move asked for it. The app decides for its own UI (IsProbeFrame()).
+            const bool probeFrame = framesOnDemand && !demand.MustPresent;
+            SetProbeFrame(probeFrame);
+            if (framesOnDemand && !demand.RenderNow) {
+                // Still nothing to draw: do the housekeeping that must not stall with the UI and go
+                // back to sleep. No app tick, no scene update, no snapshot — the render thread sees
+                // nothing new and stays asleep too.
+                PLU_PROFILE_SCOPE("Main Idle Tick");
+                mApplicationInfo.AppWindowsManager->ProcessPendingWindows();
+                OnIdleTick(idleSeconds);
+                if (mApplicationInfo.AppAssetManager) mApplicationInfo.AppAssetManager->ProcessPendingLoads();
+                mApplicationInfo.AppWindowsManager->ProcessClosingWindows();
+                exportProfilerIfDue(idleSeconds);
+                continue;
+            }
             PLU_PROFILE_SCOPE("Frame");
             // New windows get their platform handle before anything builds a frame for them, and
             // closed ones are torn down after the frame that stopped drawing them.
@@ -193,7 +277,12 @@ namespace Plu
             }
             {
                 PLU_PROFILE_SCOPE("Render Snapshot Building");
-                renderSnapshotBuilder.BuildSnapshotAndPublish(deltaTime);
+                if (probeFrame) {
+                    renderSnapshotBuilder.DiscardFrame();
+                } else {
+                    renderSnapshotBuilder.BuildSnapshotAndPublish(deltaTime);
+                    mApplicationInfo.AppRenderingManager->NotifyFrameAvailable();
+                }
                 //mApplicationInfo.AppRenderer->OnUpdate(deltaTime);
             }
             {
@@ -218,25 +307,17 @@ namespace Plu
                     const float workElapsed = std::chrono::duration<float>(
                         std::chrono::high_resolution_clock::now() - frameStart).count();
                     float sleepFor = targetFrameTime - workElapsed;
-                    sleepFor = ClampF(sleepFor, 0.0f, 10.0f);
+                    // Upper bound is a safety net, not a frame rate: the render delta is the time
+                    // between presents, and a render thread that presents rarely must never be able
+                    // to talk Main into napping for seconds.
+                    sleepFor = ClampF(sleepFor, 0.0f, 0.05f);
                     if (sleepFor > 0.0f) {
                         std::this_thread::sleep_for(std::chrono::duration<float>(sleepFor));
                     }
                 }
             }
 
-            // Placed after the frame's work so the dump includes this frame's samples.
-            if (profilerExportAfter && !profilerExported) {
-                profilerElapsed += deltaTime;
-                if (profilerElapsed >= static_cast<float>(*profilerExportAfter)) {
-                    profilerExported = true;
-                    if (DiskManager::SaveText(profilerExportPath.ToWide(), Profiler::GetInstance()->BuildCsv())) {
-                        PLU_CORE_INFO("Profiler exported to {} after {}s", profilerExportPath.CStr(), profilerElapsed);
-                    } else {
-                        PLU_CORE_ERROR("Profiler export to {} failed", profilerExportPath.CStr());
-                    }
-                }
-            }
+            exportProfilerIfDue(deltaTime);
         }
         PLU_TIMER_START("EngineEnd");
         // Stop & join the render thread FIRST. OnShutdown() destroys scenes, cameras, viewports

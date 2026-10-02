@@ -3,6 +3,7 @@
 //
 
 #include "RenderGpuStatsPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include <algorithm>
 #include <iterator>
@@ -29,6 +30,8 @@ Plu::String Plu::RenderGpuStatsPanel::GetPanelName()
 void Plu::RenderGpuStatsPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		if (ImGui::BeginTabBar("##rendergpu_tabs")) {
 			if (ImGui::BeginTabItem(ICON_FA_GAUGE_HIGH " Overview")) {
 				DrawOverviewTab();

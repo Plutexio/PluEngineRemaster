@@ -9,8 +9,10 @@
 #include "DefinedPanels/EngineStatsPanel.h"
 #include "DefinedPanels/Style/EditorStylePanel.h"
 #include "Managers/Project/EditorProjectManager.h"
+#include "EditorSettings/EditorSettings.h"
 #include "EditorSettings/EditorSettingsManager.h"
 #include "PluEngine/Log.h"
+#include "PluEngine/FrameDemand.h"
 #include "PluEngine/Timer.h"
 #include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
@@ -119,6 +121,7 @@ void Plu::PluEditor::OnPostInit()
     // Zapamiętane ustawienia Display (VSync / tryb okna / rozdzielczość). Musi być po
     // AppWindow->Init() i jeszcze na main threadzie — przed oddaniem kontekstu GL.
     EditorSettingsManager::GetInstance()->ApplyDisplaySettings(mApplicationInfo.AppWindow);
+    SetPowerSavingEnabled(EditorSettingsManager::GetInstance()->GetSettings()->PowerSaving);
 
     mEditorAppContext->EditorSceneCamera = mObjectManager->CreateObject(EditorSceneCamera::GetStaticClass());
     mApplicationInfo.AppScenesManager->GetObjectEventDispatcher()->Subscribe("EditorCameraWanted", [this](void* data) {
@@ -387,6 +390,9 @@ void Plu::PluEditor::DrawNewProjectPopup()
     drawList->AddRectFilled(headerMin, headerMax,
                              ImGui::ColorConvertFloat4ToU32(ImVec4(accent.x, accent.y, accent.z, 0.38f)),
                              cornerRounding, ImDrawFlags_RoundCornersTop);
+    // Animated on a clock, not on input: under power saving it has to ask for its frames. A slow
+    // glow (one cycle in ~3 s) reads fine at 20 fps, and this screen sits open with nobody touching it.
+    RequestRedrawAfter(0.05f);
     float pulse = 0.5f + 0.5f * sinf(static_cast<float>(ImGui::GetTime()) * 2.0f);
     ImVec4 glowLine = ImVec4(accent.x + (accentGlow.x - accent.x) * pulse,
                               accent.y + (accentGlow.y - accent.y) * pulse,
@@ -639,6 +645,67 @@ static bool ImGuiHasPendingTextureWork()
     return false;
 }
 
+// Power saving: how often the shader/script watchers are polled, in frames or out of them.
+static constexpr float kFileWatchIntervalSeconds = 1.5f;
+// Half of ImGui's text cursor blink period (InputTextCursorBlink: 1.2 s cycle, visible ~0.8 s) is
+// not exposed, so redraw often enough to catch both edges.
+static constexpr float kTextCursorBlinkSeconds = 0.4f;
+
+// Order-dependent 64-bit hash over raw bytes, eight at a time. Only has to tell "same draw data
+// as last frame" from "different" — not cryptographic, not stable across runs.
+static UInt64 HashBytes(UInt64 hash, const void* data, size_t size)
+{
+    const unsigned char* bytes = static_cast<const unsigned char*>(data);
+    while (size >= sizeof(UInt64)) {
+        UInt64 word;
+        memcpy(&word, bytes, sizeof(word));
+        hash = (hash ^ word) * 0x9E3779B97F4A7C15ULL;
+        hash ^= hash >> 32;
+        bytes += sizeof(word);
+        size -= sizeof(word);
+    }
+    UInt64 tail = size;
+    memcpy(&tail, bytes, size);
+    hash = (hash ^ tail) * 0x9E3779B97F4A7C15ULL;
+    return hash ^ (hash >> 32);
+}
+
+// Everything that decides what a window's ImGui frame looks like on screen: geometry, clip rects,
+// textures, draw order. Two frames with the same hash present the same pixels (the scene image is
+// a texture id here — its contents are the scene snapshot's business, not this hash's).
+static UInt64 HashImGuiDrawData(UInt64 hash, UInt32 windowID, const ImDrawData* drawData)
+{
+    hash = HashBytes(hash, &windowID, sizeof(windowID));
+    if (!drawData || !drawData->Valid) return hash;
+    hash = HashBytes(hash, &drawData->DisplayPos, sizeof(drawData->DisplayPos));
+    hash = HashBytes(hash, &drawData->DisplaySize, sizeof(drawData->DisplaySize));
+    hash = HashBytes(hash, &drawData->FramebufferScale, sizeof(drawData->FramebufferScale));
+    for (const ImDrawList* list : drawData->CmdLists) {
+        hash = HashBytes(hash, list->VtxBuffer.Data, static_cast<size_t>(list->VtxBuffer.Size) * sizeof(ImDrawVert));
+        hash = HashBytes(hash, list->IdxBuffer.Data, static_cast<size_t>(list->IdxBuffer.Size) * sizeof(ImDrawIdx));
+        // Field by field: ImDrawCmd has padding and a callback pointer.
+        for (const ImDrawCmd& cmd : list->CmdBuffer) {
+            // The raw reference, not GetTexID(): that asserts on a texture the render thread has
+            // not uploaded yet (a fresh font atlas), which is a normal state on this thread.
+            hash = HashBytes(hash, &cmd.ClipRect, sizeof(cmd.ClipRect));
+            hash = HashBytes(hash, &cmd.TexRef._TexData, sizeof(cmd.TexRef._TexData));
+            hash = HashBytes(hash, &cmd.TexRef._TexID, sizeof(cmd.TexRef._TexID));
+            hash = HashBytes(hash, &cmd.VtxOffset, sizeof(cmd.VtxOffset));
+            hash = HashBytes(hash, &cmd.IdxOffset, sizeof(cmd.IdxOffset));
+            hash = HashBytes(hash, &cmd.ElemCount, sizeof(cmd.ElemCount));
+        }
+    }
+    return hash;
+}
+
+static bool IsAnyImGuiKeyDown()
+{
+    for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; key++) {
+        if (ImGui::IsKeyDown(static_cast<ImGuiKey>(key))) return true;
+    }
+    return false;
+}
+
 void Plu::PluEditor::ClearAfterImport()
 {
     // Called from the importer's "Finito" event, i.e. from inside its own RenderUI() — destroying
@@ -654,16 +721,13 @@ void Plu::PluEditor::OnTick(float deltaTime)
         mEditorAppContext->EditorScenesManager->GetCurrentWorld()->HandleDestroy();
     }
     mEditorAppContext->EditorWindowsManager->OnUpdate(deltaTime);
+    PollFileWatchers(deltaTime);
     static int frameCounter = 0;
-    frameCounter++;
-    if (frameCounter >= 100) {
-        frameCounter = 0;
-        mEditorAppContext->EditorShaderManager->CheckForShaderChanges();
-        mEditorAppContext->EditorPythonManager->CheckForScriptsChanges();
-    } else if (frameCounter >= 5 && !mEditorProjectManager->IsAnyProjectOpen() && mArgumentParser) {
-        // Once only. This branch runs on ~95 frames out of every 100, so a --project that cannot
-        // be opened used to re-attempt (and re-log the failure) for the lifetime of the process,
-        // burying the actual error under hundreds of thousands of lines.
+    if (frameCounter < 5) frameCounter++;
+    if (frameCounter >= 5 && !mEditorProjectManager->IsAnyProjectOpen() && mArgumentParser) {
+        // Once only, a few frames in. A --project that cannot be opened used to re-attempt (and
+        // re-log the failure) for the lifetime of the process, burying the actual error under
+        // hundreds of thousands of lines.
         static bool startupProjectTried = false;
         if (!startupProjectTried) {
             startupProjectTried = true;
@@ -719,11 +783,21 @@ void Plu::PluEditor::OnTick(float deltaTime)
         // never mixes windows from different frames. Each window has its own ImGui context; they
         // share the font atlas, which is why the lockstep above wraps the whole loop rather than
         // any single window.
-        mApplicationInfo.AppRenderingManager->BeginImGuiFrameSubmit();
         // Snapshot: building a window's UI may add a window (the "Move to New Window" menu), and
         // that would reallocate the manager's array mid-iteration. Records themselves are heap
         // allocated and only freed at the start of a frame, so the pointers stay valid.
         DynamicArray<EditorWindowInfo*> windowsThisFrame = mEditorAppContext->EditorWindowsManager->GetWindows();
+        UInt32 builtWindowCount = 0;
+        // Windows built this frame, submitted together after the loop. A context's draw data stays
+        // valid until its own next NewFrame(), so deferring the copy is safe — and lets a probe
+        // frame that changed nothing skip the copy altogether.
+        struct BuiltWindow { UInt32 WindowID; ImGuiContext* Context; };
+        DynamicArray<BuiltWindow> builtWindows;
+        UInt64 imguiHash = 0;
+        // A held button or key produces no further OS events, yet drags and ImGui's own key repeat
+        // advance every frame. Likewise a focused text field: its cursor blinks on a timer.
+        bool heldInput = false;
+        bool wantsTextInput = false;
         for (EditorWindowInfo* windowInfo : windowsThisFrame) {
             TUsePointer<IWindow> window = mApplicationInfo.AppWindowsManager->GetWindow(windowInfo->WindowID);
             // Not created yet (requested this frame, appears at the top of the next one).
@@ -751,8 +825,12 @@ void Plu::PluEditor::OnTick(float deltaTime)
             // thread in Renderer.cpp; that path is gone with the ImGui snapshot handoff, so refresh
             // it here on the Main thread (same thread the hit-test callback runs on).
             window->ImGuiItemHovered = ImGui::IsAnyItemHovered();
+            builtWindowCount++;
+            if (ImGui::IsAnyMouseDown() || IsAnyImGuiKeyDown()) heldInput = true;
+            if (ImGui::GetIO().WantTextInput) wantsTextInput = true;
             ImGui::Render();
-            mApplicationInfo.AppRenderingManager->SubmitImGuiDrawData(window->GetWindowID(), ImGui::GetDrawData());
+            builtWindows.PushBack(BuiltWindow{window->GetWindowID(), windowCtx});
+            imguiHash = HashImGuiDrawData(imguiHash, window->GetWindowID(), ImGui::GetDrawData());
         }
         // Back to the main window's context: everything below (and every caller that does not set
         // the context itself) assumes it is current.
@@ -771,7 +849,20 @@ void Plu::PluEditor::OnTick(float deltaTime)
             lockstepEngaged = true;
         }
 
-        mApplicationInfo.AppRenderingManager->EndImGuiFrameSubmit();
+        // Power saving: a probe frame (the pointer moved, nothing else happened) goes to the render
+        // thread only if it would look different from what is already on screen — a hover
+        // highlight, a tooltip. Lockstep frames always go: the render thread is parked waiting for
+        // one, and it carries the texture uploads.
+        if (!IsProbeFrame() || lockstepEngaged || imguiHash != mPublishedImGuiHash) {
+            mApplicationInfo.AppRenderingManager->BeginImGuiFrameSubmit();
+            for (const BuiltWindow& built : builtWindows) {
+                ImGui::SetCurrentContext(built.Context);
+                mApplicationInfo.AppRenderingManager->SubmitImGuiDrawData(built.WindowID, ImGui::GetDrawData());
+            }
+            ImGui::SetCurrentContext(ctx);
+            mApplicationInfo.AppRenderingManager->EndImGuiFrameSubmit();
+            mPublishedImGuiHash = imguiHash;
+        }
 
         if (lockstepEngaged) {
             // Hand this snapshot to the render thread for exactly one upload+draw pass, then re-scan:
@@ -787,7 +878,35 @@ void Plu::PluEditor::OnTick(float deltaTime)
             mImGuiAtlasSettling = false;
         }
 
+        // Power saving: things that need the next frame although no OS event will announce it.
+        // The atlas is still settling, or a window is still on its way in or out (both are
+        // multi-frame handshakes with the render thread).
+        bool needsNextFrame = mImGuiAtlasSettling || windowsThisFrame.Size() != builtWindowCount;
+        // An import runs a step per frame.
+        if (mAssetImporter) needsNextFrame = true;
+        if (needsNextFrame || heldInput) RequestContinuousRedraw();
+        if (wantsTextInput) RequestRedrawAfter(kTextCursorBlinkSeconds);
     }
+}
+
+void Plu::PluEditor::OnIdleTick(float deltaTime)
+{
+    PollFileWatchers(deltaTime);
+}
+
+bool Plu::PluEditor::WantsContinuousFrames()
+{
+    // The game ticks and renders every frame; there is no way to redraw the viewport alone.
+    return mEditorAppContext->EditorScenesManager->IsInPIE();
+}
+
+void Plu::PluEditor::PollFileWatchers(float deltaTime)
+{
+    mFileWatchTimer += deltaTime;
+    if (mFileWatchTimer < kFileWatchIntervalSeconds) return;
+    mFileWatchTimer = 0.0f;
+    mEditorAppContext->EditorShaderManager->CheckForShaderChanges();
+    mEditorAppContext->EditorPythonManager->CheckForScriptsChanges();
 }
 
 void Plu::PluEditor::OnRequestedGameExit()

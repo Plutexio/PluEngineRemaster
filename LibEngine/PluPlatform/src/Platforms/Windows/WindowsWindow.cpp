@@ -5,10 +5,12 @@
 #include "PluEngine/Platforms/Windows/WindowsWindow.h"
 
 #include "PluEngine/Log.h"
+#include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_WINDOWS
 
 
+#include <atomic>
 #include <dwmapi.h>
 #include <windowsx.h>
 #include <ole2.h>
@@ -636,9 +638,32 @@ namespace Plu {
         // DragEnter/DragOver/Drop arrive late or never - this is what caused the drop overlay to
         // flicker and file drops to silently do nothing.
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            // Any OS message may change what is on screen. A bare pointer move usually does not, so
+            // it only asks for probe frames (the UI decides whether anything changed). WM_NULL is
+            // the wake message: whoever posted it has already stated what it needs.
+            if (msg.message == WM_MOUSEMOVE || msg.message == WM_NCMOUSEMOVE) RequestProbe();
+            else if (msg.message != WM_NULL) RequestRedraw();
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
+    }
+
+    // Thread that pumps the messages, i.e. the one WaitForEvents() blocks. Captured there rather
+    // than at static init so it does not depend on which thread loaded the module.
+    static std::atomic<DWORD> gMessageThreadId{0};
+
+    void WindowsWindow::WaitForEvents(float timeoutSeconds)
+    {
+        gMessageThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
+        // MWMO_INPUTAVAILABLE: also return for input that was already queued before the call, not
+        // only for input arriving during it.
+        MsgWaitForMultipleObjectsEx(0, nullptr, static_cast<DWORD>(timeoutSeconds * 1000.0f), QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+
+    void WindowsWindow::WakeEventLoop()
+    {
+        const DWORD threadId = gMessageThreadId.load(std::memory_order_relaxed);
+        if (threadId != 0) PostThreadMessage(threadId, WM_NULL, 0, 0);
     }
 
     void WindowsWindow::Shutdown() {

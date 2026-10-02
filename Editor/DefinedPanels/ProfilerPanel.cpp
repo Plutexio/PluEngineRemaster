@@ -3,6 +3,7 @@
 //
 
 #include "ProfilerPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
 #include "nfd.h"
@@ -54,6 +55,8 @@ void Plu::ProfilerPanel::OnHide()
 void Plu::ProfilerPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		const float mainFPS = GetMainThreadFPS();
 		const float renderFPS = GetRenderThreadFPS();
 		ImGui::Text("Main: %.1f FPS (%.2f ms)", mainFPS, mainFPS > 0.0f ? 1000.0f / mainFPS : 0.0f);

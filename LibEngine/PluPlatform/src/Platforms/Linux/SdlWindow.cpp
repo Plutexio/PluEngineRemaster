@@ -8,6 +8,7 @@
 #include "imgui_impl_sdl3.h"
 #include "PluEngine/Platform/SDLInputBackend.h"
 #include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_LINUX
 
@@ -34,6 +35,12 @@ namespace Plu
     {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            // Any OS event may change what is on screen. A bare pointer move usually does not, so
+            // it only asks for probe frames (the UI decides whether anything changed). The wake
+            // event is excluded: whoever pushed it has already stated what it needs.
+            if (e.type == SDL_EVENT_MOUSE_MOTION) RequestProbe();
+            else if (e.type != SDL_EVENT_USER) RequestRedraw();
+
             // Not every event carries a windowID (clipboard, quit, ...) — reading e.window.windowID
             // blindly is uninitialised stack memory there. SDL_GetWindowFromEvent knows which event
             // types have one and returns null for the rest (0 is never a valid SDL window ID).
@@ -50,6 +57,19 @@ namespace Plu
                 }
             }
         }
+    }
+
+    void SDLWindow::WaitForEvents(float timeoutSeconds)
+    {
+        // A null event leaves whatever arrived in the queue for HandleSDLEvents().
+        SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(timeoutSeconds * 1000.0f));
+    }
+
+    void SDLWindow::WakeEventLoop()
+    {
+        SDL_Event wake = {};
+        wake.type = SDL_EVENT_USER;
+        SDL_PushEvent(&wake);
     }
 
     void SDLWindow::SetCursorVisibility(bool visible)

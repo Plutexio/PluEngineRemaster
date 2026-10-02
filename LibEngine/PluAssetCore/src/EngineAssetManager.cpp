@@ -3,6 +3,7 @@
 //
 
 #include "PluEngine/AssetCore/EngineAssetManager.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "PluEngine/Core/ApplicationInfo.h"
 #include "PluEngine/Timer.h"
@@ -368,8 +369,10 @@ void Plu::EngineAssetManager::RequestAssetDataLoad(PluUUID uuid)
     // Callable from any thread (typically the render thread on a GetAssetDataNoLoad miss).
     // Cheap fast-out if already loaded so we don't queue work the main thread would no-op.
     if (IsAssetLoaded(uuid)) return;
-    // Returns false when the same UUID is already pending — that is the whole dedupe.
-    mPendingLoadRequests.Insert(uuid.getUUID());
+    // Returns false when the same UUID is already pending — that is the whole dedupe. A new
+    // request also asks for frames: Main may be asleep (power saving), and whoever missed the
+    // asset needs another frame once it is in.
+    if (mPendingLoadRequests.Insert(uuid.getUUID())) RequestRedraw();
 }
 
 void Plu::EngineAssetManager::ProcessPendingLoads()

@@ -22,6 +22,7 @@
 #include "PluEngine/Render/Renderer.h"
 #include "PluEngine/Render/RenderThreading.h"
 #include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluEngine/FrameDemand.h"
 #include "PluEngine/Platform/Window.h"
 
 static Plu::TripleBuffer<Plu::RenderSnapshot *>* gTripleBuffer = nullptr;
@@ -50,22 +51,37 @@ void Plu::RenderingManager::RenderThreadEnter()
 
 	gIsRendererGut = true;
 	while (mIsRendererRunning) {
-		RenderThreadLoop();
+		if (!RenderThreadLoop()) WaitForFrameWork();
 	}
 	gIsRendererGut = false;
 	RenderThreadExit();
 }
 
-void Plu::RenderingManager::RenderThreadLoop()
+void Plu::RenderingManager::NotifyFrameAvailable()
+{
+	{
+		std::lock_guard<std::mutex> lock(mFrameWorkMtx);
+		mFrameWorkPending = true;
+	}
+	mFrameWorkCv.notify_one();
+}
+
+void Plu::RenderingManager::WaitForFrameWork()
+{
+	PLU_PROFILE_SCOPE("Render Idle Wait");
+	// The timeout keeps the housekeeping at the top of RenderThreadLoop (request queues, window
+	// lifecycle handshake, GPU timer results) moving for callers that do not notify.
+	std::unique_lock<std::mutex> lock(mFrameWorkMtx);
+	mFrameWorkCv.wait_for(lock, std::chrono::milliseconds(50), [this] {
+		return mFrameWorkPending || !mIsRendererRunning;
+	});
+	mFrameWorkPending = false;
+}
+
+bool Plu::RenderingManager::RenderThreadLoop()
 {
 	PLU_PROFILE_SCOPE("Render Thread Frame");
-	// Render-thread frame delta. Only this thread calls RenderThreadLoop, so a function-local
-	// static is race-free. Published for diagnostics (editor panels) via PluUtils.
-	static std::chrono::high_resolution_clock::time_point lastRenderFrame = std::chrono::high_resolution_clock::now();
 	const std::chrono::high_resolution_clock::time_point nowRenderFrame = std::chrono::high_resolution_clock::now();
-	float renderDeltaTime = std::chrono::duration<float>(nowRenderFrame - lastRenderFrame).count();
-	SetRenderThreadDeltaTime(renderDeltaTime);
-	lastRenderFrame = nowRenderFrame;
 
 	// Odbiera wyniki GPU_TIMESTAMP zapytań zleconych w poprzednich klatkach (async, patrz
 	// GPUProfiler.h) zanim ten frame zleci nowe pod tymi samymi nazwami.
@@ -86,6 +102,12 @@ void Plu::RenderingManager::RenderThreadLoop()
 	// czasu publikacji maina blitowalibyśmy śmieci.
 	static bool sSceneBufferInvalidated = false;
 
+	// Power saving: present only when this iteration was handed something new. Not swapping leaves
+	// the last presented image on screen; anything that damages it (expose, resize) reaches Main as
+	// an event and comes back as a fresh ImGui frame. With power saving off every iteration
+	// presents, as it always did.
+	bool shouldPresent = !IsPowerSavingEnabled();
+
 	bool freshSnapshot = false;
 	RenderSnapshot* snapshot = gTripleBuffer->AcquireReadBuffer(&freshSnapshot);
 	mApplicationInfo->AppRenderingManager->Tick(freshSnapshot && snapshot != nullptr);
@@ -98,6 +120,7 @@ void Plu::RenderingManager::RenderThreadLoop()
 		lastSceneRender = nowRenderFrame;
 		gRenderer->RenderSnapshot(snapshot, sceneDeltaTime);
 		sSceneBufferInvalidated = false;
+		shouldPresent = true;
 	}
 
 	// Windows created/closed since the last frame get (or lose) their GL-side ImGui backend here,
@@ -137,8 +160,12 @@ void Plu::RenderingManager::RenderThreadLoop()
 			// The whole loop over windows is one "ImGui pass" as far as the lockstep is concerned:
 			// they share the font atlas, so granting per window would let Main mutate it between
 			// two windows of the same frame.
-			ImGuiFrameSnapshot* guiSnapshot = mImguiTripleBuffer.AcquireReadBuffer();
-			if (guiSnapshot) {
+			bool freshGuiSnapshot = false;
+			ImGuiFrameSnapshot* guiSnapshot = mImguiTripleBuffer.AcquireReadBuffer(&freshGuiSnapshot);
+			// A granted lockstep pass has to run even on a stale snapshot: Main is blocked on it,
+			// and it is what uploads the pending font-atlas textures.
+			if (freshGuiSnapshot || consumedGrant) shouldPresent = true;
+			if (guiSnapshot && shouldPresent) {
 				for (UInt32 i = 0; i < guiSnapshot->ActiveCount; ++i) {
 					const ImGuiWindowDrawSnapshot* entry = guiSnapshot->Windows[i];
 					// The main window is presented last, together with the scene blit below.
@@ -163,11 +190,20 @@ void Plu::RenderingManager::RenderThreadLoop()
 	TUsePointer<IWindow> window = mApplicationInfo->AppWindow;
 	// Secondary windows may have left their own GL context binding current.
 	window->MakeGLContextCurrent();
-	if (!wasImGuiRendered) {
+	if (shouldPresent && !wasImGuiRendered) {
 		gRenderer->GetMainFrameBuffer()->BlitToScreen(window->GetWidth(), window->GetHeight());
 	}
 
-	{
+	if (shouldPresent) {
+		// Render-thread frame delta = time between presents, published for Main's frame pacing and
+		// the editor panels. Only this thread runs RenderThreadLoop, so a function-local static is
+		// race-free. A gap this long is an idle stretch, not a frame rate — keep the last real
+		// value rather than report (and pace Main by) a fraction of a frame per second.
+		static std::chrono::high_resolution_clock::time_point lastPresent = nowRenderFrame;
+		const float renderDeltaTime = std::chrono::duration<float>(nowRenderFrame - lastPresent).count();
+		lastPresent = nowRenderFrame;
+		if (renderDeltaTime > 0.0f && renderDeltaTime < 0.1f) SetRenderThreadDeltaTime(renderDeltaTime);
+
 		PLU_PROFILE_SCOPE("Render Thread Swap Buffers");
 		// The swap interval belongs to the GL context, and every window shares one context — so N
 		// vsynced swaps per frame would stall N times and divide the frame rate by N. Secondary
@@ -190,7 +226,10 @@ void Plu::RenderingManager::RenderThreadLoop()
 	if (windowWidth != bufferWidth || windowHeight != bufferHeight) {
 		gRenderer->GetMainFrameBuffer()->Resize(windowWidth, windowHeight);
 		sSceneBufferInvalidated = true;
+		// The repaint happens next iteration — do not sleep in between.
+		return true;
 	}
+	return shouldPresent;
 }
 
 void Plu::RenderingManager::ProcessImGuiBackendQueues()
@@ -389,6 +428,7 @@ void Plu::RenderingManager::RequestTextureFromInfo(const TUsePointer<TextureInfo
 	mPendingTextureRequests.PushBackUniqueIf(textureInfo, [&textureInfo](const TUsePointer<TextureInfo>& queued) {
 		return queued && queued->Uuid == textureInfo->Uuid;
 	});
+	NotifyFrameAvailable();
 }
 
 void Plu::RenderingManager::LoadTextureFromInfo_NoLock(const TUsePointer<TextureInfo>& textureInfo)
@@ -436,6 +476,10 @@ void Plu::RenderingManager::ProcessPendingTextureRequests()
 		LoadTextureFromInfo_NoLock(scratch[i]);
 		loadedTexturesThisFrame++;
 	}
+	// The UI that asked for these is drawing a placeholder until it gets another frame.
+	if (loadedTexturesThisFrame > 0) RequestRedraw();
+	// Over-budget remainder was requeued: come straight back for it instead of sleeping.
+	if (!mPendingTextureRequests.IsEmpty()) NotifyFrameAvailable();
 }
 
 void Plu::RenderingManager::RequestTextureSave(const TUsePointer<Texture>& texture, const Path& path)
@@ -449,6 +493,7 @@ void Plu::RenderingManager::RequestTextureSave(const TUsePointer<Texture>& textu
 		return;
 	}
 	mPendingTextureSaves.PushBack(PendingTextureSave{texture, path});
+	NotifyFrameAvailable();
 }
 
 void Plu::RenderingManager::ProcessPendingTextureSaves()
@@ -635,6 +680,7 @@ void Plu::RenderingManager::EndImGuiFrameSubmit()
 	if (!slot) return;
 	slot->EndWrite();
 	mImguiTripleBuffer.Publish();
+	NotifyFrameAvailable();
 }
 
 void Plu::RenderingManager::SetImGuiRenderingIgnorance(bool ignore)
@@ -654,6 +700,8 @@ void Plu::RenderingManager::BeginImGuiLockstep()
 	mImGuiPassGranted = false;
 	mImGuiPassDone = false;
 	mImGuiLockstep.store(true, std::memory_order_release);
+	// The render thread may be asleep (power saving) rather than on its way to the park point.
+	NotifyFrameAvailable();
 	// Wait until the render thread reaches its park point (finished any in-flight ImGui pass and is
 	// no longer touching the atlas) before Main starts mutating it. The timeout is only a deadlock
 	// safety net for the case where the render thread isn't rendering ImGui at all (no context /
@@ -753,6 +801,7 @@ void Plu::RenderingManager::CreateImGuiContextForWindow(const TUsePointer<IWindo
 		mImGuiStates.Insert(windowID, state);
 		mWindowsNeedingGLBackend.PushBack(windowID);
 	}
+	NotifyFrameAvailable();
 
 	// Leave the main window's context current — the rest of the frame (and every caller that does
 	// not set the context itself) assumes it.
@@ -771,6 +820,7 @@ void Plu::RenderingManager::RequestImGuiContextTeardown(UInt32 windowID)
 		return;
 	}
 	mWindowsToTearDownGL.PushBack(windowID);
+	NotifyFrameAvailable();
 }
 
 bool Plu::RenderingManager::IsImGuiContextTornDown(UInt32 windowID)
@@ -899,6 +949,8 @@ void Plu::RenderingManager::Shutdown()
 		std::lock_guard<std::mutex> lock(mImGuiLockstepMtx);
 		mImGuiLockstepCv.notify_all();
 	}
+	// Same for the power-saving idle wait.
+	NotifyFrameAvailable();
 	// Block until the render thread has run RenderThreadExit() to completion (GL torn down,
 	// shader resources released, ReleaseGLContext()). After join the context is free, so it is
 	// safe for Main to make it current and for Run() to delete the SDL/GL context afterwards.

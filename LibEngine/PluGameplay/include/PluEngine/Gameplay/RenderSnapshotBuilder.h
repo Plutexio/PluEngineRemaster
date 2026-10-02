@@ -76,6 +76,10 @@ namespace Plu
         static Matrix4 GetLastFrameViewMatrix();
 
         void BuildSnapshotAndPublish(float deltaTime = 0.0f);
+        // For a frame that ticked but publishes no snapshot (power saving probe frame). Drops
+        // the per-frame debug geometry the tick queued for BuildSnapshotAndPublish to drain —
+        // left alone it would pile up, one frame's worth per skipped frame.
+        void DiscardFrame();
     };
 }
 

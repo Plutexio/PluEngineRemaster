@@ -3,6 +3,7 @@
 //
 
 #include "ParticlesDebugPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -127,6 +128,8 @@ Plu::String Plu::ParticlesDebugPanel::GetPanelName()
 void Plu::ParticlesDebugPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		PLU_PROFILE_SCOPE("ParticlesDebugPanel::OnUpdate");
 
 		// Renewed every frame the panel is drawn; the render thread gathers only while asked.
