@@ -161,6 +161,9 @@ namespace Plu
 
     PLU_FUNCTION()
     PLUGAMEPLAY_API TUsePointer<SceneWorld> GetCurrentWorld();
+
+    PLU_FUNCTION()
+    PLUGAMEPLAY_API void ConnectToWorld(const String &URL);
 }
 
 #endif //PLUENGINE_SCENEMANAGER_H

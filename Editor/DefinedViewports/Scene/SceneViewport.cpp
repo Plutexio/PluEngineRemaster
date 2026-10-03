@@ -156,6 +156,7 @@ void Plu::SceneViewport::OnClosed()
 	TypeRegistry::GetInstance()->TypeRegistryEventDispatcher.Unsubscribe("NewPythonType", mNewPythonTypeHandle);
 	mPendingPythonTypeReloads.Clear();
 	gEditorAppContext->EditorScenesManager->DisconnectFromWorld();
+	PLU_CORE_INFO("Scene Viewport closed!");
 }
 
 void Plu::SceneViewport::OnOpened()

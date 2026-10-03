@@ -23,6 +23,8 @@ namespace Plu
 		GameLocalPlayer() = default;
 		~GameLocalPlayer() override = default;
 
+		void JoinPlayerToWorld();
+
 		void Init(const TUsePointer<SceneManager> &sceneManager, UInt16 id);
 		void OnKeyboardKeyUpdate(Key key, ButtonState state);
 		void OnMouseKeyUpdate(MouseButton button, ButtonState state);

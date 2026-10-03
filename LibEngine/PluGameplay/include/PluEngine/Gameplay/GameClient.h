@@ -26,6 +26,7 @@ namespace Plu
 		friend class SceneWorld;
 
 		bool mShowCursor = false;
+		Int32 mNewPlayerEvent = 0;
 	public:
 		GameClient(const TUsePointer<EngineObjectManager> &objectManager, const TUsePointer<SceneManager> &scenesManager, const TUsePointer<InputManager> &inputManager, TUsePointer<IWindow> window);
 		~GameClient() override;

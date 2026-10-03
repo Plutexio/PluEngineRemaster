@@ -14,6 +14,7 @@
 #include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "HashSet/HashSet.h"
+#include "PluEngine/AssetCore/AssetDescriptor.h"
 
 void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
 {
@@ -28,7 +29,7 @@ void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
 		mEditorCamera = nullptr;
 		mObjectManager->DestroyObject(*mActivePIEScene->GetEngineObjectHandle());
 		mActivePIEScene = nullptr;
-		if (mActiveScene) {
+		if (mActiveScene && !mIsInPIE) {
 			IRendererCamera* cameraToViewInEditor = nullptr;
 			DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 			mEditorCamera = cameraToViewInEditor;
@@ -140,6 +141,16 @@ void Plu::SceneManager::Initialize(ApplicationInfo *appInfo)
     mAssetManager = appInfo->AppAssetManager;
     mRegisteredScenesByURL["Overlay"] = nullptr;
     gSceneManager = mObjectManager->GetObjectAsUser<SceneManager>(*this->GetEngineObjectHandle());
+
+	mAssetManager->SubscribeToEvent("LoadAssetDescriptor", [&](void* data) {
+		UInt64* uuid = static_cast<UInt64*>(data);
+		TUsePointer<AssetDescriptor> assetDescriptor = mAssetManager->GetAssetDescriptor(*uuid);
+		if (!assetDescriptor) return;
+		if (assetDescriptor->AssetType != SceneInfo::GetStaticClass()) return;
+
+		TUsePointer<SceneInfo> sceneInfo = mAssetManager->GetAssetData(assetDescriptor);
+		RegisterSceneInfo(sceneInfo);
+	});
 }
 
 void Plu::SceneManager::OnUpdate(float deltaTime)
@@ -188,8 +199,16 @@ bool Plu::SceneManager::ConnectToWorld(String URL, bool startPlayOnLoad)
         CreateOverlayScene();
         return true;
     }
-    if (IsInPIE()) return false;
-    if (GetCurrentWorldName() == URL) return false;
+	if (GetCurrentWorldName() == URL) return false;
+    if (IsInPIE()) {
+    	if (!mRegisteredScenesByURL.Contains(URL)) {
+    		PLU_CORE_ERROR("No scene with URL {}", URL.CStr());
+    		return false;
+    	}
+    	UnloadScene(mActivePIEScene);
+    	LoadScene(URL, &mActivePIEScene, true);
+    	return true;
+    }
     UnloadScene(GetCurrentWorld());
     LoadScene(URL, &mActiveScene, startPlayOnLoad);
     return true;
@@ -213,6 +232,7 @@ void Plu::SceneManager::RegisterSceneInfo(TUsePointer<SceneInfo> sceneInfo)
         return;
     }
     mRegisteredScenesByURL[sceneInfo->URL] = sceneInfo;
+	PLU_CORE_TRACE("New Scene info registere! {}", sceneInfo->URL.CStr());
 }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -267,6 +287,11 @@ Plu::IRendererCamera* Plu::SceneManager::GetEditorRenderCamera() const
 Plu::TUsePointer<Plu::SceneWorld> Plu::GetCurrentWorld()
 {
     return gSceneManager ? gSceneManager->GetCurrentWorld() : nullptr;
+}
+
+void Plu::ConnectToWorld(const String &URL) {
+	if (!gSceneManager) return;
+	gSceneManager->ConnectToWorld(URL);
 }
 
 // Reflected properties land in the flat "fields" array written by TypeSerializer<TypeInfo*>, so a
