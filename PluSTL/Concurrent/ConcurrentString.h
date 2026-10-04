@@ -126,6 +126,21 @@ namespace Plu
         [[nodiscard]] String ToUpper() const { return Read([](const String& v) { return v.ToUpper(); }); }
         [[nodiscard]] String ToLower() const { return Read([](const String& v) { return v.ToLower(); }); }
 
+        [[nodiscard]] String Strip(const char* chars = nullptr) const
+        {
+            return Read([chars](const String& v) { return v.Strip(chars); });
+        }
+
+        [[nodiscard]] String StripLeft(const char* chars = nullptr) const
+        {
+            return Read([chars](const String& v) { return v.StripLeft(chars); });
+        }
+
+        [[nodiscard]] String StripRight(const char* chars = nullptr) const
+        {
+            return Read([chars](const String& v) { return v.StripRight(chars); });
+        }
+
         [[nodiscard]] int Compare(const String& other) const
         {
             return Read([&other](const String& v) { return v.Compare(other); });
@@ -181,6 +196,10 @@ namespace Plu
 
         void ToUpperInPlace() { Write([](String& v) { v.ToUpperInPlace(); }); }
         void ToLowerInPlace() { Write([](String& v) { v.ToLowerInPlace(); }); }
+
+        void StripInPlace(const char* chars = nullptr) { Write([chars](String& v) { v.StripInPlace(chars); }); }
+        void StripLeftInPlace(const char* chars = nullptr) { Write([chars](String& v) { v.StripLeftInPlace(chars); }); }
+        void StripRightInPlace(const char* chars = nullptr) { Write([chars](String& v) { v.StripRightInPlace(chars); }); }
 
         void Clear() { Write([](String& v) { v.Clear(); }); }
 

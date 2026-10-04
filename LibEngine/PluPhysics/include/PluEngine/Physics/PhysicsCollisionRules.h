@@ -5,17 +5,12 @@
 #ifndef PLUENGINE_PHYSICSCOLLISIONRULES_H
 #define PLUENGINE_PHYSICSCOLLISIONRULES_H
 
-#include "Jolt/Jolt.h"
+#include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
+#include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 
-#include "PhysicsLayers.h"
-
-// NOTE: UE-style channel filtering is applied in PhysicsWorld's contact listener
-// (OnContactValidate rejects Ignore pairs; OnContactAdded/Persisted turns Overlap pairs into
-// per-pair sensors). We intentionally do NOT use a JPH::GroupFilter: Jolt in this build ships
-// without C++ RTTI, so subclassing the RTTI-declared GroupFilter fails to link
-// (undefined typeinfo). Each body still stores its collision profile index in
-// CollisionGroup::GroupID (no group filter attached).
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu
 {
@@ -23,14 +18,7 @@ namespace Plu
 	class ObjectLayerPairFilterImpl : public JPH::ObjectLayerPairFilter {
 	public:
 		bool ShouldCollide(JPH::ObjectLayer A, JPH::ObjectLayer B) const override {
-			switch (A) {
-				case CollisionLayers::STATIC:
-					return B == CollisionLayers::DYNAMIC;
-				case CollisionLayers::DYNAMIC:
-					return true;
-				default:
-					return false;
-			}
+			return !PhysicsChannelsManager::GetInstance()->CanBeCompletelyIgnored(A,B);
 		}
 	};
 
@@ -44,24 +32,27 @@ namespace Plu
 		[[nodiscard]] unsigned int GetNumBroadPhaseLayers() const override { return 2; }
 
 		JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer layer) const override {
-			return layer == CollisionLayers::STATIC
-				? BroadPhaseLayers::STATIC
-				: BroadPhaseLayers::DYNAMIC;
+			return (layer & 1) ? BroadPhaseLayers::DYNAMIC : BroadPhaseLayers::STATIC;
 		}
 	};
 
 	class ObjectVsBroadPhaseLayerFilterImpl : public JPH::ObjectVsBroadPhaseLayerFilter {
 	public:
 		bool ShouldCollide(JPH::ObjectLayer layer, JPH::BroadPhaseLayer bp) const override {
-			switch (layer) {
-				case CollisionLayers::STATIC:
-					return bp == BroadPhaseLayers::DYNAMIC;
-				case CollisionLayers::DYNAMIC:
-					return true;
-				default:
-					return false;
+			if (layer & 1) {
+				return true;
+			} else {
+				return bp == BroadPhaseLayers::DYNAMIC;
 			}
 		}
+	};
+
+	class PluContactListener : public JPH::ContactListener
+	{
+	public:
+		void OnContactAdded(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override;
+		void OnContactPersisted(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override;
+		void OnContactRemoved(const JPH::SubShapeIDPair &inSubShapePair) override;
 	};
 }
 

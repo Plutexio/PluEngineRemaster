@@ -979,6 +979,14 @@ Statyczne helpery na `BasicString` (`String` / `StringW`). Dostępne jako `Strin
 | `Plu::Format(const char*/String fmt, args...)` | Wolna funkcja, zwraca `String`. |
 | `Plu::FormatW(const wchar_t*/StringW fmt, args...)` | Wolna funkcja, zwraca `StringW`. |
 
+**Strip** (Python-style; `chars == nullptr` strips whitespace — space, `\t`, `\n`, `\r`; otherwise strips any character found in `chars`):
+
+| Function | Description |
+|---|---|
+| `str.Strip(const CharT* chars = nullptr)` | Returns a copy with leading and trailing `chars` removed. |
+| `str.StripLeft(chars)` / `str.StripRight(chars)` | Returns a copy stripped on one side only. |
+| `str.StripInPlace(chars)` / `StripLeftInPlace(chars)` / `StripRightInPlace(chars)` | Same, modifying the string in place. |
+
 ---
 
 ## Concurrent containers (PluSTL) — `PluSTL/Concurrent/`
@@ -1152,9 +1160,9 @@ a value. For anything else, pass a plain `String` by value.
 | `SizeType Length()` / `SizeType Capacity()` / `bool IsEmpty()` | — |
 | `SizeType Find(char/const char*, startPos = 0)` / `SizeType RFind(char, startPos = Npos)` | `Npos` on a miss, like `String`. |
 | `bool Contains(const char*/const String&)` / `StartsWith(...)` / `EndsWith(...)` / `Equals(const String&/const char*)` / `int Compare(const String&)` / `operator==` / `operator!=` | Readers return values, never references. |
-| `String Substring(start, length = Npos)` / `DynamicArray<String> Split(char/const char*)` / `String ToUpper()` / `String ToLower()` | Return fresh `String`s; the guarded value is untouched. |
+| `String Substring(start, length = Npos)` / `DynamicArray<String> Split(char/const char*)` / `String ToUpper()` / `String ToLower()` / `String Strip/StripLeft/StripRight(const char* chars = nullptr)` | Return fresh `String`s; the guarded value is untouched. |
 | `void Assign(const String&/String&&/const char*)` / `operator=` / `Append(const String&/const char*)` / `operator+=` / `Clear()` | — |
-| `void Insert(SizeType pos, const char*/const String&)` / `void Remove(SizeType start, SizeType length = Npos)` / `void ReplaceAt(SizeType, char)` / `ToUpperInPlace()` / `ToLowerInPlace()` | In-place edits, one critical section each. |
+| `void Insert(SizeType pos, const char*/const String&)` / `void Remove(SizeType start, SizeType length = Npos)` / `void ReplaceAt(SizeType, char)` / `ToUpperInPlace()` / `ToLowerInPlace()` / `StripInPlace/StripLeftInPlace/StripRightInPlace(const char* chars = nullptr)` | In-place edits, one critical section each. |
 | `void Replace(const char* oldStr, const char* newStr)` | Forwards to `String::Replace` — **first occurrence only**, not all of them. |
 | `void Reserve(SizeType)` | Grows only, exactly like `String::Reserve`. |
 | `String Take()` | Empties the buffer and returns what it held, in one critical section — the "flush the accumulated log" primitive. |
@@ -1344,8 +1352,23 @@ Konsekwencje praktyczne: zasoby GL (`FrameBuffer`/`Texture`) tworzone na render 
 > Rewritten on the `physics-rework` branch (September 2026). The previous API — `PhysicsWorld::Raycast`,
 > `StaticMeshCollisionBuilder`, `PhysicsCompoundShape`, per-sub-shape `PluPhysicsMaterial`,
 > `Physics{Box,Sphere,Capsule}Component`, `SceneWorld::GetPhysicsWorld()`, `GameObject::GetPhysicsBody()` — is gone.
-> Collision channels still exist in `Core/CollisionChannels.h` (`CollisionProfileRef`, `ActiveCollisionConfig()`,
-> persisted with the project), but the new physics does not read them yet.
+> The legacy collision config still exists in `Core/CollisionChannels.h` (`CollisionProfileRef`, `ActiveCollisionConfig()`,
+> persisted with the project), but the new physics does not read it — it uses `PhysicsChannelsManager` below.
+
+**Physics channels** (`Gameplay/Physics/PhysicsChannels.h`) — `PhysicsChannelsManager::GetInstance()` owns the project's channels (`PhysicsCollisionChannel`: `String Name`, `PhysicsCollisionResponse DefaultResponse` = `Ignore` / `Overlap` / `Block`). A pair of channels uses the weaker of the two responses. A channel's id is its slot index and **never shifts**: bodies bake it into their Jolt `ObjectLayer` (`id << 1 | moving`). Removing a channel frees its slot onto a free list, and the next added channel reuses the most recently freed id. Ids are **runtime-only** — nothing persists them; saved data refers to channels by name. `"Default"` always lives at id 0 and cannot be removed. Edited in Project Settings → Physics Channels.
+
+| Function | Description |
+|---|---|
+| `void AddChannel(name, defaultResponse = Block)` / `void RemoveChannel(name)` | Add (empty or duplicate names are rejected with an error) / remove by name. |
+| `PhysicsCollisionChannel* GetChannel(name)` / `GetChannelById(UInt16 id) const` | Lookup; null when missing, out of range or removed. |
+| `UInt16 GetChannelId(channel)` | Id of a live channel, `kInvalidChannelId` otherwise. |
+| `DynamicArray<String> GetAllChannels()` | Names of live channels in id order (cached until the set changes). |
+| `bool CanBeCompletelyIgnored(layerA, layerB)` / `bool CanBlock(layerA, layerB)` | Take Jolt `ObjectLayer`s. `CanBlock` resolves a layer whose channel was removed to `Default`. |
+| `nlohmann::json SaveToJson() const` / `bool LoadFromJson(json)` | `{ "Version": 1, "Channels": [ { "Name", "DefaultResponse" } ] }`. Loading replaces all channels (ids are assigned anew in file order); a `"Default"` entry only sets Default's response, duplicate names are skipped with a warning. |
+| `bool SaveToJsonFile(PathW)` / `bool LoadFromJsonFile(PathW)` | Editor storage: `<project>/Config/PhysicsChannels.json` (`EditorProjectManager::GetPhysicsChannelsConfigPath()` / `SavePhysicsChannels()`). Loaded in `OpenProject`, saved on every edit in the panel and on shutdown. |
+| `bool SaveToBinaryFile(PathW)` / `bool LoadFromBinaryFile(PathW)` | Shipped build: `BuildProjectForShipment` writes `ProjectDist/PhysicsChannels.bin`, `RuntimeApp::OnInit` reads it from next to the executable. Layout: `UInt32` magic `"PLCH"`, `UInt32` version (2), `UInt32` count, then per channel `UInt8` response, length-prefixed name. |
+
+Every `Load*` resets to just `"Default"` and returns `false` when the file is missing or invalid. `TypeSerializer<PhysicsCollisionChannel>` is a reference by name: `Serialize` writes just the name string, `Deserialize` copies the channel from the manager and falls back to `"Default"` (with an error) when the name does not exist, `EditorControl` is a dropdown of the project's channels.
 
 **BoundingBox** (`Core/BoundingBox.h`) — `PLU_STRUCT`, fields `Vec2 X/Y/Z` (min/max per axis):
 

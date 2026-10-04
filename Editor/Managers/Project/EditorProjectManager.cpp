@@ -25,6 +25,7 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/CollisionChannels.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Platform/Window.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
@@ -48,6 +49,7 @@ namespace Plu
 		jO["projectFileVersion"] = j["projectFileVersion"];
 		jO["collisionConfig"] = SaveCollisionConfig(ActiveCollisionConfig());
 		DiskManager::SaveJson(GetProjectPath().ToString(), jO);
+		SavePhysicsChannels();
 	}
 
 	void EditorProjectManager::SetEditorAppContext(EditorAppContext *appContext, ApplicationInfo* applicationInfo)
@@ -99,6 +101,7 @@ namespace Plu
 		nlohmann::json json = TypeSerializer<TypeInfo*>::Serialize(gameStartupSettings->GetClass(), gameStartupSettings.GetRaw());
 		json["collisionConfig"] = SaveCollisionConfig(ActiveCollisionConfig());
 		DiskManager::SaveJson((GetProjectCacheDirectory().ToString() + L"/ProjectDist/ProjectDefaults.json").CStr(), json);
+		PhysicsChannelsManager::GetInstance()->SaveToBinaryFile(GetProjectCacheDirectory().ToString() + L"/ProjectDist/PhysicsChannels.bin");
 	}
 
 	float EditorProjectManager::GetProjectFileVersion() const
@@ -232,6 +235,9 @@ namespace Plu
 			ActiveCollisionConfig() = LoadCollisionConfig((*projectFileJSON)["collisionConfig"]);
 		else
 			ActiveCollisionConfig() = BuildDefaultCollisionConfig();
+		// Physics channels — before scenes initialize, so bodies get their project channels. A
+		// project without the file (new or older) gets just "Default".
+		PhysicsChannelsManager::GetInstance()->LoadFromJsonFile(GetPhysicsChannelsConfigPath());
 
 		CopyPythonBindsFile();
 		//Thats bad, I need to make an event system :(
@@ -315,6 +321,19 @@ namespace Plu
 		PathW bindPath = GetExePath().GetParentPath();
 		bindPath /= L"PluEngine.pyi";
 		std::filesystem::copy(bindPath.CStr(), GetProjectScriptsDirectory().CStr(), std::filesystem::copy_options::overwrite_existing);
+	}
+
+	PathW EditorProjectManager::GetPhysicsChannelsConfigPath() const
+	{
+		PathW path = GetProjectConfigDirectory();
+		path /= L"PhysicsChannels.json";
+		return path;
+	}
+
+	void EditorProjectManager::SavePhysicsChannels() const
+	{
+		if (!IsAnyProjectOpen()) return;
+		PhysicsChannelsManager::GetInstance()->SaveToJsonFile(GetPhysicsChannelsConfigPath());
 	}
 
 	PathW EditorProjectManager::GetProjectConfigDirectory() const

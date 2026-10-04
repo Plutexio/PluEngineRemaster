@@ -21,6 +21,12 @@ namespace Plu
         void OnHide() override;
         void OnShow() override;
         void OnUpdate(float deltaTime) override;
+
+    private:
+        void DrawPhysicsChannels();
+
+        char mNewChannelName[64] = {};
+        int  mNewChannelResponse = 2; // PhysicsCollisionResponse::Block
     };
 }
 

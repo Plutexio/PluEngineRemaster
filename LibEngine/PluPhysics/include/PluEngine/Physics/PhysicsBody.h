@@ -13,6 +13,7 @@
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PhysicsBody.generated.h"
 #include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu
 {
@@ -32,6 +33,7 @@ namespace Plu
 			const JPH::RVec3&   Position,
 			const JPH::Quat&    Rotation    = JPH::Quat::sIdentity(),
 			PhysicsBodyType            Type        = PhysicsBodyType::Static,
+			PhysicsCollisionChannel* Channel = PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
 			float				Mass         = 10.0f,
@@ -43,6 +45,8 @@ namespace Plu
 		[[nodiscard]] bool NeedsActivation() const { return mNeedsActivation; }
 
 		PhysicsBodyType GetBodyType() const { return mBodyType; }
+
+		void SetCollisionChannel(PhysicsCollisionChannel* Channel) const;
 
 		// Whether the body was still active at the previous transform sync (PhysicsWorld::OnUpdate).
 		// Jolt deactivates a body at the end of the step that brought it to rest, so the sync needs
@@ -87,7 +91,7 @@ namespace Plu
 		PhysicsBodyType mBodyType;
 
 		static JPH::EMotionType ToJoltMotionType(PhysicsBodyType Type);
-		static JPH::ObjectLayer ToJoltLayer(PhysicsBodyType Type);
+		static JPH::ObjectLayer ToJoltLayer(PhysicsCollisionChannel* channel, PhysicsBodyType Type);
 	};
 }
 

@@ -4,11 +4,23 @@
 
 #include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
 
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
+
 void Plu::PhysicsBodyComponent::SetBodyType(PhysicsBodyType newType)
 {
     Type = newType;
     PhysicsBodyType bodyType =  newType;
     DispatchEvent("SetBodyType", &bodyType);
+}
+
+void Plu::PhysicsBodyComponent::SetCollisionChannel(PhysicsCollisionChannel *newChannel)
+{
+    DispatchEvent("SetCollisionChannel", &newChannel);
+}
+
+void Plu::PhysicsBodyComponent::SetCollisionChannel(const String &channelName)
+{
+    SetCollisionChannel(PhysicsChannelsManager::GetInstance()->GetChannel(channelName));
 }
 
 Vec3 Plu::PhysicsBodyComponent::GetLinearVelocity() const

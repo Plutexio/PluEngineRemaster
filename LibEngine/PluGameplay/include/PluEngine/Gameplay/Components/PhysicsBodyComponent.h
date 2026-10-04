@@ -8,6 +8,7 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Gameplay/GameObjectComponent.h"
 #include "PhysicsBodyComponent.generated.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu
 {
@@ -36,10 +37,16 @@ namespace Plu
         float Restitution = 0;
         PLU_PROPERTY(Setter=SetBodyType, PyExport)
         PhysicsBodyType Type = PhysicsBodyType::Dynamic;
+        PLU_PROPERTY(Setter=SetCollisionChannel)
+        PhysicsCollisionChannel* CollisionChannel = nullptr;
 
         float Mass = 10.0f;
 
         void SetBodyType(PhysicsBodyType newType);
+        void SetCollisionChannel(PhysicsCollisionChannel* newChannel);
+
+        PLU_FUNCTION(PyExport)
+        void SetCollisionChannel(const String &channelName);
 
         PLU_FUNCTION()
         [[nodiscard]] Vec3 GetLinearVelocity() const;

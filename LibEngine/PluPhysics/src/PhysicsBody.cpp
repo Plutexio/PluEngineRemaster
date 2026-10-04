@@ -3,8 +3,7 @@
 //
 
 #include "PluEngine/Physics/PhysicsBody.h"
-#include <Jolt/Physics/Body/Body.h> // CreateBody hands back a Body*, we only need its ID
-#include "PluEngine/Physics/PhysicsLayers.h"
+#include <Jolt/Physics/Body/Body.h>
 #include "PluEngine/Log.h"
 
 using namespace Plu;
@@ -15,18 +14,21 @@ PhysicsBody::PhysicsBody(
     const JPH::RVec3&   Position,
     const JPH::Quat&    Rotation,
     PhysicsBodyType            Type,
+    PhysicsCollisionChannel* Channel,
     float               Friction,
     float               Restitution,
     float               Mass,
     bool                DeferAdd)
     : mBodyInterface(BodyInterface)
 {
+    PLU_CORE_ASSERT(Channel, "Channel cannot be null!");
+
     JPH::BodyCreationSettings Settings(
         Shape,
         Position,
         Rotation,
         ToJoltMotionType(Type),
-        ToJoltLayer(Type)
+        ToJoltLayer(Channel,Type)
     );
 
     Settings.mAllowedDOFs = JPH::EAllowedDOFs::All;
@@ -70,6 +72,11 @@ PhysicsBody::PhysicsBody(
     if (mBodyID.IsInvalid()) {
         PLU_CORE_ERROR("Failed to create physics body — the physics system is out of bodies");
     }
+}
+
+void PhysicsBody::SetCollisionChannel(PhysicsCollisionChannel *Channel) const
+{
+    mBodyInterface.SetObjectLayer(mBodyID, ToJoltLayer(Channel, mBodyType));
 }
 
 PhysicsBody::~PhysicsBody() {
@@ -159,8 +166,9 @@ JPH::EMotionType PhysicsBody::ToJoltMotionType(PhysicsBodyType Type) {
     }
 }
 
-JPH::ObjectLayer PhysicsBody::ToJoltLayer(PhysicsBodyType Type) {
-    return Type == PhysicsBodyType::Static
-        ? CollisionLayers::STATIC
-        : CollisionLayers::DYNAMIC;
+JPH::ObjectLayer PhysicsBody::ToJoltLayer(PhysicsCollisionChannel *channel, PhysicsBodyType Type)
+{
+    UInt16 layer = PhysicsChannelsManager::GetInstance()->GetChannelId(channel);
+    layer = layer << 1 | (Type != PhysicsBodyType::Static);
+    return layer;
 }

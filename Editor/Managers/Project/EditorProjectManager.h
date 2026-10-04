@@ -59,6 +59,10 @@ namespace Plu
 		[[nodiscard]] PathW GetProjectShadersDirectory() const;
 		[[nodiscard]] PathW GetProjectCacheDirectory() const;
 
+		// Config/PhysicsChannels.json of the open project.
+		[[nodiscard]] PathW GetPhysicsChannelsConfigPath() const;
+		void SavePhysicsChannels() const;
+
 	};
 }
 

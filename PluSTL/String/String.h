@@ -656,6 +656,57 @@ namespace Plu
         }
 
         // =========================================================================
+        // STRIP
+        // =========================================================================
+
+        // Python-style strip: removes leading/trailing characters found in `chars`.
+        // `chars == nullptr` strips whitespace (space, \t, \n, \r).
+        void StripLeftInPlace(const CharT* chars = nullptr) noexcept {
+            const CharT* data = GetData();
+            SizeType start = 0;
+            while (start < mLength && IsStripChar(data[start], chars)) ++start;
+            if (start > 0) Remove(0, start);
+        }
+
+        void StripRightInPlace(const CharT* chars = nullptr) noexcept {
+            CharT* data = GetData();
+            SizeType end = mLength;
+            while (end > 0 && IsStripChar(data[end - 1], chars)) --end;
+            if (end < mLength) {
+                mLength = end;
+                data[mLength] = CharT{0};
+            }
+        }
+
+        void StripInPlace(const CharT* chars = nullptr) noexcept {
+            StripRightInPlace(chars);
+            StripLeftInPlace(chars);
+        }
+
+        [[nodiscard]] BasicString StripLeft(const CharT* chars = nullptr) const noexcept {
+            const CharT* data = GetData();
+            SizeType start = 0;
+            while (start < mLength && IsStripChar(data[start], chars)) ++start;
+            return BasicString(data + start, mLength - start);
+        }
+
+        [[nodiscard]] BasicString StripRight(const CharT* chars = nullptr) const noexcept {
+            const CharT* data = GetData();
+            SizeType end = mLength;
+            while (end > 0 && IsStripChar(data[end - 1], chars)) --end;
+            return BasicString(data, end);
+        }
+
+        [[nodiscard]] BasicString Strip(const CharT* chars = nullptr) const noexcept {
+            const CharT* data = GetData();
+            SizeType start = 0;
+            SizeType end = mLength;
+            while (start < end && IsStripChar(data[start], chars)) ++start;
+            while (end > start && IsStripChar(data[end - 1], chars)) --end;
+            return BasicString(data + start, end - start);
+        }
+
+        // =========================================================================
         // CASE OPERATIONS
         // =========================================================================
 
@@ -991,6 +1042,14 @@ namespace Plu
             } else {
                 return c == L' ' || c == L'\t' || c == L'\n' || c == L'\r';
             }
+        }
+
+        static bool IsStripChar(CharT c, const CharT* chars) noexcept {
+            if (!chars) return IsWhitespace(c);
+            for (; *chars; ++chars) {
+                if (*chars == c) return true;
+            }
+            return false;
         }
 
         static bool IsDigit(CharT c) noexcept {

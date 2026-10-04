@@ -179,6 +179,7 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
         ToJPH(gameObject->GetObjectLocation()),
         ToJPHRotation(gameObject->GetObjectRotation()),
         bodyComponent->Type,
+        PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
         bodyComponent->Friction,
         bodyComponent->Restitution,
         bodyComponent->Mass,
@@ -314,6 +315,12 @@ void Plu::PhysicsWorld::Init()
 
         if (newComponent->GetClass() == PhysicsBodyComponent::GetStaticClass()) {
             mObjectsToCheck.Insert(parentObject->GetObjectUUID());
+
+            newComponent->SubscribeToEvent("SetCollisionChannel", [newComponent, this](void* data) {
+                TUsePointer<GameObject> bodyOwnerObject = newComponent->GetParentGameObject();
+                if (!mBodyPerObject.Contains(bodyOwnerObject->GetObjectUUID())) return;
+                mBodyPerObject[bodyOwnerObject->GetObjectUUID()]->SetRestitution(*static_cast<float *>(data));
+            });
 
             newComponent->SubscribeToEvent("GetLinearVelocity", [newComponent, this](void* data) {
                 TUsePointer<GameObject> bodyOwnerObject = newComponent->GetParentGameObject();
