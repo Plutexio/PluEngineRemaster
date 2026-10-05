@@ -33,7 +33,7 @@ namespace Plu
 			const JPH::RVec3&   Position,
 			const JPH::Quat&    Rotation    = JPH::Quat::sIdentity(),
 			PhysicsBodyType            Type        = PhysicsBodyType::Static,
-			PhysicsCollisionChannel* Channel = PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
+			TUsePointer<PhysicsCollisionChannel> Channel = PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
 			float				Mass         = 10.0f,

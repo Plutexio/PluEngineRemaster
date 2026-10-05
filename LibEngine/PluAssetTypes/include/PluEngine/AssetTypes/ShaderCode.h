@@ -122,8 +122,9 @@ namespace Plu
 				*static_cast<TOwningPointer<IShaderUniform>*>(outValue) = TOwningPointer(uniform);
 			}
 		}
-		static void EditorControl(void* value, const String& name)
+		static bool EditorControl(void* value, const String& name)
 		{
+			return false;
 		}
 	};
 

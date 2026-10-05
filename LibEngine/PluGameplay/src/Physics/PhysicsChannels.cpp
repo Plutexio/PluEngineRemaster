@@ -28,9 +28,7 @@ Plu::PhysicsChannelsManager::PhysicsChannelsManager()
 
 Plu::PhysicsChannelsManager::~PhysicsChannelsManager()
 {
-    for (PhysicsCollisionChannel* channel : mCollisionChannels) {
-        delete channel;
-    }
+    mCollisionChannels.Clear();
 }
 
 Plu::PhysicsChannelsManager * Plu::PhysicsChannelsManager::GetInstance()
@@ -43,9 +41,6 @@ Plu::PhysicsChannelsManager * Plu::PhysicsChannelsManager::GetInstance()
 
 void Plu::PhysicsChannelsManager::ResetToDefaults()
 {
-    for (PhysicsCollisionChannel* channel : mCollisionChannels) {
-        delete channel;
-    }
     mCollisionChannels.Clear();
     mFreeList.Clear();
     mChannelIdPerName.Clear();
@@ -64,7 +59,7 @@ void Plu::PhysicsChannelsManager::AddChannel(const String &channelName, PhysicsC
     }
     PLU_CORE_ASSERT(!mFreeList.IsEmpty() || mCollisionChannels.Size() < kMaxChannels, "Too many physics channels!");
 
-    PhysicsCollisionChannel* newChannel = new PhysicsCollisionChannel();
+    TOwningPointer<PhysicsCollisionChannel> newChannel = CreateOwning<PhysicsCollisionChannel>();
     newChannel->Name = channelName;
     newChannel->DefaultResponse = defaultResponse;
 
@@ -89,7 +84,6 @@ void Plu::PhysicsChannelsManager::RemoveChannel(const String &channelName)
     }
     if (mChannelIdPerName.Contains(channelName)) {
         const UInt16 removedIdx = mChannelIdPerName[channelName];
-        delete mCollisionChannels[removedIdx];
         mCollisionChannels[removedIdx] = nullptr;
         mFreeList.PushBack(removedIdx);
         mChannelIdPerName.Remove(channelName);
@@ -97,7 +91,7 @@ void Plu::PhysicsChannelsManager::RemoveChannel(const String &channelName)
     }
 }
 
-Plu::PhysicsCollisionChannel * Plu::PhysicsChannelsManager::GetChannel(String channelName)
+Plu::TUsePointer<Plu::PhysicsCollisionChannel> Plu::PhysicsChannelsManager::GetChannel(String channelName)
 {
     if (mChannelIdPerName.Contains(channelName)) {
         return mCollisionChannels[mChannelIdPerName[channelName]];
@@ -105,7 +99,12 @@ Plu::PhysicsCollisionChannel * Plu::PhysicsChannelsManager::GetChannel(String ch
     return nullptr;
 }
 
-Plu::PhysicsCollisionChannel * Plu::PhysicsChannelsManager::GetChannelById(UInt16 channelId) const
+Plu::TUsePointer<Plu::PhysicsCollisionChannel> Plu::PhysicsChannelsManager::GetDefaultChannel()
+{
+    return GetChannel("Default");
+}
+
+Plu::TUsePointer<Plu::PhysicsCollisionChannel> Plu::PhysicsChannelsManager::GetChannelById(UInt16 channelId) const
 {
     if (channelId >= mCollisionChannels.Size()) {
         return nullptr;
@@ -116,6 +115,11 @@ Plu::PhysicsCollisionChannel * Plu::PhysicsChannelsManager::GetChannelById(UInt1
 bool Plu::PhysicsChannelsManager::ChannelExists(const String &channelName) const
 {
     return mChannelIdPerName.Contains(channelName);
+}
+
+UInt16 Plu::PhysicsChannelsManager::GetChannelId(TUsePointer<PhysicsCollisionChannel> channel)
+{
+    return GetChannelId(channel.GetRaw());
 }
 
 UInt16 Plu::PhysicsChannelsManager::GetChannelId(PhysicsCollisionChannel *channel)
@@ -143,8 +147,8 @@ DynamicArray<Plu::String> Plu::PhysicsChannelsManager::GetAllChannels()
 
 bool Plu::PhysicsChannelsManager::CanBeCompletelyIgnored(UInt16 channelA, UInt16 channelB)
 {
-    const PhysicsCollisionChannel* a = GetChannelById(channelA >> 1);
-    const PhysicsCollisionChannel* b = GetChannelById(channelB >> 1);
+    const PhysicsCollisionChannel* a = GetChannelById(channelA >> 1).GetRaw();
+    const PhysicsCollisionChannel* b = GetChannelById(channelB >> 1).GetRaw();
 
     if (a == nullptr || b == nullptr) {
         return false;
@@ -157,9 +161,9 @@ bool Plu::PhysicsChannelsManager::CanBeCompletelyIgnored(UInt16 channelA, UInt16
 bool Plu::PhysicsChannelsManager::CanBlock(UInt16 channelA, UInt16 channelB)
 {
     // A layer whose channel was removed falls back to Default.
-    const PhysicsCollisionChannel* defaultChannel = mCollisionChannels[kDefaultChannelId];
-    const PhysicsCollisionChannel* a = GetChannelById(channelA >> 1);
-    const PhysicsCollisionChannel* b = GetChannelById(channelB >> 1);
+    const PhysicsCollisionChannel* defaultChannel = mCollisionChannels[kDefaultChannelId].GetRaw();
+    const PhysicsCollisionChannel* a = GetChannelById(channelA >> 1).GetRaw();
+    const PhysicsCollisionChannel* b = GetChannelById(channelB >> 1).GetRaw();
     if (a == nullptr) a = defaultChannel;
     if (b == nullptr) b = defaultChannel;
 
@@ -183,7 +187,7 @@ void Plu::PhysicsChannelsManager::RestoreChannel(const String &channelName, Phys
 nlohmann::json Plu::PhysicsChannelsManager::SaveToJson() const
 {
     nlohmann::json channels = nlohmann::json::array();
-    for (PhysicsCollisionChannel* channel : mCollisionChannels) {
+    for (TUsePointer<PhysicsCollisionChannel> channel : mCollisionChannels) {
         if (!channel) {
             continue;
         }
@@ -254,13 +258,13 @@ bool Plu::PhysicsChannelsManager::SaveToBinaryFile(const PathW &path) const
     }
 
     UInt32 channelCount = 0;
-    for (const PhysicsCollisionChannel* channel : mCollisionChannels) {
+    for (const TUsePointer<PhysicsCollisionChannel> channel : mCollisionChannels) {
         if (channel) ++channelCount;
     }
     writer.Write(kChannelsBinaryMagic);
     writer.Write(kChannelsBinaryVersion);
     writer.Write(channelCount);
-    for (const PhysicsCollisionChannel* channel : mCollisionChannels) {
+    for (const TUsePointer<PhysicsCollisionChannel> channel : mCollisionChannels) {
         if (!channel) {
             continue;
         }

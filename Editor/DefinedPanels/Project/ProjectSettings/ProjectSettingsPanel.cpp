@@ -95,7 +95,7 @@ void Plu::ProjectSettingsPanel::DrawPhysicsChannels()
 
         for (UInt32 i = 0; i < channelNames.Size(); ++i)
         {
-            PhysicsCollisionChannel* channel = channels->GetChannel(channelNames[i]);
+            TUsePointer<PhysicsCollisionChannel> channel = channels->GetChannel(channelNames[i]);
             if (!channel)
                 continue;
 

@@ -37,7 +37,7 @@ namespace Plu
     // Ids are runtime-only: everything persisted refers to channels by name.
     class PLUGAMEPLAY_API PhysicsChannelsManager
     {
-        DynamicArray<PhysicsCollisionChannel*> mCollisionChannels; // nullptr = free slot
+        DynamicArray<TOwningPointer<PhysicsCollisionChannel>> mCollisionChannels; // nullptr = free slot
         DynamicArray<UInt16> mFreeList;
         HashMap<String, UInt16> mChannelIdPerName;
 
@@ -60,10 +60,12 @@ namespace Plu
         void AddChannel(const String &channelName, PhysicsCollisionResponse defaultResponse = PhysicsCollisionResponse::Block);
         void RemoveChannel(const String &channelName);
 
-        PhysicsCollisionChannel* GetChannel(String channelName);
+        TUsePointer<PhysicsCollisionChannel> GetChannel(String channelName);
+        TUsePointer<PhysicsCollisionChannel> GetDefaultChannel();
         // Null for an id that is out of range or belongs to a removed channel.
-        [[nodiscard]] PhysicsCollisionChannel* GetChannelById(UInt16 channelId) const;
+        [[nodiscard]] TUsePointer<PhysicsCollisionChannel> GetChannelById(UInt16 channelId) const;
         [[nodiscard]] bool ChannelExists(const String &channelName) const;
+        UInt16 GetChannelId(TUsePointer<PhysicsCollisionChannel> channel);
         UInt16 GetChannelId(PhysicsCollisionChannel* channel);
 
         // Names of the live channels, in id order.
@@ -91,6 +93,8 @@ namespace Plu
     template <>
     struct TypeSerializer<PhysicsCollisionChannel>
     {
+        // TypeSerializer<TUsePointer<T>>::Serialize hands over the raw object (GetRaw()), while
+        // Deserialize and EditorControl get the TUsePointer itself.
         static nlohmann::json Serialize(void* value)
         {
             return static_cast<PhysicsCollisionChannel*>(value)->Name.CStr();
@@ -98,33 +102,36 @@ namespace Plu
 
         static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
         {
-            PhysicsCollisionChannel* channel = static_cast<PhysicsCollisionChannel*>(outValue);
+            TUsePointer<PhysicsCollisionChannel>* channel = static_cast<TUsePointer<PhysicsCollisionChannel>*>(outValue);
             PhysicsChannelsManager* channels = PhysicsChannelsManager::GetInstance();
             if (!json.is_string()) {
                 PLU_CORE_ERROR("PhysicsCollisionChannel JSON is not a string, using Default");
-                *channel = *channels->GetChannel("Default");
+                *channel = channels->GetChannel("Default");
                 return;
             }
             const String name = json.get<std::string>().c_str();
-            if (PhysicsCollisionChannel* existing = channels->GetChannel(name)) {
-                *channel = *existing;
+            if (TUsePointer<PhysicsCollisionChannel> existing = channels->GetChannel(name)) {
+                *channel = existing;
                 return;
             }
             PLU_CORE_ERROR("Physics channel '{}' does not exist, using Default", name.CStr());
-            *channel = *channels->GetChannel("Default");
+            *channel = channels->GetChannel("Default");
         }
 
         // Dropdown of the project's channels.
         static bool EditorControl(void* value, const String& name)
         {
-            PhysicsCollisionChannel* channel = static_cast<PhysicsCollisionChannel*>(value);
+            TUsePointer<PhysicsCollisionChannel>* channelPtr = static_cast<TUsePointer<PhysicsCollisionChannel>*>(value);
+            TUsePointer<PhysicsCollisionChannel> channel = *channelPtr;
             PhysicsChannelsManager* channels = PhysicsChannelsManager::GetInstance();
             bool changed = false;
-            if (ImGui::BeginCombo(name.CStr(), channel->Name.CStr())) {
+            // Null once the channel was removed in Project Settings.
+            const char* preview = channel ? channel->Name.CStr() : "None";
+            if (ImGui::BeginCombo(name.CStr(), preview)) {
                 for (const String& channelName : channels->GetAllChannels()) {
-                    const bool selected = channelName == channel->Name;
+                    const bool selected = channel && channelName == channel->Name;
                     if (ImGui::Selectable(channelName.CStr(), selected) && !selected) {
-                        *channel = *channels->GetChannel(channelName);
+                        *channelPtr = channels->GetChannel(channelName);
                         changed = true;
                     }
                     if (selected)

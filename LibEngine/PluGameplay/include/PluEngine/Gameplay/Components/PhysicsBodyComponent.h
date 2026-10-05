@@ -38,15 +38,14 @@ namespace Plu
         PLU_PROPERTY(Setter=SetBodyType, PyExport)
         PhysicsBodyType Type = PhysicsBodyType::Dynamic;
         PLU_PROPERTY(Setter=SetCollisionChannel)
-        PhysicsCollisionChannel* CollisionChannel = nullptr;
+        TUsePointer<PhysicsCollisionChannel> CollisionChannel = PhysicsChannelsManager::GetInstance()->GetDefaultChannel();
 
         float Mass = 10.0f;
 
         void SetBodyType(PhysicsBodyType newType);
-        void SetCollisionChannel(PhysicsCollisionChannel* newChannel);
 
         PLU_FUNCTION(PyExport)
-        void SetCollisionChannel(const String &channelName);
+        void SetCollisionChannel(TUsePointer<PhysicsCollisionChannel> newChannel);
 
         PLU_FUNCTION()
         [[nodiscard]] Vec3 GetLinearVelocity() const;

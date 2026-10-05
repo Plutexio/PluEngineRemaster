@@ -476,6 +476,10 @@ namespace Plu
 #endif
 			}
 
+			if (T::GetStaticClass()->Type == TypeType::STRUCT) {
+				return TypeSerializer<T>::EditorControl(value, name);
+			}
+
 			TUsePointer<EngineObjectManager> objectManager = TypeRegistry::GetInstance()->GetObjectManager();
 
 			// Candidate list cached per field instance (keyed by the field's

@@ -13,14 +13,10 @@ void Plu::PhysicsBodyComponent::SetBodyType(PhysicsBodyType newType)
     DispatchEvent("SetBodyType", &bodyType);
 }
 
-void Plu::PhysicsBodyComponent::SetCollisionChannel(PhysicsCollisionChannel *newChannel)
+void Plu::PhysicsBodyComponent::SetCollisionChannel(TUsePointer<PhysicsCollisionChannel> newChannel)
 {
+    CollisionChannel = newChannel;
     DispatchEvent("SetCollisionChannel", &newChannel);
-}
-
-void Plu::PhysicsBodyComponent::SetCollisionChannel(const String &channelName)
-{
-    SetCollisionChannel(PhysicsChannelsManager::GetInstance()->GetChannel(channelName));
 }
 
 Vec3 Plu::PhysicsBodyComponent::GetLinearVelocity() const

@@ -173,13 +173,17 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
         mBodyPerObject.Remove(gameObject->GetObjectUUID());
     }
 
+    // A channel removed in Project Settings leaves the component's pointer null.
+    TUsePointer<PhysicsCollisionChannel> channel = bodyComponent->CollisionChannel;
+    if (!channel) channel = PhysicsChannelsManager::GetInstance()->GetDefaultChannel();
+
     TOwningPointer<PhysicsBody> body = CreateOwning<PhysicsBody>(
         this->mPhysicsSystem->GetBodyInterface(),
         finalShape,
         ToJPH(gameObject->GetObjectLocation()),
         ToJPHRotation(gameObject->GetObjectRotation()),
         bodyComponent->Type,
-        PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
+        channel,
         bodyComponent->Friction,
         bodyComponent->Restitution,
         bodyComponent->Mass,
@@ -319,7 +323,9 @@ void Plu::PhysicsWorld::Init()
             newComponent->SubscribeToEvent("SetCollisionChannel", [newComponent, this](void* data) {
                 TUsePointer<GameObject> bodyOwnerObject = newComponent->GetParentGameObject();
                 if (!mBodyPerObject.Contains(bodyOwnerObject->GetObjectUUID())) return;
-                mBodyPerObject[bodyOwnerObject->GetObjectUUID()]->SetRestitution(*static_cast<float *>(data));
+                TUsePointer<PhysicsCollisionChannel> channel = *static_cast<TUsePointer<PhysicsCollisionChannel>*>(data);
+                if (!channel) channel = PhysicsChannelsManager::GetInstance()->GetDefaultChannel();
+                mBodyPerObject[bodyOwnerObject->GetObjectUUID()]->SetCollisionChannel(channel.GetRaw());
             });
 
             newComponent->SubscribeToEvent("GetLinearVelocity", [newComponent, this](void* data) {

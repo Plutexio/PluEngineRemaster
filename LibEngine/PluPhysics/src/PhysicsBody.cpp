@@ -14,7 +14,7 @@ PhysicsBody::PhysicsBody(
     const JPH::RVec3&   Position,
     const JPH::Quat&    Rotation,
     PhysicsBodyType            Type,
-    PhysicsCollisionChannel* Channel,
+    TUsePointer<PhysicsCollisionChannel> Channel,
     float               Friction,
     float               Restitution,
     float               Mass,
@@ -28,7 +28,7 @@ PhysicsBody::PhysicsBody(
         Position,
         Rotation,
         ToJoltMotionType(Type),
-        ToJoltLayer(Channel,Type)
+        ToJoltLayer(Channel.GetRaw(),Type)
     );
 
     Settings.mAllowedDOFs = JPH::EAllowedDOFs::All;
