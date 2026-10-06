@@ -39,10 +39,14 @@ JPH::ShapeRefC Plu::StaticMeshPerVertexCollisionData::GetShape(StaticMesh *mesh)
         Vec3 a = vertices->At(indices->At(i+0)).Position;
         Vec3 b = vertices->At(indices->At(i+1)).Position;
         Vec3 c = vertices->At(indices->At(i+2)).Position;
+        // The importer stores triangles clockwise (aiProcess_FlipWindingOrder), while Jolt treats
+        // counter-clockwise as the front face and ignores back faces in contacts. Passing the
+        // indices through as-is turns the mesh inside out: a body walks in through the back
+        // faces and is then held inside by the front ones. Swap b/c to restore CCW.
         triangles.push_back(JPH::Triangle(
             JPH::Float3(a.x, a.y, a.z),
-            JPH::Float3(b.x, b.y, b.z),
-            JPH::Float3(c.x, c.y, c.z)
+            JPH::Float3(c.x, c.y, c.z),
+            JPH::Float3(b.x, b.y, b.z)
         ));
     }
     JPH::MeshShapeSettings settings(triangles);

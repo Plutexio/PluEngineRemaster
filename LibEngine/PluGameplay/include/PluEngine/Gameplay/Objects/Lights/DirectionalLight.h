@@ -60,12 +60,15 @@ namespace Plu
         // Receiver-side normal offset, in texels of the cascade. Raise it to kill acne on grazing
         // surfaces, at the cost of shadows detaching from their caster (peter-panning).
         PLU_PROPERTY(PyExport)
-        float ShadowNormalBias = 1.0f;
+        float ShadowNormalBias = 1.2f;
 
         // Receiver-side depth bias, in METRES of world space. Constant physical distance in every
-        // cascade — the renderer converts it into each cascade's depth range.
+        // cascade — the renderer converts it into each cascade's depth range. Zero by default:
+        // the shadow pass culls front faces, so lit surfaces never compare against their own depth
+        // and the normal offset alone keeps the terminator clean; any depth bias here shows up as
+        // a gap at the foot of objects, where the back faces in the map sit on the ground.
         PLU_PROPERTY(PyExport)
-        float ShadowDepthBias = 0.005f;
+        float ShadowDepthBias = 0.0f;
 
         // Radius of the PCF disk, in texels. Larger = softer, blurrier shadow edges; 0 collapses
         // the filter to a single hardware 2x2 tap, which is the hardest edge the map can produce.

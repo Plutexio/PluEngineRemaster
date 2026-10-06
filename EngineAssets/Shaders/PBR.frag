@@ -246,8 +246,9 @@ vec3 EvaluateBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float roughness, float me
 // Cień kaskadowy — zwraca widoczność światła [0..1] (1 = pełne światło, 0 = w cieniu).
 //
 // Budżet biasu (świadomie rozdzielony, bez literałów w GLSL):
-//  * caster — slope-scaled glPolygonOffset + front-face culling w passie cieni (Renderer.cpp);
-//    działa per trójkąt, w jednostkach precyzji bufora głębi, więc nie przesuwa cienia w bok;
+//  * caster — front-face culling in the shadow pass (Renderer.cpp), no polygon offset on
+//    triangles: only faces turned away from the light reach the map, and this shader samples
+//    the shadow only where NdotL > 0, so a lit surface never compares against itself;
 //  * receiver — normal-offset w TEKSELACH tej kaskady (niżej) + depth-bias w metrach
 //    przeliczony na CPU na [0,1] głębi kaskady (cascades[i].params.z z UBO).
 // ----------------------------------------------------------

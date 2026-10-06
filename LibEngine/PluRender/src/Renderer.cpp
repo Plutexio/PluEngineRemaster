@@ -1591,8 +1591,10 @@ void Plu::Renderer::RenderDepthPrepass(Plu::RenderSnapshot* snapshot, const Matr
     if (mSkeletalDepthReady) {
         const UInt64 skeletalMeshCount = snapshot->SkeletalMeshRenderObjects.Size();
         for (UInt32 i = 0; i < skeletalMeshCount; i++) {
-            // No frustum test and no CastsShadow test — the lighting pass draws every skeletal
-            // mesh unconditionally, and the prepass has to match it exactly (see CullShadowCasters).
+            // No frustum test — the lighting pass draws every skeletal mesh unconditionally, and
+            // the prepass must not hold anything it does not draw (see CullShadowCasters). Non-
+            // casters are skipped: CastsShadow turns off their contact shadows as well.
+            if (!snapshot->SkeletalMeshRenderObjects[i].CastsShadow) continue;
             DrawSkeletalDepthObject(snapshot, i, view, projection);
         }
     }
@@ -1625,18 +1627,21 @@ void Plu::Renderer::RenderShadowPass(Plu::RenderSnapshot *snapshot)
     // powierzchni. Culling jest globalnie wyłączony (główny pass renderuje obie strony),
     // więc po passie przywracamy stan. Uwaga: dla otwartej/jednostronnej geometrii (pojedyncze
     // quady) może dać light-leak — wtedy normal-offset w PBR.frag łagodzi przypadki brzegowe.
+    // Mesh index buffers are clockwise (the importers use aiProcess_FlipWindingOrder), so GL's
+    // default GL_CCW front face would make GL_FRONT cull the real back faces — the exact opposite.
     glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CW);
     glCullFace(GL_FRONT);
 
-    // Slope-scaled depth bias po stronie CASTERA: liczony per-trójkąt w jednostkach precyzji
-    // bufora głębi, więc nie skaluje się z rozmiarem teksela kaskady i nie przesuwa cienia
-    // w bok (w przeciwieństwie do normal-offsetu w PBR.frag). Dzięki temu ten sam bias
-    // leczy acne dużych powierzchni w dalekich kaskadach, nie zjadając cieni małych obiektów.
-    // Wartości przestrojone pod D32F: jednostka offsetu to najmniejszy rozróżnialny krok głębi,
-    // który przy 32-bitowym floacie jest znacznie mniejszy niż przy dawnym D16.
+    // No polygon offset on triangles. With working front-face culling only faces turned away
+    // from the light reach the map, and PBR.frag samples the shadow only where NdotL > 0, so a
+    // lit surface never compares against its own depth — there is no acne for the offset to
+    // cure. What it did do was push those back faces further from the light: at the foot of an
+    // object the back face sits right on the ground, and a slope-scaled offset on a steep wall
+    // turned straight into a gap between the object and its shadow (peter-panning).
+    // The offset is kept for particle points below, which culling never touches.
     constexpr float kShadowPolygonOffsetFactor = 2.0f;
     constexpr float kShadowPolygonOffsetUnits  = 4.0f;
-    glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(kShadowPolygonOffsetFactor, kShadowPolygonOffsetUnits);
 
     // The array is about to become the render target, so it must not still be bound for
@@ -1716,6 +1721,7 @@ void Plu::Renderer::RenderShadowPass(Plu::RenderSnapshot *snapshot)
     glDisable(GL_DEPTH_CLAMP);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.0f, 0.0f);
+    glFrontFace(GL_CCW);
     glCullFace(GL_BACK);
     glDisable(GL_CULL_FACE);
 }
@@ -1763,15 +1769,15 @@ UInt32 Plu::Renderer::CullShadowCasters(Plu::RenderSnapshot* snapshot)
             if (batch.TotalCount == 0) continue;
 
             if (isCamera) {
+                // CastsShadow gates contact shadows too: the prepass depth is what their rays
+                // march through, so a non-caster left out of it neither shadows its surroundings
+                // nor itself. Leaving geometry OUT is safe — the prepass feeds no early-Z, and
+                // every ray starts from the shaded fragment's own position, not from this buffer.
+                if (!batch.CastsShadow) continue;
                 // The camera's range is taken VERBATIM from the batch — the instances MAIN already
-                // marked visible — instead of being re-culled here. Two reasons:
-                //  * the prepass must draw exactly what the lighting pass draws. Re-deriving the
-                //    frustum on this thread could disagree by an ulp, and an instance present in
-                //    the depth buffer but absent from the colour pass occludes without ever being
-                //    shaded — a black hole in the scene;
-                //  * CastsShadow must NOT gate it: an object excluded from shadow casting is still
-                //    visible, and leaving it out would punch a hole in the depth buffer that
-                //    contact shadows march through.
+                // marked visible — instead of being re-culled here: re-deriving the frustum on
+                // this thread could disagree by an ulp, and an instance present in the depth
+                // buffer but absent from the colour pass would cast contact shadows from nothing.
                 for (UInt32 v = 0; v < batch.VisibleCount; v++) {
                     mVisibleInstanceScratch.PushBack(batch.InstanceOffset + v);
                 }
@@ -1875,14 +1881,14 @@ void Plu::Renderer::RenderSpotShadowPass(Plu::RenderSnapshot* snapshot)
     // from the previous frame's main pass — same feedback loop as the cascade array.
     UnbindSpotShadowTexture();
 
-    // Same caster-side bias budget as the cascades: front-face culling moves the acne threshold
-    // onto the geometry's hidden side, and the slope-scaled polygon offset works per triangle in
-    // depth-buffer units, so it does not shift the shadow sideways.
+    // Same caster-side setup as the cascades: front-face culling moves the acne threshold onto
+    // the geometry's hidden side, clockwise front face because mesh index buffers are stored
+    // clockwise, and no polygon offset on triangles (see RenderShadowPass) — only on points.
     glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CW);
     glCullFace(GL_FRONT);
     constexpr float kShadowPolygonOffsetFactor = 2.0f;
     constexpr float kShadowPolygonOffsetUnits  = 4.0f;
-    glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(kShadowPolygonOffsetFactor, kShadowPolygonOffsetUnits);
 
     // Particle casters, as in the cascade pass. No scissor needed: every slot is its own layer.
@@ -1936,6 +1942,7 @@ void Plu::Renderer::RenderSpotShadowPass(Plu::RenderSnapshot* snapshot)
     glDisable(GL_PROGRAM_POINT_SIZE);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.0f, 0.0f);
+    glFrontFace(GL_CCW);
     glCullFace(GL_BACK);
     glDisable(GL_CULL_FACE);
 }

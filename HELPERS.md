@@ -471,6 +471,10 @@ Karmi je **depth prepass** (`Renderer::RenderDepthPrepass`, `mDepthPrepassBuffer
 - rysuje shaderami głębi **dokładnie to**, co pass oświetlenia: zakres kamery w `CullShadowCasters`
   jest kopiowany z `batch.VisibleCount` (culling z MAIN), a **nie** cullowany ponownie — instancja
   obecna w głębi, ale nieobecna w kolorze, zasłania bez cieniowania, czyli robi czarną dziurę;
+- **Exception: components with `CastsShadow = false` are left out** (static batches and skeletal
+  meshes alike), so the flag turns off their contact shadows too — they neither shadow their
+  surroundings nor themselves. Leaving geometry OUT is safe: there is no early-Z, and every ray
+  starts from the shaded fragment's own position, not from the prepass depth;
 - **NIE daje early-Z i celowo nie blituje głębi do głównego bufora.** Shadery głębi liczą
   `gl_Position` inaczej niż shadery materiałów — `lightSpaceMatrix * model * skinMatrix * pos`
   (gdzie `proj*view` złożono na CPU) kontra `projection * view * model * (skinMatrix * pos)`.
@@ -1426,7 +1430,7 @@ Body transforms are world space: after each step the world calls `GameObject::Se
 
 | Type | Shape |
 |---|---|
-| `StaticMeshPerVertexCollisionData` | `JPH::MeshShape` from every triangle. Static bodies only in practice. |
+| `StaticMeshPerVertexCollisionData` | `JPH::MeshShape` from every triangle (winding swapped back to CCW — the importer stores CW). Static bodies only in practice. |
 | `StaticMeshApproximateCollisionData` | `JPH::ConvexHullShape` from every vertex. |
 | `StaticMeshBoundingBoxCollisionData` | `JPH::BoxShape` of the mesh bounds; `GetOffset` = bounds centre × scale. |
 | `StaticMeshCollisionSphereCollisionData` | `JPH::SphereShape` enclosing the bounds; `GetOffset` = bounds centre × scale. |

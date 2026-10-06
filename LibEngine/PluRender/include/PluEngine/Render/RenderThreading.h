@@ -75,8 +75,8 @@ namespace Plu
         float SplitLambda    = 0.9f;
         Int32 Resolution     = 2048;   // nearest cascade; the rest follow ResolutionFalloff
         Int32 ResolutionFalloff = 2;   // halve the resolution every N cascades (0 = uniform)
-        float NormalBias     = 1.0f;   // texels
-        float DepthBias      = 0.005f; // metres
+        float NormalBias     = 1.2f;   // texels
+        float DepthBias      = 0.0f;   // metres
         float PcfRadius      = 1.5f;   // texels
         bool  PcfAutoTaps    = true;   // derive the tap count from PcfRadius (ignores PcfTapCount)
         Int32 PcfTapCount    = 8;      // samples in the PCF disk, when PcfAutoTaps is off
