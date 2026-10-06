@@ -99,7 +99,7 @@ if you need frame-rate independent damping, do not build it out of these.
 | `TUsePointer<WorldComponent> GetParentComponent()` | Attach point, or null when the component hangs directly off the `GameObject`. |
 | `DynamicArray<TUsePointer<WorldComponent>> GetChildren()` | Components attached directly under this one (one level). |
 
-`EAttachmentRule::KeepRelative` leaves the relative transform alone (component snaps into the new parent's space); `KeepWorld` recomputes it so the component stays put in the world — that is what the editor's Inspector drag&drop uses; `SnapToTarget` zeroes it (sits exactly on the parent/socket). Whole-object views (physics, ticking, `GetComponentByClass`) go through `GameObject::GetObjectWorldComponents()`, which flattens the attachment tree; `GetDirectlyAttachedWorldComponents()` returns only the roots (serialization writes children nested under them). `GameObject::GetAllComponentsByClass(componentClass)` returns every component derived from the class (world components from the flattened tree, otherwise the plain component list) — the multi-result counterpart of `GetComponentByClass`.
+`EAttachmentRule::KeepRelative` leaves the relative transform alone (component snaps into the new parent's space); `KeepWorld` recomputes it so the component stays put in the world — that is what the editor's Inspector drag&drop uses; `SnapToTarget` zeroes it (sits exactly on the parent/socket). Whole-object views (physics, ticking, `GetComponentByClass`) go through `GameObject::GetObjectWorldComponents()`, which flattens the attachment tree; `GetDirectlyAttachedWorldComponents()` returns only the roots (serialization writes children nested under them). `GameObject::GetAllComponentsByClass(componentClass)` returns every component derived from the class (world components from the flattened tree, otherwise the plain component list) — the multi-result counterpart of `GetComponentByClass`. `GameObject::GetComponentByUUID(uuid)` / `GetWorldComponentByUUID(uuid)` find a component by its `Uuid` — the first in the plain component list only, the second in the flattened world component tree; both take `UInt64` (so Python can call them; `PluUUID` converts implicitly) and return null for no match or UUID 0.
 
 `EngineObjectHandle` (`Core/Objects/EngineObjectHandle.h`) has `ToString()` and a `DefaultHash` specialization, so it can key a `HashMap` directly (per-scene maps: physics worlds, render-thread particle spawners).
 
@@ -859,6 +859,7 @@ counterparts. It handles directly:
 | enumy | Through the underlying integral type. |
 | `float` / `double` | Bits, **after canonicalizing**: `-0.0` hashes as `+0.0` (they compare equal) and every NaN hashes alike. |
 | `T*` | The address. |
+| `std::pair<A, B>` | `DefaultHash<A>` of `first`, then `HashCombine` with `DefaultHash<B>` of `second` — both members need a `DefaultHash`, nests (`pair<String, EngineObjectHandle>`, `pair<pair<…>, …>`). Order matters. Without it a pair key would not compile: `std::pair` is never trivially copyable. |
 | `Vec2/3/4`, `IVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluEngine/Core/GlmHash.h`, pulled in by `PluTypes.h`. Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
 | `String` / `StringW` (`BasicString`), `Path` / `PathW` (`BasicPath`) | FNV-1a over the characters, so two equal strings hash equally regardless of SSO vs heap. |
 | `const char*` / `char*` / `const wchar_t*` / `wchar_t*` | The text, not the pointer. `nullptr` → 0. |
@@ -1438,6 +1439,8 @@ Jolt adds a sub-shape's `GetCenterOfMass()` itself when building a compound, so 
 
 **Collision layers** (`Physics/PhysicsLayers.h`, `namespace Plu::CollisionLayers`) — `STATIC = 0`, `DYNAMIC = 1`, `NUM_LAYERS = 2`; `Static` bodies go to `STATIC`, `Dynamic` and `Kinematic` to `DYNAMIC`. The broadphase filters in `Physics/PhysicsCollisionRules.h` are Jolt infrastructure, not called directly. Jolt from vcpkg is built without C++ RTTI, so `JPH::GroupFilter` and `JPH::PhysicsMaterial` cannot be subclassed (undefined typeinfo at link time) — per-pair filtering has to go through a `JPH::ContactListener`.
 
+**Overlap events** — `PluContactListener` (`Physics/PhysicsCollisionRules.h`) turns a contact into a sensor contact when `PhysicsChannelsManager::CanBlock` says the pair of channels does not block, and queues it. After each step `PhysicsWorld::OnUpdate` drains the queue on the main thread and calls `GameObject::OnOverlapBegin(component, otherObject, otherComponent)` / `OnOverlapEnd(...)` on both objects (`PyOverride`, so Python objects can handle them). Identification: a body's `mUserData` is its object's UUID (`PhysicsBody` ctor `UserData`), a compound sub-shape's `mUserData` is an index into `PhysicsWorld::mCollidersPerObject` (component UUIDs in `AddShape` order). A body with a single collider is not a compound at all — `StaticCompoundShapeSettings::Create` collapses one sub-shape into the shape itself (or a `RotatedTranslatedShape`) — so a non-compound body shape means collider index 0. Begin/end are counted per (object, component) pair, so a mesh collider touching with several triangles, or a body rebuilt mid-overlap (static body moved, collider changed), gives exactly one begin and one end. Gameplay only ever gets them in pairs: a begin dropped at dispatch (an earlier overlap callback in the same batch removed one of the components) drops its end too. An end still reaches the surviving object, with `otherObject`/`otherComponent` null when the other side was destroyed.
+
 **Debug geometry** (`Gameplay/Scenes/SceneWorld.h`, methods on `SceneWorld`) — per-frame buffers, interleaved pos(3)+color(3), drained into the render snapshot by `RenderSnapshotBuilder`:
 
 | Function | Description |
@@ -1522,6 +1525,7 @@ editor the field shows a combo whose popup is the `TypeTree` picker below.
 |---|---|
 | `void RegisterPluClass(pybind11::type)` | Rejestruje klasę zdefiniowaną w Pythonie (`PLU_FUNCTION`). |
 | `template<typename T> T FromString(const String&)` | Konwersja string → `T`; działa dla każdego `PLU_ENUM` (po nazwie wartości). |
+| `TUsePointer<T> UserFromPython(T* raw)` | `PluEngine/Scripting/PythonPointers.h`. Rebuilds a `TUsePointer` from a raw engine object Python handed over (via its handle and `TypeRegistry::GetObjectManager()`); null for null or a dead object. Generated bindings use it for `TUsePointer<T : EngineObject>` parameters — Python sees them as `T*`, and PyOverride trampolines pass Python `.GetRaw()`. `TOwningPointer` parameters of non-asset types are still not bound. |
 
 ## Serialization — `PluEngine/Reflection/TypeTraits.h` (`namespace Plu`)
 

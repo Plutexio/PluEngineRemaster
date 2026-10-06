@@ -12,6 +12,9 @@ static std::uniform_int_distribution<UInt64> s_UniformDistribution;
 Plu::PluUUID::PluUUID()
 {
 	mUUID = s_UniformDistribution(s_RandomEngine);
+	while (mUUID == 0) {
+		mUUID = s_UniformDistribution(s_RandomEngine);
+	}
 }
 
 Plu::PluUUID::PluUUID(UInt64 UUID)

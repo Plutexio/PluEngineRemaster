@@ -14,6 +14,7 @@
 
 namespace Plu
 {
+	class PhysicsWorld;
 
 	class ObjectLayerPairFilterImpl : public JPH::ObjectLayerPairFilter {
 	public:
@@ -49,10 +50,14 @@ namespace Plu
 
 	class PluContactListener : public JPH::ContactListener
 	{
+		PhysicsWorld* mPhysicsWorld;
+		void ContactResolvement(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) const;
 	public:
 		void OnContactAdded(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override;
 		void OnContactPersisted(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override;
 		void OnContactRemoved(const JPH::SubShapeIDPair &inSubShapePair) override;
+
+		void SetPhysicsWorld(PhysicsWorld* physicsWorld);
 	};
 }
 

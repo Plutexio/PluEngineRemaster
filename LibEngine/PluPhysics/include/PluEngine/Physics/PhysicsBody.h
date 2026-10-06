@@ -34,6 +34,7 @@ namespace Plu
 			const JPH::Quat&    Rotation    = JPH::Quat::sIdentity(),
 			PhysicsBodyType            Type        = PhysicsBodyType::Static,
 			TUsePointer<PhysicsCollisionChannel> Channel = PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
+			UInt64 UserData = 0,
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
 			float				Mass         = 10.0f,

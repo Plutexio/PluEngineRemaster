@@ -39,6 +39,8 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
     TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
     TUsePointer<GameObject> gameObject = sceneWorld->GetGameObjectByUUID(uuid);
 
+    mCollidersPerObject.Remove(uuid);
+
     if (!gameObject) {
         if (mBodyPerObject.Contains(uuid)) {
             mBodyPerObject.Remove(uuid);
@@ -53,6 +55,7 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
     if (!bodyComponent || (colliders.IsEmpty() && staticMeshColliders.IsEmpty())) return;
 
     JPH::StaticCompoundShapeSettings compoundShapeSettings;
+
 
     for (auto collider : colliders) {
         TUsePointer<PhysicsColliderComponent> colliderComponent = collider;
@@ -83,7 +86,10 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
             shape = shapeCache[const_cast<JPH::Shape *>(shape.GetPtr())][scale];
         }
 
-        compoundShapeSettings.AddShape(ToJPH(loc), ToJPHRotation(rot), shape);
+        UInt32 idx = mCollidersPerObject[uuid].Size();
+        mCollidersPerObject[uuid].PushBack(collider->Uuid);
+        compoundShapeSettings.AddShape(ToJPH(loc), ToJPHRotation(rot), shape, idx);
+
 
         if (!mShapeChangesEventsPerObjectForComponents[gameObject->GetObjectUUID()].Contains(collider->Uuid)) {
             mShapeChangesEventsPerObjectForComponents[gameObject->GetObjectUUID()][collider->Uuid] = collider->SubscribeToEvent("ShapeChanged", [this, gameObject](void*) {
@@ -147,7 +153,9 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
             if (scale != Vec3(1.0f)) {
                 shape = new JPH::ScaledShape(shape.GetPtr(), ToJPH(scale));
             }
-            compoundShapeSettings.AddShape(ToJPH(loc + staticMesh->CollisionData->GetOffset(staticMesh.GetRaw(), scale)), ToJPHRotation(rot), shape);
+            UInt32 idx = mCollidersPerObject[uuid].Size();
+            mCollidersPerObject[uuid].PushBack(staticMeshCollider->Uuid);
+            compoundShapeSettings.AddShape(ToJPH(loc + staticMesh->CollisionData->GetOffset(staticMesh.GetRaw(), scale)), ToJPHRotation(rot), shape, idx);
         }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -184,6 +192,7 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
         ToJPHRotation(gameObject->GetObjectRotation()),
         bodyComponent->Type,
         channel,
+        uuid,
         bodyComponent->Friction,
         bodyComponent->Restitution,
         bodyComponent->Mass,
@@ -288,11 +297,19 @@ Plu::PhysicsWorld::PhysicsWorld()
     mPointRenderer = CreateOwning<JoltPointRenderer>();
     mWireframeRenderer = CreateOwning<JoltWireframeRenderer>();
 
+    mContactListener = CreateOwning<PluContactListener>();
+    mPhysicsSystem->SetContactListener(mContactListener.GetRaw());
+    mContactListener->SetPhysicsWorld(this);
+
     PLU_CORE_TRACE("Physics World Intialized");
 }
 
 Plu::PhysicsWorld::~PhysicsWorld()
 {
+    mBodyPerObject.Clear();
+    mOverlapQueue.Clear();
+    mPhysicsSystem->SetContactListener(nullptr);
+    mContactListener = nullptr;
 }
 
 void Plu::PhysicsWorld::Init()
@@ -484,6 +501,25 @@ void Plu::PhysicsWorld::OnUpdate(float deltaTime, bool updateBodies)
         RebuildObjectCollision(destroy);
     }
 
+    if (!mOverlapQueue.IsEmpty()) {
+        PLU_PROFILE_SCOPE("Physics Overlap Events");
+        Queue<PhysicsOverlapEventInfo> overlapEvents;
+        mOverlapQueue.Drain(overlapEvents);
+
+        // Resolve the whole batch before calling into gameplay: an overlap callback may move or
+        // rebuild objects, which reshuffles mCollidersPerObject under the events still waiting.
+        DynamicArray<PhysicsOverlapEventInfo> toDispatch;
+        PhysicsOverlapEventInfo overlapInfo;
+        while (overlapEvents.TryPopFront(overlapInfo)) {
+            if (ResolveCollisionOverlap(overlapInfo)) {
+                toDispatch.PushBack(overlapInfo);
+            }
+        }
+        for (const auto& event : toDispatch) {
+            DispatchOverlapEvent(event);
+        }
+    }
+
     if (DebugRenderMode == PhysicsDebugRenderMode::NONE) return;
 
     mPointRenderer->BeginFrame();
@@ -536,6 +572,84 @@ void Plu::PhysicsWorld::FlushPendingBodies()
         PLU_PROFILE_SCOPE("Physics OptimizeBroadPhase");
         mPhysicsSystem->OptimizeBroadPhase();
     }
+}
+
+static Plu::PhysicsOverlapPairKey MakeOverlapPairKey(const Plu::PhysicsOverlapEventInfo& overlapInfo)
+{
+    // Jolt orders a contact's bodies by motion type and body ID, and a rebuilt body gets a new ID,
+    // so the same two components can arrive as A/B or B/A - order them so both count as one pair.
+    const std::pair<UInt64, UInt64> sideA = {overlapInfo.ObjectA, overlapInfo.ComponentA};
+    const std::pair<UInt64, UInt64> sideB = {overlapInfo.ObjectB, overlapInfo.ComponentB};
+    return sideA < sideB ? Plu::PhysicsOverlapPairKey{sideA, sideB} : Plu::PhysicsOverlapPairKey{sideB, sideA};
+}
+
+bool Plu::PhysicsWorld::ResolveCollisionOverlap(PhysicsOverlapEventInfo& overlapInfo)
+{
+    if (!overlapInfo.End) {
+        // No body was rebuilt between the step that queued this begin and now (rebuilds wait for
+        // OnUpdate's next call, destroyed objects only drop their entry), so the indices still match.
+        auto componentUuidAt = [this](UInt64 objectUuid, UInt64 colliderIndex) -> UInt64 {
+            const DynamicArray<UInt64>* colliders = mCollidersPerObject.Find(objectUuid);
+            if (!colliders || colliderIndex >= colliders->Size()) return 0;
+            return (*colliders)[colliderIndex];
+        };
+        overlapInfo.ComponentA = componentUuidAt(overlapInfo.ObjectA, overlapInfo.ColliderA);
+        overlapInfo.ComponentB = componentUuidAt(overlapInfo.ObjectB, overlapInfo.ColliderB);
+
+        if (overlapInfo.ComponentA == 0 || overlapInfo.ComponentB == 0) {
+            // Forgetting the contact also makes the listener skip its end.
+            mCurrentOverlaps.Remove(overlapInfo.ContactKey);
+            return false;
+        }
+
+        // The end only carries the contact key and reads the resolved begin back from here.
+        mCurrentOverlaps.InsertOrAssign(overlapInfo.ContactKey, overlapInfo);
+        return mOverlapCounts[MakeOverlapPairKey(overlapInfo)]++ == 0;
+    }
+
+    PhysicsOverlapEventInfo beginInfo;
+    if (!mCurrentOverlaps.Find(overlapInfo.ContactKey, beginInfo)) return false;
+    mCurrentOverlaps.Remove(overlapInfo.ContactKey);
+
+    const PhysicsOverlapPairKey pairKey = MakeOverlapPairKey(beginInfo);
+    UInt32* count = mOverlapCounts.Find(pairKey);
+    if (!count) return false;
+    if (--*count > 0) return false;
+    mOverlapCounts.Remove(pairKey);
+
+    overlapInfo = beginInfo;
+    overlapInfo.End = true;
+    return true;
+}
+
+void Plu::PhysicsWorld::DispatchOverlapEvent(const PhysicsOverlapEventInfo& overlapInfo)
+{
+    TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
+    if (!sceneWorld) return;
+
+    TUsePointer<GameObject> gameObjectA = sceneWorld->GetGameObjectByUUID(overlapInfo.ObjectA);
+    TUsePointer<GameObject> gameObjectB = sceneWorld->GetGameObjectByUUID(overlapInfo.ObjectB);
+
+    TUsePointer<WorldComponent> componentA;
+    TUsePointer<WorldComponent> componentB;
+    if (gameObjectA) componentA = gameObjectA->GetWorldComponentByUUID(overlapInfo.ComponentA);
+    if (gameObjectB) componentB = gameObjectB->GetWorldComponentByUUID(overlapInfo.ComponentB);
+
+    const PhysicsOverlapPairKey pairKey = MakeOverlapPairKey(overlapInfo);
+
+    // Liveness is re-checked before each call: the first callback may remove the other component.
+    if (!overlapInfo.End) {
+        if (!componentA || !componentB) return;
+        mAnnouncedOverlaps.Insert(pairKey);
+        gameObjectA->OnOverlapBegin(componentA, gameObjectB, componentB);
+        if (gameObjectB && componentB) gameObjectB->OnOverlapBegin(componentB, gameObjectA, componentA);
+        return;
+    }
+
+    // Gameplay only ever sees begin/end in pairs: no end for a begin that was dropped above.
+    if (!mAnnouncedOverlaps.Remove(pairKey)) return;
+    if (gameObjectA && componentA) gameObjectA->OnOverlapEnd(componentA, gameObjectB, componentB);
+    if (gameObjectB && componentB) gameObjectB->OnOverlapEnd(componentB, gameObjectA, componentA);
 }
 
 unsigned int Plu::PhysicsWorld::GetNumOfBodies() const

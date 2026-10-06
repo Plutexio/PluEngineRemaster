@@ -129,10 +129,10 @@ namespace Plu
 		virtual void OnEndPlay() {}
 
 		PLU_FUNCTION(PyOverride)
-		virtual void OnOverlapBegin(GameObjectComponent* component) {}
+		virtual void OnOverlapBegin(TUsePointer<WorldComponent> component, TUsePointer<GameObject> otherObject, TUsePointer<WorldComponent> otherComponent) {}
 
 		PLU_FUNCTION(PyOverride)
-		virtual void OnOverlapEnd(GameObjectComponent* component) {}
+		virtual void OnOverlapEnd(TUsePointer<WorldComponent> component, TUsePointer<GameObject> otherObject, TUsePointer<WorldComponent> otherComponent) {}
 
 		PLU_FUNCTION(PyNotCallable)
 		void Cleanup();
@@ -157,6 +157,15 @@ namespace Plu
 		TUsePointer<GameObjectComponent> GetComponentByClass(const TClassPointer<GameObjectComponent>& componentClass);
 		PLU_FUNCTION()
 		DynamicArray<TUsePointer<GameObjectComponent>> GetAllComponentsByClass(const TClassPointer<GameObjectComponent>& componentClass);
+
+		// Lookup by GameObjectComponent::Uuid. Takes a plain UInt64 so Python can call it (PluUUID
+		// converts implicitly). GetComponentByUUID searches only the plain (non-world) component
+		// list; GetWorldComponentByUUID searches the flattened world component tree, so a component
+		// attached under another one is found too. Null when nothing matches or the UUID is invalid (0).
+		PLU_FUNCTION()
+		TUsePointer<GameObjectComponent> GetComponentByUUID(UInt64 uuid);
+		PLU_FUNCTION()
+		TUsePointer<WorldComponent> GetWorldComponentByUUID(UInt64 uuid);
 
 		/** Trwała nazwa obiektu w scenie (patrz mObjectName). Pusta tylko dla obiektów
 		 *  utworzonych z pominięciem SceneWorld::SpawnGameObject. */

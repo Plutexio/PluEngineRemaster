@@ -197,6 +197,33 @@ Plu::TUsePointer<Plu::GameObjectComponent> Plu::GameObject::GetComponentByClass(
 	return nullptr;
 }
 
+Plu::TUsePointer<Plu::GameObjectComponent> Plu::GameObject::GetComponentByUUID(UInt64 uuid)
+{
+	if (uuid == 0) {
+		return nullptr;
+	}
+	for (const auto& comp : mComponents) {
+		if (comp->Uuid == uuid) {
+			return comp;
+		}
+	}
+	return nullptr;
+}
+
+Plu::TUsePointer<Plu::WorldComponent> Plu::GameObject::GetWorldComponentByUUID(UInt64 uuid)
+{
+	if (uuid == 0) {
+		return nullptr;
+	}
+	// Flattened: a component attached under another one is still a component of this object.
+	for (const auto& worldComp : *GetObjectWorldComponents()) {
+		if (worldComp->Uuid == uuid) {
+			return worldComp;
+		}
+	}
+	return nullptr;
+}
+
 DynamicArray<Plu::TUsePointer<Plu::GameObjectComponent>> Plu::GameObject::GetAllComponentsByClass(
 	const TClassPointer<GameObjectComponent>& componentClass)
 {

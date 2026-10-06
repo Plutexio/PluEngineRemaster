@@ -372,7 +372,7 @@ the rules below are written down canonically).
 |---|---|
 | `ConcurrentHashMap<K,V>` | A keyed registry written by several threads, where the hot operation is "update the entry for this key". Striped by key, so unrelated keys never contend. Used by `Profiler`. |
 | `ConcurrentHashSet<T>` | Deduplicated work items accumulated by many threads and consumed in one batch. `Insert()`'s `bool` IS the dedupe answer; `DrainToArray()` is the batch consume. Used by `EngineAssetManager::mPendingLoadRequests`. |
-| `ConcurrentQueue<T>` | Many producers, one consumer, drained per frame. A `Queue<T>` behind a mutex: `Drain()` swaps the buffer out in O(1), so the lock hold time is constant regardless of queue depth and the consumer iterates with no lock held. Used by `RenderingManager`'s texture queues. |
+| `ConcurrentQueue<T>` | Many producers, one consumer, drained per frame. A `Queue<T>` behind a mutex: `Drain()` swaps the buffer out in O(1), so the lock hold time is constant regardless of queue depth and the consumer iterates with no lock held. Used by `RenderingManager`'s texture queues and `PhysicsWorld::mOverlapQueue` (see below). |
 | `ConcurrentRingQueue<T,N>` | A tiny fixed-volume SPSC handoff where a mutex would be all of the cost — e.g. window-lifecycle signalling. Bounded and lock-free; `TryPushBack` can fail. |
 | `ConcurrentArray<T>` | Append-mostly storage whose **element addresses must stay stable**. `DynamicArray` reallocates on `Reserve` and its iterators are raw `T*`, so a pointer another thread holds dangles the moment it grows. The slot-map shape — no `Erase`, reuse is a free list's job. Built for `EngineObjectManager`, not yet wired to it. |
 | `ConcurrentString` | A genuinely shared, mutable text buffer (editor console / log accumulator). For anything else pass a plain `String` by value — a copy is already thread-safe. |
@@ -397,6 +397,16 @@ stays true.
 **Rule 4 — the `Drain()` scratch buffer is a local, never a member.** A member would be re-entered
 if the processing loop drains again, and would keep the batch alive past the point the consumer
 thinks it released it.
+
+**Jolt contact callbacks run on Jolt's job threads**, in parallel, inside `PhysicsSystem::Update`.
+`PluContactListener` therefore touches nothing but the two bodies it is handed (Jolt keeps them
+locked for the callback), `PhysicsChannelsManager` lookups, and two concurrent members of
+`PhysicsWorld`: `mOverlapQueue` (`ConcurrentQueue`, drained by `PhysicsWorld::OnUpdate` on the main
+thread right after the step) and `mCurrentOverlaps` (`ConcurrentHashMap` of live sensor contacts,
+read by `OnContactRemoved` to skip blocking contacts). Scene objects, components and the plain
+`HashMap`s of `PhysicsWorld` are main-thread only — object/component lookup and the
+`OnOverlapBegin`/`OnOverlapEnd` calls happen in the drain. `OnContactRemoved` gets no bodies at all
+(they may already be destroyed): everything it needs is looked up by contact key in what the begin stored.
 
 Tests: `Tests/PluSTLTests` (configure with the `PluDebugLinux-Tests` preset, or
 `PluDebugLinux-Tests-TSan` for the ThreadSanitizer build). Every container has a single-threaded

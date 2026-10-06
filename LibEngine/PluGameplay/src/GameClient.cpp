@@ -20,6 +20,7 @@ Plu::GameClient::GameClient(const TUsePointer<EngineObjectManager> &objectManage
 	mWindow = window;
 
 	mNewPlayerEvent = mScenesManager->SubscribeToEvent("NewWorld", [&](void*) {
+		if (mScenesManager->GetCurrentWorldName() == "Overlay") return;
 		for (const auto& localPlayer : mLocalPlayers) {
 			localPlayer->JoinPlayerToWorld();
 		}

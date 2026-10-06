@@ -15,6 +15,7 @@ PhysicsBody::PhysicsBody(
     const JPH::Quat&    Rotation,
     PhysicsBodyType            Type,
     TUsePointer<PhysicsCollisionChannel> Channel,
+    UInt64 UserData,
     float               Friction,
     float               Restitution,
     float               Mass,
@@ -45,6 +46,8 @@ PhysicsBody::PhysicsBody(
 
     double x = 0.0f;
     int y = static_cast<int>(x);
+
+    Settings.mUserData = UserData;
 
     // UE-style channels: the profile index is read back by the contact listener via
     // CollisionGroup::GetGroupID(). No group filter is attached (see PhysicsCollisionRules.h).

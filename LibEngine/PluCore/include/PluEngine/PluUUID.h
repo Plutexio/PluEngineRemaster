@@ -9,6 +9,7 @@
 
 namespace Plu
 {
+	//0 is invalid UUID
 	class PLUCORE_API PluUUID
 	{
 		UInt64 mUUID;
@@ -31,6 +32,8 @@ namespace Plu
 		}
 
 		[[nodiscard]] inline UInt64 getUUID() const { return mUUID; }
+
+		[[nodiscard]] inline bool isValid() const { return mUUID != 0; }
 
 	};
 }

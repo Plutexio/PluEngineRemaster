@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <utility>
 
 namespace Plu
 {
@@ -162,6 +163,21 @@ namespace Plu
         std::size_t operator()(T* ptr) const noexcept
         {
             return Detail::Mix64(reinterpret_cast<std::uintptr_t>(ptr));
+        }
+    };
+
+    // std::pair keys hash member by member. Required, not just nicer: std::pair is
+    // never trivially copyable (it has a user-provided operator=), so the byte-wise
+    // fallback would reject it — and would read padding in e.g. pair<UInt64, UInt32>.
+    // Each member needs a DefaultHash of its own; order matters, so (a, b) != (b, a).
+    template<typename TFirst, typename TSecond>
+    struct DefaultHash<std::pair<TFirst, TSecond>>
+    {
+        std::size_t operator()(const std::pair<TFirst, TSecond>& pair) const noexcept
+        {
+            std::size_t hash = DefaultHash<TFirst>{}(pair.first);
+            HashCombine(hash, DefaultHash<TSecond>{}(pair.second));
+            return hash;
         }
     };
 }

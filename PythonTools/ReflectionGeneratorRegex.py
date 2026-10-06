@@ -1104,6 +1104,9 @@ def _NeedsLambda(Params: List[ParamInfo], ReturnType: str, AllClasses: List = []
             InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerTClean), None)
             if InnerTypeInfo and IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
                 return True
+        # TUsePointer<T> gdzie T to EngineObject → T* + UserFromPython
+        if _ObjectUsePointerInner(P.Type, AllClasses):
+            return True
         # std::function → py::function (używamy outer strip żeby zachować * wewnątrz szablonu)
         CleanPOuter = re.sub(r"\bPlu::", "", _StripOuterQualifiers(P.Type)).strip()
         if _RE_STD_FUNCTION.match(CleanPOuter):
@@ -1121,6 +1124,23 @@ def _AssetUsePointerInner(CppType: str, AllClasses: List = []):
     InnerT = re.sub(r"\bPlu::", "", M.group(1)).strip()
     InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerT), None)
     if InnerTypeInfo and IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
+        return InnerTypeInfo
+    return None
+
+
+def _ObjectUsePointerInner(CppType: str, AllClasses: List = []):
+    """For TUsePointer<T> where T is an EngineObject (but not an asset) returns T's TypeInfo, otherwise None.
+    Python holds such objects as raw T*: bindings take T* and rebuild the pointer with UserFromPython,
+    trampolines hand Python .GetRaw()."""
+    Clean = re.sub(r"\bPlu::", "", _StripQualifiers(CppType)).strip()
+    M = _RE_USE_POINTER.match(Clean)
+    if not M or not AllClasses:
+        return None
+    InnerT = re.sub(r"\bPlu::", "", M.group(1)).strip()
+    InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerT), None)
+    if InnerTypeInfo is None or IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
+        return None
+    if InnerT == "EngineObject" or IsTypeDerivedFrom("EngineObject", InnerTypeInfo, AllClasses):
         return InnerTypeInfo
     return None
 
@@ -1154,7 +1174,8 @@ def _BuildParamList(Params: List[ParamInfo], SelfDecl: str, AllClasses: List = [
     """
     Buduje listy parametrów lambdy, wywołań i rozpakowań.
     Obsługuje: TClassPointer<T> → py::object,
-               TUsePointer<T> gdzie T:IAssetData → T* + GetAssetUserAsRaw, reszta bez zmian.
+               TUsePointer<T> gdzie T:IAssetData → T* + GetAssetUserAsRaw,
+               TUsePointer<T> gdzie T:EngineObject → T* + UserFromPython, reszta bez zmian.
     Typy glm są zwykłymi klasami modułu (RegisterMathTypes) – przechodzą bez konwersji.
     """
     LambdaParams: List[str] = ([SelfDecl] if SelfDecl else [])
@@ -1206,7 +1227,12 @@ def _BuildParamList(Params: List[ParamInfo], SelfDecl: str, AllClasses: List = [
             BindingCalls.append(Wrapper)
             continue
         MCP = _RE_CLASS_POINTER.match(CleanNoNs)
-        if MUP and IsAsset:
+        ObjectInner = _ObjectUsePointerInner(Raw, AllClasses)
+        if ObjectInner:
+            # TUsePointer<T:EngineObject> → Python passes T*, the pointer is rebuilt from the handle
+            LambdaParams.append(f"{ObjectInner.Name}* {ArgName}")
+            BindingCalls.append(f"UserFromPython({ArgName})")
+        elif MUP and IsAsset:
             # Python przekazuje IAssetData* (nie T*) – nie trzeba .__class__ po stronie Pythona
             LambdaParams.append(f"IAssetData* {ArgName}")
             BindingCalls.append(f"GetAssetUserAsRaw({ArgName})")
@@ -1311,8 +1337,8 @@ def _PyArgDefault(P: ParamInfo, RegisteredNames: Optional[set] = None) -> str:
 
 def _HasUnbindableParams(Params: List[ParamInfo], AllClasses: List = []) -> bool:
     """
-    True gdy funkcji nie da się sensownie wystawić do Pythona: bierze TUsePointer/TOwningPointer
-    do typu, który nie jest assetem. pybind11 nie ma castera dla smart pointerów silnika (a z
+    True gdy funkcji nie da się sensownie wystawić do Pythona: bierze TOwningPointer do typu, który
+    nie jest assetem, albo TUsePointer do typu, który nie jest ani assetem, ani EngineObjectem. pybind11 nie ma castera dla smart pointerów silnika (a z
     surowego wskaźnika nie da się ich odtworzyć – TUsePointer powstaje tylko z ControlBlocka),
     więc takie .def rzucałoby cast_error przy pierwszym wywołaniu. Lepiej nie wystawiać wcale.
     """
@@ -1320,6 +1346,8 @@ def _HasUnbindableParams(Params: List[ParamInfo], AllClasses: List = []) -> bool
         CleanNoNs = re.sub(r"\bPlu::", "", _StripQualifiers(P.Type.strip())).strip()
         M = _RE_USE_POINTER.match(CleanNoNs) or _RE_OWNING_POINTER.match(CleanNoNs)
         if not M:
+            continue
+        if _ObjectUsePointerInner(P.Type, AllClasses):
             continue
         InnerClean = re.sub(r"\bPlu::", "", M.group(1).strip()).strip()
         InnerInfo  = next((C for C in AllClasses if C.Name == InnerClean), None)
@@ -1368,7 +1396,7 @@ def _CollectAllOverrideFns(Cls: TypeInfo, AllTypes: List[TypeInfo],
                 NameToFunc[F.Name] = F
 
     Collect(Cls)
-    # Funkcje z nieprzekładalnymi parametrami (TUsePointer<T> spoza assetów) pomijamy – ani
+    # Funkcje z nieprzekładalnymi parametrami (patrz _HasUnbindableParams) pomijamy – ani
     # trampolina, ani .def nie mogłyby ich obsłużyć.
     return [F for F in NameToFunc.values() if not _HasUnbindableParams(F.Params, AllParsedTypes or AllTypes)]
 
@@ -1443,7 +1471,8 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
         B.write('#include <pybind11/embed.h>\n')
         B.write('#include <pybind11/stl.h>\n')
         B.write('#include <pybind11/operators.h>\n\n')
-        B.write('#include "PluEngine/Scripting/PythonMath.h"\n\n')
+        B.write('#include "PluEngine/Scripting/PythonMath.h"\n')
+        B.write('#include "PluEngine/Scripting/PythonPointers.h"\n\n')
         B.write("namespace py = pybind11;\n\n")
 
         # Includes per plik źródłowy
@@ -1494,13 +1523,27 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 CallArgs  = ", ".join(P.Name if P.Name else f"arg{I}" for I, P in enumerate(F.Params))
                 ConstQual = " const" if F.IsConst else ""
                 B.write(f"    {F.ReturnType} {F.Name}({ParamDecl}){ConstQual} override {{\n")
-                B.write(f"        PYBIND11_OVERRIDE(\n")
-                B.write(f"            {F.ReturnType},\n")
-                B.write(f"            {Cls.Name},\n")
-                B.write(f"            {F.Name}")
-                if CallArgs:
-                    B.write(f",\n            {CallArgs}")
-                B.write(f"\n        );\n")
+                # Smart-pointer params have no pybind11 caster – Python gets the raw pointer
+                # (GetAssetUserAsRaw / UserFromPython turn it back on the way in). PYBIND11_OVERRIDE
+                # would pass the same arguments to both Python and the base call, so it is split here.
+                PyCallArgList = []
+                for I, P in enumerate(F.Params):
+                    ArgName   = P.Name if P.Name else f"arg{I}"
+                    CleanNoNs = re.sub(r"\bPlu::", "", _StripQualifiers(P.Type)).strip()
+                    IsSmart   = _RE_USE_POINTER.match(CleanNoNs) or _RE_OWNING_POINTER.match(CleanNoNs)
+                    PyCallArgList.append(f"{ArgName}.GetRaw()" if IsSmart else ArgName)
+                PyCallArgs = ", ".join(PyCallArgList)
+                if PyCallArgs != CallArgs:
+                    B.write(f"        PYBIND11_OVERRIDE_IMPL({F.ReturnType}, {Cls.Name}, \"{F.Name}\", {PyCallArgs});\n")
+                    B.write(f"        return {Cls.Name}::{F.Name}({CallArgs});\n")
+                else:
+                    B.write(f"        PYBIND11_OVERRIDE(\n")
+                    B.write(f"            {F.ReturnType},\n")
+                    B.write(f"            {Cls.Name},\n")
+                    B.write(f"            {F.Name}")
+                    if CallArgs:
+                        B.write(f",\n            {CallArgs}")
+                    B.write(f"\n        );\n")
                 B.write(f"    }}\n\n")
             B.write(f"}};\n\n")
 

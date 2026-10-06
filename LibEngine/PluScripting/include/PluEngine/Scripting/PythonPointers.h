@@ -8,6 +8,8 @@
 #include <pybind11/pybind11.h>
 #include "Pointers/ControlBlock.h"
 #include "PluEngine/Core/Reflection/ClassPointer.h"
+#include "PluEngine/Core/Objects/EngineObject.h"
+#include "PluEngine/Core/Objects/EngineObjectManager.h"
 
 namespace Plu
 {
@@ -39,6 +41,18 @@ namespace Plu
 		}
 		result.GetRaw()->mPythonType = newType;
 		return result;
+	}
+
+	// Rebuilds a TUsePointer from a raw engine object handed over by Python. pybind11 has no caster
+	// for the engine smart pointers, so Python only ever holds raw pointers; generated bindings of
+	// functions taking TUsePointer<T> accept T* and recover the pointer through the object's handle.
+	// Null in, null out — also null when the object is no longer alive.
+	template<typename T>
+	requires EngineObjectConc<T>
+	TUsePointer<T> UserFromPython(T* raw)
+	{
+		if (!raw) return nullptr;
+		return TypeRegistry::GetInstance()->GetObjectManager()->GetObjectAsUser<T>(raw->GetObjectHandle());
 	}
 }
 #endif //PLUENGINE_PYTHONPOINTERS_H

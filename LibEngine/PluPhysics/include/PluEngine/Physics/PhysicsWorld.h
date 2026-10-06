@@ -9,6 +9,8 @@
 #include "JoltIntializer.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PhysicsWorld.generated.h"
+#include "Concurrent/ConcurrentHashMap.h"
+#include "Concurrent/ConcurrentQueue.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 
 namespace JPH
@@ -19,6 +21,8 @@ namespace JPH
 
 namespace Plu
 {
+    class GameObject;
+    class PluContactListener;
     struct RaycastHitInfo;
     class JoltPointRenderer;
     class JoltWireframeRenderer;
@@ -36,6 +40,30 @@ namespace Plu
         POINTS,
         WIREFRAME
     };
+
+    struct PhysicsOverlapEventInfo
+    {
+        bool End = false;
+
+        // Jolt's contact identity: both body IDs and both sub-shape IDs (see MakeContactKey).
+        std::pair<UInt64, UInt64> ContactKey = {0, 0};
+
+        // Filled by the contact listener: object UUIDs (body user data) and collider indices
+        // into PhysicsWorld::mCollidersPerObject (compound sub-shape user data).
+        UInt64 ObjectA = 0;
+        UInt64 ObjectB = 0;
+
+        UInt64 ColliderA = 0;
+        UInt64 ColliderB = 0;
+
+        // Filled on the main thread when the begin is resolved. The end reads these back, so it
+        // does not depend on collider indices a rebuild may have shuffled in the meantime.
+        UInt64 ComponentA = 0;
+        UInt64 ComponentB = 0;
+    };
+
+    // (object UUID, component UUID) of both sides, smaller side first.
+    using PhysicsOverlapPairKey = std::pair<std::pair<UInt64, UInt64>, std::pair<UInt64, UInt64>>;
 
 
     PLU_CLASS()
@@ -73,6 +101,24 @@ namespace Plu
         TOwningPointer<JoltWireframeRenderer> mWireframeRenderer;
         TOwningPointer<JoltPointRenderer> mPointRenderer;
 
+        TOwningPointer<PluContactListener> mContactListener;
+
+        // Written by the contact listener on Jolt's worker threads, drained on the main thread
+        // after each step. mCurrentOverlaps holds every live sensor contact by its ContactKey, so
+        // OnContactRemoved can skip blocking contacts and the end can find what its begin resolved.
+        ConcurrentQueue<PhysicsOverlapEventInfo> mOverlapQueue;
+        ConcurrentHashMap<std::pair<UInt64,UInt64>, PhysicsOverlapEventInfo> mCurrentOverlaps;
+        // Component UUID of every compound sub-shape, indexed by the sub-shape's user data.
+        HashMap<UInt64, DynamicArray<UInt64>> mCollidersPerObject;
+        // Main thread only. Live sensor contacts per (object, component) pair: Jolt reports one
+        // contact per sub-shape pair (per triangle for a mesh collider), and a rebuilt body adds
+        // its new contacts before the old body's are removed. Begin fires on 0 -> 1, end on 1 -> 0.
+        HashMap<PhysicsOverlapPairKey, UInt32> mOverlapCounts;
+        // Main thread only. Pairs whose begin actually reached gameplay. mOverlapCounts follows
+        // Jolt, but a begin can still be dropped at dispatch (an earlier callback in the same batch
+        // removed one of the components), and its end must then be dropped too.
+        HashSet<PhysicsOverlapPairKey> mAnnouncedOverlaps;
+
         // Jolt preallocates per-body bookkeeping for kMaxBodies up front (the broadphase node pool
         // grows lazily), so a high cap is cheap — and statics (a forest, scattered props) count
         // toward it just like dynamic bodies. Contact constraints are allocated from mAllocator
@@ -90,6 +136,16 @@ namespace Plu
         // (AddBodiesPrepare/AddBodiesFinalize), one batch per activation mode. Adding thousands
         // of bodies one AddBody at a time leaves the broadphase tree degenerate until it is rebuilt.
         void FlushPendingBodies();
+
+        friend class PluContactListener;
+
+        // Updates the overlap bookkeeping for one queued contact event. Returns true when it is a
+        // begin/end gameplay has to hear about; overlapInfo is then complete (ends get their
+        // begin's objects and components). Never calls into gameplay.
+        bool ResolveCollisionOverlap(PhysicsOverlapEventInfo& overlapInfo);
+        // Calls OnOverlapBegin/OnOverlapEnd on both objects. An end still reaches the side that is
+        // alive when the other object or its component is already gone.
+        void DispatchOverlapEvent(const PhysicsOverlapEventInfo& overlapInfo);
     public:
         PhysicsWorld();
         virtual ~PhysicsWorld() override;

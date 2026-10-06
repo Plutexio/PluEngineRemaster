@@ -186,10 +186,14 @@ void SetVelocity(Vec3 Velocity);
 - Parametry, które w bindingach zmieniają typ (`TClassPointer<T>` → `py::object`,
   `std::function<>` → `py::function`), domyślnej wartości **nie dostają** — po stronie Pythona
   pozostają wymagane.
-- Parametr `TUsePointer<T>` / `TOwningPointer<T>` dla `T` **niebędącego assetem** dyskwalifikuje całą
-  funkcję z bindingów (nie ma castera, a smart pointera nie da się odtworzyć z surowego wskaźnika).
-  Taka metoda działa w C++ i w refleksji, ale w Pythonie jej nie ma — również jako `PyOverride`.
-  Jeśli ma być dostępna z Pythona, przyjmij `T*` zamiast smart pointera.
+- Smart-pointer parameters have no pybind11 caster, so Python always sees raw pointers:
+  - `TUsePointer<T>` for an asset `T` → `IAssetData*`, recovered with `GetAssetUserAsRaw`.
+  - `TUsePointer<T>` for an `EngineObject` `T` (e.g. `GameObject::OnOverlapBegin`) → `T*`, recovered
+    from the object's handle with `UserFromPython` (`PythonPointers.h`); null or a dead object gives
+    a null pointer. PyOverride trampolines call the Python override with `.GetRaw()`.
+  - Any other `TUsePointer<T>`, and `TOwningPointer<T>` for a non-asset `T`, still drop the whole
+    function from the bindings — it works in C++ and reflection, but not in Python (also not as
+    `PyOverride`). Take `T*` instead if it has to be reachable from Python.
 
 ### Funkcja globalna (poza klasą)
 
