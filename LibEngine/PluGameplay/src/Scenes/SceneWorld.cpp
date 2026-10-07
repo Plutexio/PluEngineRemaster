@@ -31,46 +31,6 @@ namespace Plu
 	{
 	}
 
-	void SceneWorld::AddDebugLine(Vec3 start, Vec3 end, Vec3 color)
-	{
-		mDebugLineVerts.PushBack(start.x);
-		mDebugLineVerts.PushBack(start.y);
-		mDebugLineVerts.PushBack(start.z);
-
-		mDebugLineVerts.PushBack(color.r);
-		mDebugLineVerts.PushBack(color.g);
-		mDebugLineVerts.PushBack(color.b);
-
-		mDebugLineVerts.PushBack(end.x);
-		mDebugLineVerts.PushBack(end.y);
-		mDebugLineVerts.PushBack(end.z);
-
-		mDebugLineVerts.PushBack(color.r);
-		mDebugLineVerts.PushBack(color.g);
-		mDebugLineVerts.PushBack(color.b);
-	}
-
-	void SceneWorld::AddDebugPoint(Vec3 point, Vec3 color)
-	{
-		mDebugPointVerts.PushBack(point.x);
-		mDebugPointVerts.PushBack(point.y);
-		mDebugPointVerts.PushBack(point.z);
-
-		mDebugPointVerts.PushBack(color.r);
-		mDebugPointVerts.PushBack(color.g);
-		mDebugPointVerts.PushBack(color.b);
-	}
-
-	DynamicArray<float> * SceneWorld::GetRawDebugPointArray()
-	{
-		return &mDebugPointVerts;
-	}
-
-	DynamicArray<float> * SceneWorld::GetRawDebugLineArray()
-	{
-		return &mDebugLineVerts;
-	}
-
 	void SceneWorld::Init(const TUsePointer<EngineObjectManager> &engineObjectManager, const TUsePointer<GameClient>& client)
 	{
 		mEngineObjectManager = engineObjectManager;
@@ -237,6 +197,9 @@ namespace Plu
 	{
 		PLU_PROFILE_SCOPE("SceneWorld ShootRaycast");
 		RaycastRequest request{Start, End, {}, {}};
+		// Pre-filled so a world without a physics world (nobody answers the event) still reports the segment.
+		request.Result.TraceStart = Start;
+		request.Result.TraceEnd = End;
 		request.IgnoredObjectUuids.Reserve(IgnoredObjects.Size());
 		for (GameObject* ignored : IgnoredObjects) {
 			if (ignored) request.IgnoredObjectUuids.PushBack(ignored->GetObjectUUID());

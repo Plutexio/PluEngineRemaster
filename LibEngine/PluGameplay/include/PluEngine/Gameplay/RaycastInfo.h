@@ -14,9 +14,8 @@
 namespace Plu
 {
     class GameObject;
+    class WorldComponent;
 
-    // Result of SceneWorld::ShootRaycast. Lives in gameplay (not physics) so SceneWorld and scripts
-    // can name it; the physics world fills it in when it answers the "Raycast" event.
     PLU_STRUCT(PyExport)
     struct PLUGAMEPLAY_API RaycastHitInfo
     {
@@ -24,18 +23,39 @@ namespace Plu
 
         PLU_PROPERTY(PyExport, PyReadOnly)
         bool Hit = false;
+
         PLU_PROPERTY(PyExport, PyReadOnly)
         Vec3 HitLocation = {0.0f, 0.0f, 0.0f};
 
-        // Not a PLU_PROPERTY: pybind11 has no caster for TUsePointer, Python goes through GetHitObject.
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        Vec3 HitNormal = {0.0f, 0.0f, 0.0f};
+
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        float HitDistance = 0.0f;
+
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        float HitFraction = 1.0f;
+
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        bool StartedInside = false;
+
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        Vec3 TraceStart = {0.0f, 0.0f, 0.0f};
+        PLU_PROPERTY(PyExport, PyReadOnly)
+        Vec3 TraceEnd = {0.0f, 0.0f, 0.0f};
+
+        // Not PLU_PROPERTYs: pybind11 has no caster for TUsePointer, Python goes through the getters below.
+        // HitObject owns the hit body; HitWorldComponent is the collider (or static mesh) whose sub-shape was hit.
         TUsePointer<GameObject> HitObject;
+        TUsePointer<WorldComponent> HitWorldComponent;
 
         PLU_FUNCTION(PyExport)
         [[nodiscard]] GameObject* GetHitObject() const { return HitObject.GetRaw(); }
-    };
 
-    // Payload of SceneWorld's "Raycast" event. Start/End are world-space, in metres. Objects are
-    // passed by UUID: the physics world keys its bodies by object UUID.
+        PLU_FUNCTION(PyExport)
+        [[nodiscard]] WorldComponent* GetHitWorldComponent() const { return HitWorldComponent.GetRaw(); }
+    };
+    
     struct RaycastRequest
     {
         Vec3 Start;

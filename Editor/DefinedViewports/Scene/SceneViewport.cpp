@@ -18,6 +18,7 @@
 #include "PluEngine/Gameplay/Objects/Lights/SpotLight.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "PluEngine/Render/RenderUtils.h"
+#include "PluEngine/PluUtils.h"
 #include "PluEngine/Effects/Particles/ParticleSystem.h"
 #include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
 #include <glm/gtc/quaternion.hpp>
@@ -27,30 +28,10 @@ extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
 
 namespace
 {
-	void AppendGizmoLine(DynamicArray<float>& verts, const Vec3& a, const Vec3& b, const Vec3& color)
-	{
-		for (const Vec3& vertex : {a, b}) {
-			verts.PushBack(vertex.x); verts.PushBack(vertex.y); verts.PushBack(vertex.z);
-			verts.PushBack(color.r); verts.PushBack(color.g); verts.PushBack(color.b);
-		}
-	}
-
-	// Box of half extent `extent` in spawner space.
-	void AppendGizmoOrientedBox(DynamicArray<float>& verts, const Vec3& centre, const glm::mat3& basis, const Vec3& extent, const Vec3& color)
-	{
-		Vec3 corners[8];
-		for (int i = 0; i < 8; ++i) {
-			const Vec3 sign((i & 1) ? 1.0f : -1.0f, (i & 2) ? 1.0f : -1.0f, (i & 4) ? 1.0f : -1.0f);
-			corners[i] = centre + basis * (sign * extent);
-		}
-		constexpr int edges[12][2] = { {0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7} };
-		for (const auto& edge : edges) AppendGizmoLine(verts, corners[edge[0]], corners[edge[1]], color);
-	}
-
 	// Spawn shape and launch cone of every enabled emitter, read from the COMPILED program (the last
 	// SpawnPosition op and the SpawnVelocity op), so the gizmo shows exactly what the executor spawns —
 	// modules off the chain, overridden ones and disabled emitters included correctly for free.
-	void AppendParticleSystemSpawnerGizmo(DynamicArray<float>& verts, Plu::ParticleSpawnerComponent& spawner)
+	void DrawParticleSystemSpawnerGizmo(Plu::DebugDrawAdapter& debugDraw, Plu::ParticleSpawnerComponent& spawner)
 	{
 		using namespace Plu;
 		ParticleSystem* system = spawner.ParticleSystemAsset.GetRaw();
@@ -62,7 +43,8 @@ namespace
 		const Vec3 axisColor = Vec3(1.0f, 0.85f, 0.3f);
 
 		const Vec3 location = spawner.GetWorldLocation();
-		const glm::mat3 basis = glm::mat3_cast(Quaternion(glm::radians(spawner.GetWorldRotation())));
+		const Vec3 rotation = spawner.GetWorldRotation();
+		const glm::mat3 basis = glm::mat3_cast(GetQuaternionFromEuler(rotation));
 
 		// Main thread, cached by CompileRevision; the reference is valid until the next GetCompiled call.
 		const CompiledParticleSystem& compiled = ParticleSystemCompiler::GetCompiled(*system);
@@ -81,17 +63,17 @@ namespace
 				const float* p = emitter.Constants.Data() + position->A.Index; // radius, extent xyz, cone, offset xyz
 				centre = location + basis * Vec3(p[5], p[6], p[7]);
 				switch (static_cast<EParticleSpawnShape>(position->Flags)) {
-					case EParticleSpawnShape::Point:  AppendSphereWireframe(verts, centre, kPointMarkerRadius, shapeColor, 12); break;
-					case EParticleSpawnShape::Sphere: AppendSphereWireframe(verts, centre, std::max(p[0], 0.001f), shapeColor); break;
-					case EParticleSpawnShape::Box:    AppendGizmoOrientedBox(verts, centre, basis, Vec3(p[1], p[2], p[3]), shapeColor); break;
+					case EParticleSpawnShape::Point:  debugDraw.DrawDebugSphere(centre, kPointMarkerRadius, shapeColor, 0.0f, 12); break;
+					case EParticleSpawnShape::Sphere: debugDraw.DrawDebugSphere(centre, std::max(p[0], 0.001f), shapeColor); break;
+					case EParticleSpawnShape::Box:    debugDraw.DrawDebugOrientedBox(centre, Vec3(p[1], p[2], p[3]), rotation, shapeColor); break;
 					case EParticleSpawnShape::Cone: {
 						// Solid spherical sector: apex at the centre, axis forward (-Z), reach p[0], half angle p[4].
 						const float reach = std::max(p[0], 0.001f);
 						const float halfAngle = glm::clamp(p[4], 0.0f, 180.0f);
 						const Vec3 forward = basis * Vec3(0.0f, 0.0f, -1.0f);
-						if (halfAngle >= 179.0f) AppendSphereWireframe(verts, centre, reach, shapeColor);
-						else if (halfAngle > 0.5f) AppendConeWireframe(verts, centre, forward, reach, glm::radians(halfAngle), shapeColor, 24, glm::pi<float>());
-						else AppendGizmoLine(verts, centre, centre + forward * reach, shapeColor);
+						if (halfAngle >= 179.0f) debugDraw.DrawDebugSphere(centre, reach, shapeColor);
+						else if (halfAngle > 0.5f) debugDraw.DrawDebugCone(centre, forward, reach, halfAngle, shapeColor);
+						else debugDraw.DrawDebugLine(centre, centre + forward * reach, shapeColor);
 						break;
 					}
 				}
@@ -103,9 +85,9 @@ namespace
 				if (glm::length(direction) < 1e-6f) continue;
 				direction = glm::normalize(direction);
 				const float halfAngle = glm::clamp(p[3], 0.0f, 180.0f);
-				if (halfAngle >= 179.0f) AppendSphereWireframe(verts, centre, kLaunchLength, coneColor);
-				else if (halfAngle > 0.5f) AppendConeWireframe(verts, centre, direction, kLaunchLength, glm::radians(halfAngle), coneColor, 24, glm::pi<float>());
-				AppendGizmoLine(verts, centre, centre + direction * kLaunchLength, axisColor);
+				if (halfAngle >= 179.0f) debugDraw.DrawDebugSphere(centre, kLaunchLength, coneColor);
+				else if (halfAngle > 0.5f) debugDraw.DrawDebugCone(centre, direction, kLaunchLength, halfAngle, coneColor);
+				debugDraw.DrawDebugLine(centre, centre + direction * kLaunchLength, axisColor);
 			}
 		}
 	}
@@ -295,12 +277,13 @@ void Plu::SceneViewport::DrawSelectedSpotLightGizmo()
 	const Vec3 outerColor = spotLight->GetLightColor();
 	const Vec3 innerColor = outerColor * 0.45f;
 
-	// Appended to the world's per-frame editor line channel; RenderSnapshotBuilder drains it
-	// into the snapshot and the existing debug-line pass draws it — no new renderer code.
-	AppendConeWireframe(world->EditorDebugLineVerts, apex, direction, spotLight->Range,
-	                    glm::radians(spotLight->OuterConeAngle), outerColor);
-	AppendConeWireframe(world->EditorDebugLineVerts, apex, direction, spotLight->Range,
-	                    glm::radians(glm::min(spotLight->InnerConeAngle, spotLight->OuterConeAngle)), innerColor);
+	// Drawn through the world's debug draw adapter; RenderSnapshotBuilder drains it into the
+	// snapshot and the existing debug-line pass draws it — no new renderer code. Clamped like the
+	// light itself (RenderSnapshotBuilder), so the gizmo shows the cone that is actually lit.
+	const float outerAngle = glm::clamp(spotLight->OuterConeAngle, 0.5f, 89.0f);
+	DebugDrawAdapter* debugDraw = world->GetDebugDraw();
+	debugDraw->DrawDebugCone(apex, direction, spotLight->Range, outerAngle, outerColor);
+	debugDraw->DrawDebugCone(apex, direction, spotLight->Range, glm::min(spotLight->InnerConeAngle, outerAngle), innerColor);
 }
 
 void Plu::SceneViewport::DrawSelectedParticleSpawnerGizmos()
@@ -318,12 +301,13 @@ void Plu::SceneViewport::DrawSelectedParticleSpawnerGizmos()
 	constexpr float kAtRestMarkerRadius = 0.1f;
 	const Vec3 coneColor = Vec3(1.0f, 0.55f, 0.1f);
 	const Vec3 axisColor = Vec3(1.0f, 0.85f, 0.3f);
+	DebugDrawAdapter& debugDraw = *world->GetDebugDraw();
 
 	for (const auto& component : selected->GetAllComponentsByClass(TClassPointer<GameObjectComponent>(ParticleSpawnerComponent::GetStaticClass()))) {
 		if (!component) continue;
 		ParticleSpawnerComponent* spawner = static_cast<ParticleSpawnerComponent*>(component.GetRaw());
 		if (spawner->ParticleSystemAsset) {
-			AppendParticleSystemSpawnerGizmo(world->EditorDebugLineVerts, *spawner);
+			DrawParticleSystemSpawnerGizmo(debugDraw, *spawner);
 			continue;
 		}
 		const ParticleClass& particleClass = spawner->SpawnerParticleClass;
@@ -332,7 +316,7 @@ void Plu::SceneViewport::DrawSelectedParticleSpawnerGizmos()
 
 		// Particles spawned without a launch start at rest — only mark the spawn point.
 		if (!particleClass.LaunchOnSpawn) {
-			AppendSphereWireframe(world->EditorDebugLineVerts, apex, kAtRestMarkerRadius, coneColor, 16);
+			debugDraw.DrawDebugSphere(apex, kAtRestMarkerRadius, coneColor, 0.0f, 16);
 			continue;
 		}
 
@@ -340,22 +324,13 @@ void Plu::SceneViewport::DrawSelectedParticleSpawnerGizmos()
 		// draw the sphere instead.
 		const float halfAngle = glm::clamp(particleClass.LaunchConeAngle, 0.0f, 180.0f);
 		if (halfAngle >= 179.0f) {
-			AppendSphereWireframe(world->EditorDebugLineVerts, apex, kGizmoLength, coneColor);
+			debugDraw.DrawDebugSphere(apex, kGizmoLength, coneColor);
 		} else {
-			AppendConeWireframe(world->EditorDebugLineVerts, apex, direction, kGizmoLength,
-			                    glm::radians(halfAngle), coneColor, 24, glm::pi<float>());
+			debugDraw.DrawDebugCone(apex, direction, kGizmoLength, halfAngle, coneColor);
 		}
 
 		// The cone's axis, so the orientation reads even for a sphere or a very narrow cone.
-		const Vec3 axisEnd = apex + direction * kGizmoLength;
-		for (const Vec3& vertex : {apex, axisEnd}) {
-			world->EditorDebugLineVerts.PushBack(vertex.x);
-			world->EditorDebugLineVerts.PushBack(vertex.y);
-			world->EditorDebugLineVerts.PushBack(vertex.z);
-			world->EditorDebugLineVerts.PushBack(axisColor.r);
-			world->EditorDebugLineVerts.PushBack(axisColor.g);
-			world->EditorDebugLineVerts.PushBack(axisColor.b);
-		}
+		debugDraw.DrawDebugLine(apex, apex + direction * kGizmoLength, axisColor);
 	}
 }
 

@@ -378,9 +378,7 @@ void Plu::RenderSnapshotBuilder::DiscardFrame()
     if (!mAppInfo) return;
     TUsePointer<SceneWorld> sceneWorld = mAppInfo->AppScenesManager->GetCurrentWorld();
     if (!sceneWorld) return;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-    sceneWorld->EditorDebugLineVerts.Clear();
-#endif
+    // Only this frame's draws go; persistent ones live in the adapter and are re-emitted next frame.
     sceneWorld->mDebugLineVerts.Clear();
     sceneWorld->mDebugPointVerts.Clear();
 }
@@ -993,15 +991,6 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
     // scene-editing aid, not part of the game view.
     snapshot->ShowEditorGrid = sceneWorld->ShowEditorGrid && !mAppInfo->AppScenesManager->IsInPIE();
     snapshot->ShowShadowCascades = sceneWorld->ShowShadowCascades;
-
-    // --- Editor debug lines ---
-    // Whatever the editor tick appended this frame (spot light cones today) joins the physics
-    // debug buffer, so it rides the existing debug-line pass. Drained, not copied: the source is
-    // per-frame state and leaving it filled would accumulate a cone per frame forever.
-    if (!sceneWorld->EditorDebugLineVerts.IsEmpty()) {
-        snapshot->DebugLineVerts.Append(sceneWorld->EditorDebugLineVerts);
-        sceneWorld->EditorDebugLineVerts.Clear();
-    }
 #endif
 
     // --- Debugowa wizualizacja fizyki ---
@@ -1059,6 +1048,11 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 //         physicsWorld->CollectDebugRaycasts(deltaTime, snapshot->DebugLineVerts);
 //     } TODO
 
+    // --- Debug draws ---
+    // Everything drawn through SceneWorld::GetDebugDraw this frame — gameplay, scripts, physics
+    // debug, editor gizmos — plus the draws still waiting out their duration. Drained, not
+    // copied: the buffers are per-frame state and leaving them filled would accumulate forever.
+    sceneWorld->mDebugDraw.EmitPersistentDraws(deltaTime);
     snapshot->DebugLineVerts.Append(sceneWorld->mDebugLineVerts);
     snapshot->DebugPointVerts.Append(sceneWorld->mDebugPointVerts);
 

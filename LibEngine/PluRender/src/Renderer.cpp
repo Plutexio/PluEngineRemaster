@@ -2395,8 +2395,8 @@ void Plu::Renderer::RenderSnapshot(Plu::RenderSnapshot *snapshot, float deltaTim
 
         shaderProgram->SetIntUniform("paletteBaseIndex", static_cast<int>(mSkeletalPaletteRanges[i].Offset));
         shaderProgram->SetMatrix4Uniform("model", renderObject->ModelMatrix);
-        // Macierz normalnych z CPU — raz per obiekt zamiast transpose(inverse()) per
-        // wierzchołek w BasicVertSkeletal.vert (jak dotąd z samego modelu, bez skinningu).
+        // Normal matrix from the CPU — once per object instead of transpose(inverse()) per
+        // vertex. Covers only the model transform; BasicVertSkeletal.vert applies skinning on top.
         shaderProgram->SetMatrix4Uniform("normalMatrix", glm::transpose(glm::inverse(renderObject->ModelMatrix)));
         DrawSkeletalMesh(skeletalMesh.GetRaw(), mApplicationInfo->AppRenderingManager.GetRaw());
     }

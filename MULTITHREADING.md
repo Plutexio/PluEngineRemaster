@@ -152,20 +152,28 @@ as an attribute-less fullscreen pass, editor build only) and `ShowShadowCascades
 `ShadowData::DebugVisualizeCascades`). It also carries `SceneHandle` (the `EngineObjectHandle` of
 the world it was built from) and the particle spawner states described below.
 Physics debug geometry no longer goes through the builder's own Jolt extraction: `PhysicsWorld::OnUpdate`
-(main) packs its wireframe/point renderers into `SceneWorld::GetRawDebugLineArray/PointArray`, and the
-builder appends those buffers to `DebugLineVerts`/`DebugPointVerts` and clears them.
+(main) packs its wireframe/point renderers into the frame buffers behind `SceneWorld::GetDebugDraw()`
+(`GetFrameLineBuffer/GetFramePointBuffer`), and the builder appends those buffers to
+`DebugLineVerts`/`DebugPointVerts` and clears them (see the debug draw channel below).
 Budowany przez `RenderSnapshotBuilder::BuildSnapshotAndPublish` (main); render dostaje same
 UUID-y i **rozwiązuje zasoby po swojej stronie** (leniwie, patrz niżej).
 
-**Kanał `EditorDebugLineVerts` (main → render, editor only).** `SceneWorld::EditorDebugLineVerts`
-to per-klatkowy bufor linii (interleaved pos(3)+color(3)) o tej samej własności co `ShowEditorGrid`:
-**main-owned, view-only, nieserializowany**. Edytor **dopisuje** do niego w swoim ticku (dziś:
-wireframe stożka zaznaczonego `SpotLight` z `SceneViewport::DrawSelectedSpotLightGizmo` and the particle launch cones from `DrawSelectedParticleSpawnerGizmos`), a
-`RenderSnapshotBuilder` **drenuje** go do `snapshot->DebugLineVerts` i czyści. Kolejność w pętli
-głównej to gwarantuje: `OnTick` edytora leci przed `BuildSnapshotAndPublish` (`Application.cpp`).
-Drenaż, nie kopia — bez czyszczenia bufor rósłby o jeden stożek na klatkę w nieskończoność.
-Dopisuj z **jednego** miejsca na klatkę: gizmo siedzi w `SceneViewport`, a nie w
-`SceneViewportPanel`, bo panel jest rysowany raz na okno hostujące.
+**Debug draw channel (main → render).** Every debug draw of a world goes through its
+`DebugDrawAdapter` (`SceneWorld::GetDebugDraw()`, `Gameplay/Debug/DebugDrawAdapter.h`), which writes
+into the world's two per-frame buffers `mDebugLineVerts`/`mDebugPointVerts` (interleaved
+pos(3)+color(3)). They are **main-owned, view-only, not serialized**. Writers, all on main: gameplay
+code and Python scripts (`world.GetDebugDraw().DrawDebugSphere(...)`), `PhysicsWorld::OnUpdate`
+(bulk-packs its Jolt debug renderers), and the editor tick (`SceneViewport::DrawSelectedSpotLightGizmo`,
+`DrawSelectedParticleSpawnerGizmos`, `ParticlesDebugPanel` bounds). `RenderSnapshotBuilder` first calls
+`DebugDrawAdapter::EmitPersistentDraws(deltaTime)` — draws with a `Duration` live in the adapter's own
+batches and are re-appended to the buffers every frame until they expire — then **drains** both buffers
+into `snapshot->DebugLineVerts/DebugPointVerts`. Main-loop ordering makes this safe: the editor's
+`OnTick` runs before `BuildSnapshotAndPublish` (`Application.cpp`). Drained, not copied — without
+clearing, the buffers would grow by a frame's worth of geometry forever. `DiscardFrame` (probe frames)
+clears only the per-frame buffers; persistent batches survive and do not age on such frames.
+Editor gizmos draw from **one** place per frame: they live in `SceneViewport`, not in
+`SceneViewportPanel`, because the panel is drawn once per hosting window. (This replaced the
+editor-only `SceneWorld::EditorDebugLineVerts` channel.)
 
 **Particles are simulated on the render thread** — the one exception to "render only draws". Main
 never touches a `ParticleSpawner`. The channel is **state, not events**: `SceneWorld` keeps the live

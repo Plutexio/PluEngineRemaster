@@ -11,6 +11,7 @@
 #include "PluEngine/Gameplay/GameMode.h"
 #include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
 #include "PluEngine/Gameplay/RaycastInfo.h"
+#include "PluEngine/Gameplay/Debug/DebugDrawAdapter.h"
 
 namespace Plu
 {
@@ -73,6 +74,9 @@ namespace Plu
 		DynamicArray<float> mDebugLineVerts;   // GL_LINES,  6 floatów / wierzchołek
 		DynamicArray<float> mDebugPointVerts;  // GL_POINTS, 6 floatów / wierzchołek
 		float mDebugPointSize = 10.0f;
+		// Every debug draw goes through this adapter into the two buffers above. Declared after
+		// them, so it binds to fully constructed arrays.
+		DebugDrawAdapter mDebugDraw{&mDebugLineVerts, &mDebugPointVerts};
 
 		friend void Controller::Possess(TUsePointer<Puppet> puppet);
 		friend void Controller::Unpossess();
@@ -100,17 +104,6 @@ namespace Plu
 		// as ShadowData::DebugVisualizeCascades.
 		bool ShowShadowCascades = false;
 
-#ifdef PLU_ENGINE_EDITOR_BUILD
-		// Per-frame editor debug lines (interleaved pos(3)+color(3), GL_LINES). Same view-only,
-		// main-owned ownership as ShowEditorGrid: the editor tick appends, RenderSnapshotBuilder
-		// drains it into the snapshot and clears it. Not serialized.
-		//
-		// Ordering is what makes the drain safe: the editor's OnTick runs before
-		// BuildSnapshotAndPublish (Application.cpp), so whatever a panel appended this frame is
-		// already here when the builder looks.
-		DynamicArray<float> EditorDebugLineVerts;
-#endif
-
 		// Live particle spawner components (main thread). Their particles are simulated on the
 		// render thread — read those through GetParticleDebugStats (RenderParticleStats.h).
 		[[nodiscard]] const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& GetParticleSpawnerComponents() const { return mParticleSpawnerComponents; }
@@ -120,10 +113,12 @@ namespace Plu
 		// AutoDestroyWhenFinished run completed. Runs every frame right before the snapshot is built.
 		void UpdateParticleLiveness();
 
-		void AddDebugLine(Vec3 start, Vec3 end, Vec3 color);
-		void AddDebugPoint(Vec3 point, Vec3 color);
-		DynamicArray<float>* GetRawDebugPointArray();
-		DynamicArray<float>* GetRawDebugLineArray();
+		// Debug drawing for this world (lines, shapes, raycasts; per frame or with a duration).
+		// Main thread only. Editor gizmos draw through it too: the editor's OnTick runs before
+		// BuildSnapshotAndPublish (Application.cpp), so what a panel draws this frame is already
+		// in the buffers when the builder drains them.
+		PLU_FUNCTION(PyExport)
+		DebugDrawAdapter* GetDebugDraw() { return &mDebugDraw; }
 
 		PLU_PROPERTY()
 		TClassPointer<GameMode> GameModeClass = TClassPointer<GameMode>(GameMode::GetStaticClass());

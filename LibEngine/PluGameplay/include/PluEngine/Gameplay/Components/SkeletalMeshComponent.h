@@ -24,6 +24,16 @@ namespace Plu
 	struct Animation;
 	struct SkeletalMesh;
 	struct AnimationGraph;
+
+	// Space a posed node transform is reported in (SkeletalMeshComponent::GetNodeLocation/Rotation).
+	PLU_ENUM(PyNamespace=Plu, PyExport)
+	enum class NodeSpace
+	{
+		WORLD,     // world space: the component's live world matrix * the node's posed global
+		LOCAL,     // relative to the parent node — the node's posed local transform
+		COMPONENT  // skeleton space (root-relative): unaffected by where the component is
+	};
+
 	PLU_CLASS(PyExport, PyDerive)
 	class PLUGAMEPLAY_API SkeletalMeshComponent : public WorldComponent
 	{
@@ -190,6 +200,19 @@ namespace Plu
 		Vec3 GetAttachPointLocationInWorld(String attachPointName);
 		PLU_FUNCTION(PyExport)
 		Vec3 GetAttachPointRotationInWorld(String attachPointName);
+
+		// Posed transform of skeleton node `boneName` (any node, not just bones; not an attach point)
+		// in `space`. Read from the LAST pose build (PosedGlobalTransforms), so inside OnUpdate it is
+		// one frame old — consistent with attach points. Zero when the mesh, the node or a pose is
+		// missing (before the first snapshot build). Rotation in euler degrees.
+		PLU_FUNCTION(PyExport)
+		Vec3 GetNodeLocation(String boneName, NodeSpace space);
+		PLU_FUNCTION(PyExport)
+		Vec3 GetNodeRotation(String boneName, NodeSpace space);
+
+		// Shared resolve for GetNodeLocation/Rotation. False when the mesh, the node or a posed
+		// transform for it is missing.
+		bool TryGetNodeTransform(const String& nodeName, NodeSpace space, BoneTransform& outTransform);
 
 		// Re-expresses a world-space location in the posed frame of skeleton node `nodeName`.
 		// Deliberately built on the component's world matrix FROM THE LAST POSE BUILD

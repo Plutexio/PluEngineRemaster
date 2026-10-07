@@ -32,31 +32,6 @@ namespace
 	const Vec3 kBoundsColor = Vec3(0.2f, 0.9f, 1.0f);
 	const Vec3 kSelectedBoundsColor = Vec3(1.0f, 0.4f, 1.0f);
 
-	// Axis-aligned box as 12 lines, interleaved pos(3)+color(3) like the other debug line buffers.
-	void AppendBoxWireframe(DynamicArray<float>& outLineVerts, const Vec3& min, const Vec3& max, const Vec3& color)
-	{
-		const Vec3 corners[8] = {
-			{min.x, min.y, min.z}, {max.x, min.y, min.z}, {max.x, max.y, min.z}, {min.x, max.y, min.z},
-			{min.x, min.y, max.z}, {max.x, min.y, max.z}, {max.x, max.y, max.z}, {min.x, max.y, max.z},
-		};
-		constexpr int edges[12][2] = {
-			{0, 1}, {1, 2}, {2, 3}, {3, 0},
-			{4, 5}, {5, 6}, {6, 7}, {7, 4},
-			{0, 4}, {1, 5}, {2, 6}, {3, 7},
-		};
-		for (const auto& edge : edges) {
-			for (int end = 0; end < 2; end++) {
-				const Vec3& corner = corners[edge[end]];
-				outLineVerts.PushBack(corner.x);
-				outLineVerts.PushBack(corner.y);
-				outLineVerts.PushBack(corner.z);
-				outLineVerts.PushBack(color.r);
-				outLineVerts.PushBack(color.g);
-				outLineVerts.PushBack(color.b);
-			}
-		}
-	}
-
 	const Plu::ParticleSpawnerDebugStats* FindSpawnerStats(const Plu::ParticleDebugStats& stats, UInt64 uuid)
 	{
 		for (const Plu::ParticleSpawnerDebugStats& spawner : stats.Spawners) {
@@ -522,8 +497,8 @@ void Plu::ParticlesDebugPanel::DrawBounds(const TUsePointer<SceneWorld>& world, 
 		if (spawner.AliveParticles == 0) continue;
 		const bool isSelected = spawner.UUID == mSelectedSpawnerUuid;
 		if (mDrawBoundsSelectedOnly && !isSelected) continue;
-		AppendBoxWireframe(world->EditorDebugLineVerts, spawner.BoundsMin, spawner.BoundsMax,
-		                   isSelected ? kSelectedBoundsColor : kBoundsColor);
+		world->GetDebugDraw()->DrawDebugBounds(spawner.BoundsMin, spawner.BoundsMax,
+		                                       isSelected ? kSelectedBoundsColor : kBoundsColor);
 	}
 	// Asset spawners: one box per emitter.
 	for (const ParticleSystemSpawnerDebugStats& spawner : stats.SystemSpawners) {
@@ -531,8 +506,8 @@ void Plu::ParticlesDebugPanel::DrawBounds(const TUsePointer<SceneWorld>& world, 
 		if (mDrawBoundsSelectedOnly && !isSelected) continue;
 		for (const ParticleEmitterDebugStats& emitter : spawner.Emitters) {
 			if (!emitter.HasBounds) continue;
-			AppendBoxWireframe(world->EditorDebugLineVerts, emitter.BoundsMin, emitter.BoundsMax,
-			                   isSelected ? kSelectedBoundsColor : kBoundsColor);
+			world->GetDebugDraw()->DrawDebugBounds(emitter.BoundsMin, emitter.BoundsMax,
+			                                       isSelected ? kSelectedBoundsColor : kBoundsColor);
 		}
 	}
 }

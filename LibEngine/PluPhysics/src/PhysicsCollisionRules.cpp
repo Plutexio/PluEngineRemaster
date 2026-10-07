@@ -6,19 +6,8 @@
 
 #include "Jolt/Physics/Body/Body.h"
 #include "Jolt/Physics/Collision/Shape/CompoundShape.h"
+#include "PluEngine/Physics/PhysicsUtils.h"
 #include "PluEngine/Physics/PhysicsWorld.h"
-
-static UInt32 GetUserData(const JPH::Body& body, const JPH::SubShapeID& subShapeId)
-{
-    // Jolt is built without RTTI, so dynamic_cast on its shapes does not link - check the type tag instead.
-    const JPH::Shape *shape = body.GetShape();
-    // StaticCompoundShapeSettings::Create collapses a single sub-shape into the shape itself (or a
-    // RotatedTranslatedShape), so a body that is not a compound has exactly one collider: index 0.
-    if (shape->GetType() != JPH::EShapeType::Compound) return 0;
-    const JPH::CompoundShape *compound = static_cast<const JPH::CompoundShape *>(shape);
-    JPH::SubShapeID remainder;
-    return compound->GetSubShape(compound->GetSubShapeIndexFromID(subShapeId, remainder)).mUserData;
-}
 
 static std::pair<UInt64, UInt64> MakeContactKey(const JPH::BodyID& body1, const JPH::SubShapeID& subShape1,
                                                 const JPH::BodyID& body2, const JPH::SubShapeID& subShape2)

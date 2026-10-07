@@ -259,15 +259,34 @@ Plu::RaycastHitInfo Plu::PhysicsWorld::ShootRaycast(Vec3 Start, Vec3 End, const 
         }
     }
 
+    result.TraceStart = Start;
+    result.TraceEnd = End;
     result.Hit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, rayResult, {}, {}, bodyFilter);
+    if (!result.Hit) return result;
 
-    if (result.Hit) {
-        result.HitLocation = ToGLM(ray.GetPointOnRay(rayResult.mFraction));
-        const UInt32 bodyKey = rayResult.mBodyID.GetIndexAndSequenceNumber();
-        if (mBodyToObjectMap.Contains(bodyKey)) {
-            TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
-            result.HitObject = sceneWorld->GetGameObjectByUUID(mBodyToObjectMap[bodyKey]);
-        }
+    const JPH::RVec3 hitPoint = ray.GetPointOnRay(rayResult.mFraction);
+    result.HitLocation = ToGLM(hitPoint);
+    result.HitFraction = rayResult.mFraction;
+    result.HitDistance = glm::length(End - Start) * rayResult.mFraction;
+    result.StartedInside = rayResult.mFraction <= 0.0f;
+
+    JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), rayResult.mBodyID);
+    if (!lock.Succeeded()) return result;
+    const JPH::Body& body = lock.GetBody();
+    result.HitNormal = ToGLMFromVec3(body.GetWorldSpaceSurfaceNormal(rayResult.mSubShapeID2, hitPoint));
+
+    const UInt32 bodyKey = rayResult.mBodyID.GetIndexAndSequenceNumber();
+    if (!mBodyToObjectMap.Contains(bodyKey)) return result;
+    const UInt64 objectUuid = mBodyToObjectMap[bodyKey];
+    TUsePointer<SceneWorld> sceneWorld = mApplicationInfo->AppObjectManager->GetObjectAsUser<SceneWorld>(mSceneWorldHandle);
+    result.HitObject = sceneWorld->GetGameObjectByUUID(objectUuid);
+    if (!result.HitObject) return result;
+
+    // Compound sub-shape user data is the collider's index in mCollidersPerObject.
+    const DynamicArray<UInt64>* colliders = mCollidersPerObject.Find(objectUuid);
+    const UInt32 colliderIndex = GetUserData(body, rayResult.mSubShapeID2);
+    if (colliders && colliderIndex < colliders->Size()) {
+        result.HitWorldComponent = result.HitObject->GetWorldComponentByUUID((*colliders)[colliderIndex]);
     }
 
     return result;
@@ -535,8 +554,9 @@ void Plu::PhysicsWorld::OnUpdate(float deltaTime, bool updateBodies)
         if (DebugRenderMode == PhysicsDebugRenderMode::POINTS) mPointRenderer->AddBody(lock.GetBody(), DebugPointColor);
     }
 
-    mWireframeRenderer->PackInto(sceneWorld->GetRawDebugLineArray());
-    mPointRenderer->PackInto(sceneWorld->GetRawDebugPointArray());
+    // Packed in bulk straight into the frame buffers behind the world's debug draw adapter.
+    mWireframeRenderer->PackInto(sceneWorld->GetDebugDraw()->GetFrameLineBuffer());
+    mPointRenderer->PackInto(sceneWorld->GetDebugDraw()->GetFramePointBuffer());
 }
 
 void Plu::PhysicsWorld::FlushPendingBodies()

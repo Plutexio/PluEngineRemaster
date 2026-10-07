@@ -180,6 +180,8 @@ Kolejność palety = **DFS pre-order** po drzewie `RootNode`, licząc **tylko** 
 | `bool SkeletalMeshComponent::TryGetAttachPointWorldMatrix(const String& name, Matrix4& out)` | Pełna ramka świata attach pointa (`componentWorld * parentNodeGlobal * attachPointLocal`), liczona z **pozy z ostatniego builda snapshotu** — więc śledzi animację i live posing za darmo. `false`, gdy brakuje mesha/attach pointa/rodzica albo snapshot jeszcze nie poszedł. Bierz to zamiast pary `GetAttachPointLocationInWorld`/`GetAttachPointRotationInWorld`, gdy potrzebujesz całej bazy (np. doczepienie obiektu). |
 | `Vec3 SkeletalMeshComponent::WorldLocationToNodeSpace(String nodeName, Vec3 worldLocation)` (`PLU_FUNCTION(PyExport)`) | Re-expresses a world-space location in the posed frame of skeleton node `nodeName`, using the world matrix **from the last pose build** (`CachedPoseWorldMatrix`), not the live one — inside `OnPreEvaluateAnimGraph` everything derived from poses is one frame stale, and the matching epoch makes that staleness cancel for anything riding the node rigidly. Built for feeding Bone-space graph goals (`EIKGoalSpace::Bone`); returns the input unchanged when the mesh/node/pose is missing. |
 | `Vec3 SkeletalMeshComponent::WorldRotationToNodeSpace(String nodeName, Vec3 worldRotationDegrees)` (`PLU_FUNCTION(PyExport)`) | Rotation variant of the above; euler degrees both ways. |
+| `Vec3 SkeletalMeshComponent::GetNodeLocation(String nodeName, NodeSpace space)` / `GetNodeRotation(...)` (`PLU_FUNCTION(PyExport)`) | Posed transform of any skeleton node (by node name — not an attach point) from the **last pose build**. `NodeSpace::COMPONENT` = skeleton space (root-relative, ignores where the component is), `LOCAL` = relative to the parent node, `WORLD` = live component world matrix × posed global (same pairing as attach points). Rotation in euler degrees (`glm::eulerAngles`, the inverse of the engine's rotation setters). Zero when the mesh/node/pose is missing. |
+| `bool SkeletalMeshComponent::TryGetNodeTransform(const String& nodeName, NodeSpace space, BoneTransform& out)` | C++ resolve behind the pair above; full `BoneTransform` (location, rotation, scale). `false` when the mesh/node/pose is missing. |
 
 ### Płaska poza — `SkeletonPoseLayout`
 
@@ -341,6 +343,7 @@ Edytor (`AnimationGraphVariablesPanel`/`AnimationGraphViewport`/`AnimationGraphD
 | `JPH::Vec3 ToJPHVec3(const Vec3&)` | `Vec3` → `JPH::Vec3`. |
 | `Vec3 ToGLMFromVec3(const JPH::Vec3&)` | `JPH::Vec3` → `Vec3`. |
 | `JPH::Quat ToJPHRotation(Vec3 rotationDegrees)` | Engine Euler rotation in **degrees** → `JPH::Quat` (`sEulerAngles`). |
+| `UInt32 GetUserData(const JPH::Body&, const JPH::SubShapeID&)` | Collider index of the hit sub-shape (compound sub-shape `mUserData`); index into `PhysicsWorld::mCollidersPerObject[objectUuid]`. A non-compound body has one collider → `0`. |
 
 ---
 
@@ -521,7 +524,7 @@ Stałe: `kMaxVisibleSpotLights` (64, rozmiar SSBO 5 — nadmiar odrzuca MAIN po 
 | `void ComputeSpotBoundingSphere(apex, dir, range, halfAngleRad, OutCenter, OutRadius)` | Sfera opisana na stożku, do cullingu światła względem frustum kamery. Dwa przypadki, bo najmniejsza sfera zmienia charakter na 45°: półkąt ≤ 45° → środek na osi w `range / (2·cos²θ)`, promień taki sam (sfera dotyka wierzchołka i obręczy); powyżej → środek w `range·cosθ`, promień `range·sinθ` (najszersza jest sama podstawa). Znacznie ciaśniejsza niż sfera o promieniu `range` wokół wierzchołka, a to **jedyny** test decydujący, czy światło w ogóle trafi na GPU. |
 | `Matrix4 ComputeSpotLightMatrix(apex, dir, range, outerHalfAngleRad)` | Macierz light-space mapy cienia spota: kwadratowa projekcja perspektywiczna o FOV = pełny kąt zewnętrzny, `near = kSpotShadowNearClip`, `far = range`. Wektor „up" to oś świata najmniej równoległa do `dir` — bez tego `lookAt` degeneruje się dla lampy świecącej pionowo w dół (czyli typowego przypadku). |
 | `void AppendConeWireframe(OutLineVerts, apex, dir, range, halfAngleRad, color, segments = 24, maxHalfAngleRad = π/2 - 0.01)` | Dopisuje wireframe stożka (okrąg podstawy + 4 szprychy z wierzchołka) do bufora linii interleaved pos(3)+color(3) — tego samego formatu, co debug fizyki, więc rysuje go istniejący pass `RenderDebugGeometry` bez nowego shadera. Obręcz leży na **sferze** o promieniu `range`, nie na płaskiej pokrywie — tam realnie kończy się światło. The half-angle is clamped to `maxHalfAngleRad` (just under 90° by default, the spot light limit); pass up to `π` for cones wider than a hemisphere (particle launch cones). |
-| `void AppendSphereWireframe(OutLineVerts, center, radius, color, segments = 32)` | Sphere wireframe as three axis-aligned great circles, same line format as `AppendConeWireframe`. Used by the particle spawner gizmo for an all-directions launch. |
+| `void AppendSphereWireframe(OutLineVerts, center, radius, color, segments = 32)` | Sphere wireframe as three axis-aligned great circles, same line format as `AppendConeWireframe`. Both are the low-level builders behind `DebugDrawAdapter::DrawDebugCone/DrawDebugSphere` — to draw into a scene, use the adapter (section Physics → Debug drawing), not these directly. |
 
 ### Static mesh: draw calls i bounding box — `PluEngine/AssetTypes/StaticMesh/StaticMesh.h`, `PluEngine/AssetTypes/MeshBounds.h`
 
@@ -1412,7 +1415,7 @@ Every `Load*` resets to just `"Default"` and returns `false` when the file is mi
 |---|---|
 | `RaycastHitInfo SceneWorld::ShootRaycast(const Vec3& start, const Vec3& end, const DynamicArray<GameObject*>& ignoredObjects = {})` | Closest hit between two world-space points, skipping the bodies of `ignoredObjects` (null entries allowed; Python: a list, e.g. `[self]`). Jolt treats convex shapes as solid, so a ray starting inside the caster's own collider hits it at distance 0 — pass the caster here. `PLU_FUNCTION(PyExport)`. Never hits when the world has no physics world. |
 | `RaycastHitInfo SceneWorld::ShootRaycastInDirection(const Vec3& start, const Vec3& direction, float length, const DynamicArray<GameObject*>& ignoredObjects = {})` | Same, ending at `start + normalize(direction) * length`; a zero `direction` returns no hit. |
-| `RaycastHitInfo` | `PLU_STRUCT`: `bool Hit`, `Vec3 HitLocation`, `TUsePointer<GameObject> HitObject` (Python: read-only `Hit`/`HitLocation`, `GetHitObject()`). `HitObject` is the object owning the hit body. |
+| `RaycastHitInfo` | `PLU_STRUCT`: `bool Hit`, `Vec3 HitLocation`, `Vec3 HitNormal` (unit, world space), `float HitDistance` (metres from `TraceStart`), `float HitFraction` (0 at `TraceStart`, 1 at `TraceEnd`; 1 on a miss), `bool StartedInside` (ray began inside a convex shape — fraction 0, normal is of the nearest surface), `Vec3 TraceStart`/`TraceEnd` (always filled, even on a miss or with no physics world), `TUsePointer<GameObject> HitObject`, `TUsePointer<WorldComponent> HitWorldComponent`. Python: read-only fields plus `GetHitObject()` / `GetHitWorldComponent()`. `HitObject` owns the hit body; `HitWorldComponent` is the collider or `StaticMeshComponent` whose sub-shape was hit. |
 
 **Bodies and colliders** (`Gameplay/Components/`) — a `GameObject` gets a body when it has a `PhysicsBodyComponent` **and** at least one collider: a `PhysicsColliderComponent` subclass or a `StaticMeshComponent` whose mesh has a collision type set. All of the object's colliders are merged into one `JPH::StaticCompoundShape`, placed with each component's `GetMatrixRelativeToGameObject()` (so attached components work) and scaled with `JPH::ScaledShape`. One body per object.
 
@@ -1445,13 +1448,28 @@ Jolt adds a sub-shape's `GetCenterOfMass()` itself when building a compound, so 
 
 **Overlap events** — `PluContactListener` (`Physics/PhysicsCollisionRules.h`) turns a contact into a sensor contact when `PhysicsChannelsManager::CanBlock` says the pair of channels does not block, and queues it. After each step `PhysicsWorld::OnUpdate` drains the queue on the main thread and calls `GameObject::OnOverlapBegin(component, otherObject, otherComponent)` / `OnOverlapEnd(...)` on both objects (`PyOverride`, so Python objects can handle them). Identification: a body's `mUserData` is its object's UUID (`PhysicsBody` ctor `UserData`), a compound sub-shape's `mUserData` is an index into `PhysicsWorld::mCollidersPerObject` (component UUIDs in `AddShape` order). A body with a single collider is not a compound at all — `StaticCompoundShapeSettings::Create` collapses one sub-shape into the shape itself (or a `RotatedTranslatedShape`) — so a non-compound body shape means collider index 0. Begin/end are counted per (object, component) pair, so a mesh collider touching with several triangles, or a body rebuilt mid-overlap (static body moved, collider changed), gives exactly one begin and one end. Gameplay only ever gets them in pairs: a begin dropped at dispatch (an earlier overlap callback in the same batch removed one of the components) drops its end too. An end still reaches the surviving object, with `otherObject`/`otherComponent` null when the other side was destroyed.
 
-**Debug geometry** (`Gameplay/Scenes/SceneWorld.h`, methods on `SceneWorld`) — per-frame buffers, interleaved pos(3)+color(3), drained into the render snapshot by `RenderSnapshotBuilder`:
+**Debug drawing** — `DebugDrawAdapter` (`Gameplay/Debug/DebugDrawAdapter.h`), reached through `SceneWorld::GetDebugDraw()` (`PyExport`, returns `DebugDrawAdapter*`; in Python `world.GetDebugDraw().DrawDebugLine(...)`). The single entry point for debug geometry: gameplay, scripts, physics debug and editor gizmos all go through it into the world's per-frame buffers, which `RenderSnapshotBuilder` drains into the snapshot (`MULTITHREADING.md`, debug draw channel). Main thread only. Positions/sizes in metres, rotations as engine Euler **degrees**, cone angles in degrees. Every draw takes `Duration` (seconds): `0` = this frame only, `> 0` = kept that long (draws with the same duration in one frame share a batch). All methods are `PyExport`.
 
 | Function | Description |
 |---|---|
-| `void AddDebugLine(Vec3 start, Vec3 end, Vec3 color)` | One line segment for this frame. |
-| `void AddDebugPoint(Vec3 point, Vec3 color)` | One point for this frame. Currently appends to the **line** buffer, not the point buffer. |
-| `DynamicArray<float>* GetRawDebugLineArray()` / `GetRawDebugPointArray()` | The raw buffers — what `PhysicsWorld` packs its wireframe/point renderers into. |
+| `DrawDebugLine(Start, End, Color, Duration = 0)` | Line segment. |
+| `DrawDebugPoint(Point, Color, Duration = 0)` | Point (GL_POINTS, `RenderSnapshot::DebugPointSize` px). |
+| `DrawDebugArrow(Start, End, Color, HeadSize = 0.2, Duration = 0)` | Line with a four-spoke head at `End`; the head is clamped to the arrow length. |
+| `DrawDebugBox(Center, HalfExtent, Color, Duration = 0)` | Axis-aligned box. |
+| `DrawDebugOrientedBox(Center, HalfExtent, Rotation, Color, Duration = 0)` | Box rotated around its centre. |
+| `DrawDebugBounds(Min, Max, Color, Duration = 0)` | Axis-aligned box from min/max corners (AABBs, particle bounds). |
+| `DrawDebugSphere(Center, Radius, Color, Duration = 0, Segments = 32)` | Three axis-aligned great circles (`AppendSphereWireframe`). |
+| `DrawDebugCircle(Center, Normal, Radius, Color, Duration = 0, Segments = 32)` | Circle in the plane perpendicular to `Normal`. |
+| `DrawDebugCone(Apex, Direction, Length, HalfAngleDegrees, Color, Duration = 0, Segments = 24)` | Cone (`AppendConeWireframe`), rim on the sphere of radius `Length`. Half angle clamped to `[0, 180]` — callers that need the spot-light limit clamp themselves (the spot gizmo clamps to 89° like `RenderSnapshotBuilder`). |
+| `DrawDebugCylinder(Start, End, Radius, Color, Duration = 0, Segments = 24)` | Cylinder between the centres of its caps. |
+| `DrawDebugCapsule(Center, HalfHeight, Radius, Rotation, Color, Duration = 0, Segments = 24)` | Capsule along its local Y; `HalfHeight` is half of the cylindrical part (Jolt convention). |
+| `DrawDebugAxes(Location, Rotation, Size = 1, Duration = 0)` | Local X/Y/Z as red/green/blue lines. |
+| `DrawDebugRaycast(const RaycastHitInfo& Hit, Duration = 0)` | Trace green up to the hit, red past it (all red on a miss), hit point + normal in yellow. |
+| `ClearPersistentDraws()` | Drops every draw still waiting out its duration. |
+| `EmitPersistentDraws(float DeltaTime)` | C++ only — called once per frame by `RenderSnapshotBuilder`; appends live persistent draws to the frame buffers and ages them. |
+| `GetFrameLineBuffer()` / `GetFramePointBuffer()` | C++ only — the raw per-frame buffers, for bulk packers (`PhysicsWorld`'s Jolt wireframe/point renderers). |
+
+A default-constructed adapter (e.g. one created from Python) is bound to no world and silently draws nothing.
 
 **Puppet spawn** (`Gameplay/Puppet.h`, `PLU_FUNCTION(PyOverride)`):
 
