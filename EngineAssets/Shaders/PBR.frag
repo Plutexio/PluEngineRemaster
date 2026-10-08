@@ -368,9 +368,33 @@ float LinearizeSceneDepth(float depth01)
     return projection[3][2] / (ndcZ + projection[2][2]);
 }
 
-float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
+// World size of one screen pixel at view depth `depthView`. projection[1][1] = 1/tan(fovY/2), so
+// the visible height at that depth is 2*depthView/projection[1][1], spread over the depth
+// texture's rows — the prepass matches the main buffer, so its height is the screen height.
+float PixelWorldSize(float depthView)
+{
+    return 2.0 * depthView / (projection[1][1] * float(textureSize(sceneDepthTexture, 0).y));
+}
+
+float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope, float depthView)
 {
     if (contactShadowSteps <= 0) return 1.0;
+
+    // Distance fade, measured in PIXELS the ray spans rather than metres. A pixel grows linearly
+    // with distance, so a fixed 25 cm ray covers ~2 px at ~100 m (1080p, 70° FOV): it can no
+    // longer resolve any occluder, and the depth it reads belongs to the pixel's centre, not to
+    // the point being shaded. Unfaded, every distant surface hit itself and went dark — and the
+    // cascade fade did not help, since this result is combined with min() AFTER that fade.
+    float pixelWorld = PixelWorldSize(depthView);
+    float distanceFade = smoothstep(2.0, 4.0, contactShadowLength / pixelWorld);
+    if (distanceFade <= 0.0) return 1.0;
+
+    // The bias must cover the pixel footprint, not just a fixed few millimetres. A sample reads
+    // the depth at its pixel's centre, up to half a pixel sideways from the ray; lifting the
+    // origin by one pixel along the normal keeps the ray above that sideways-shifted surface at
+    // any view angle (the lateral error and the gap both scale with the same 1/cos term).
+    // Close to the camera the pixel is below the authored bias, so the near look is unchanged.
+    float bias = max(contactShadowBias, pixelWorld);
 
     // Wygaszanie przy świetle STYCZNYM. Tam promień biegnie niemal równolegle do powierzchni,
     // więc o trafieniu decyduje dyskretyzacja bufora głębi, a nie geometria — to źródło resztki
@@ -388,7 +412,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
     // pierwsze próbki łapią własną geometrię fragmentu — postrzępione, szarpane zaciemnienie na
     // płaskich powierzchniach, czyli acne. Skalowanie przez tan(θ) to ta sama reguła, którą
     // stosują biasy kaskad: wymagany odstęp rośnie jak tangens, nie liniowo.
-    vec3 originWorld = worldPos + normal * (contactShadowBias * (1.0 + 2.0 * slope));
+    vec3 originWorld = worldPos + normal * (bias * (1.0 + 2.0 * slope));
 
     // Marsz w przestrzeni WIDOKU, nie ekranu: kroki są wtedy równe w metrach, więc "25 cm
     // długości" i "5 cm grubości" znaczą to samo blisko i daleko, pod każdym kątem. Wersja
@@ -398,7 +422,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
 
     // Bias wzdłuż promienia — bez niego pierwsza próbka trafia we własną powierzchnię fragmentu
     // i cała oświetlona geometria robi się ciemna.
-    rayOriginView += rayDirView * contactShadowBias;
+    rayOriginView += rayDirView * bias;
 
     int steps = min(contactShadowSteps, MAX_CONTACT_STEPS);
 
@@ -436,7 +460,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
             // mocne jak przy samej powierzchni, bo granica długości promienia rysowałaby wtedy
             // twardą krawędź w poprzek sceny. `t` to postęp wzdłuż promienia (patrz wyżej).
             // Do tego wygaszanie stycznego kąta — patrz grazingFade na początku funkcji.
-            return mix(1.0, smoothstep(0.75, 1.0, t), grazingFade);
+            return mix(1.0, smoothstep(0.75, 1.0, t), grazingFade * distanceFade);
         }
     }
     return 1.0;
@@ -445,7 +469,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
 float ShadowVisibility(vec3 worldPos, vec3 normal, float depthView, float slope)
 {
     // Contact shadows są niezależne od kaskad — działają też, gdy CSM jest wyłączone.
-    float contact = ContactShadow(worldPos, normal, normalize(-dirLightDir), slope);
+    float contact = ContactShadow(worldPos, normal, normalize(-dirLightDir), slope, depthView);
 
     if (cascadeCount <= 0) return contact;
 

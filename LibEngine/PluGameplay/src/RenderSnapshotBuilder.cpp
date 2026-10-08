@@ -993,61 +993,6 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
     snapshot->ShowShadowCascades = sceneWorld->ShowShadowCascades;
 #endif
 
-    // --- Debugowa wizualizacja fizyki ---
-    // Ekstrakcja geometrii Jolta i obchodzenie GameObjectów odbywa się TUTAJ, na MAIN
-    // (oba są main-only pod thread confinement). Wynik ląduje jako płaskie bufory POD
-    // w snapshotcie; wątek renderu tylko je uploaduje do VBO i rysuje (Renderer::RenderDebugGeometry).
-//     PhysicsWorld* physicsWorld = sceneWorld->GetPhysicsWorld();
-//     if (physicsWorld)
-//     {
-//         PLU_PROFILE_SCOPE("Physics Debug Building");
-//         const PhysicsDebugRender mode = physicsWorld->PhysicsDebugRenderMode;
-//         if (mode != PhysicsDebugRender::NONE)
-//         {
-//             const Vec3 wireColor  = physicsWorld->PhysicsDebugRenderColorWireframe;
-//             const Vec3 pointColor = physicsWorld->PhysicsDebugRenderColorPoints;
-//
-//             JoltWireframeRenderer wire;
-//             JoltPointRenderer     pts;
-//             wire.BeginFrame();
-//             pts.BeginFrame();
-//
-//             JoltWireframeRenderer* wirePtr = (mode == PhysicsDebugRender::WIREFRAME || mode == PhysicsDebugRender::BOTH) ? &wire : nullptr;
-//             JoltPointRenderer*     ptsPtr  = (mode == PhysicsDebugRender::POINTS    || mode == PhysicsDebugRender::BOTH) ? &pts  : nullptr;
-//
-//             // Edytor poza PIE: rysuj kształty kolizji z komponentów (ciała mogą nie istnieć).
-//             // W PIE / runtime: ekstrahuj aktywne ciała Jolta. Locki ciał są bezpieczne — to main.
-//             bool playing = true;
-// #ifdef PLU_ENGINE_EDITOR_BUILD
-//             playing = mAppInfo->AppScenesManager->IsInPIE();
-//             if (!playing)
-//             {
-//                 physicsWorld->DrawEditModeShapes(wirePtr, ptsPtr, wireColor, pointColor);
-//             }
-// #endif
-//             if (playing)
-//             {
-//                 JPH::BodyIDVector bodies;
-//                 JPH::PhysicsSystem& physicsSystem = physicsWorld->GetSystem();
-//                 physicsSystem.GetBodies(bodies);
-//                 for (JPH::BodyID body : bodies)
-//                 {
-//                     JPH::BodyLockRead lock(physicsSystem.GetBodyLockInterface(), body);
-//                     if (!lock.Succeeded()) continue;
-//                     if (wirePtr) wirePtr->AddBody(lock.GetBody(), wireColor);
-//                     if (ptsPtr)  ptsPtr->AddBody(lock.GetBody(), pointColor);
-//                 }
-//             }
-//
-//             wire.PackInto(snapshot->DebugLineVerts);
-//             pts.PackInto(snapshot->DebugPointVerts);
-//         }
-//
-//         // Raycasty debugowe są niezależne od trybu wizualizacji (włączane flagą DrawDebug
-//         // w samym Raycast). Decay timerów + pakowanie segmentów do wspólnego bufora linii.
-//         physicsWorld->CollectDebugRaycasts(deltaTime, snapshot->DebugLineVerts);
-//     } TODO
-
     // --- Debug draws ---
     // Everything drawn through SceneWorld::GetDebugDraw this frame — gameplay, scripts, physics
     // debug, editor gizmos — plus the draws still waiting out their duration. Drained, not

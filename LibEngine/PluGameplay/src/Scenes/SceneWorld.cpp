@@ -147,7 +147,6 @@ namespace Plu
 		if (destroyedSmth) mGameObjectsPerClassCache.Clear();
 #ifdef PLU_ENGINE_EDITOR_BUILD
 		if (destroyedSmth) {
-			PLU_CORE_WARN("Destroyed {} objects!", batch.Size());
 			GetObjectEventDispatcher()->Dispatch("GameObjectsChanged", nullptr);
 		}
 #endif

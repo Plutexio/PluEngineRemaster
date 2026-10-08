@@ -454,6 +454,17 @@ przesuwanie go do przodu nie oddala go od niej i pierwsze próbki łapią własn
 jako szarpane, postrzępione zaciemnienie na płaskich powierzchniach. Reguła `tan` jest ta sama,
 której używają biasy kaskad.
 
+**Distance limits (pixel footprint).** A screen pixel grows linearly with distance
+(`PixelWorldSize(depthView)` in the lit shaders — ~13 cm at 100 m, 1080p, 70° FOV), so a
+fixed-metre ray and a fixed-millimetre bias stop meaning anything far away: each sample reads the
+depth at its pixel's centre, up to half a pixel sideways, and a 2 mm bias no longer lifts the ray
+above its own surface — every distant lit surface shadowed itself. Two rules fix it: the effective
+bias is `max(ContactShadowBias, pixelWorld)` (one pixel along the normal is enough at any view
+angle), and the whole result fades out by `smoothstep(2, 4, ContactShadowLength / pixelWorld)` —
+i.e. by how many pixels the ray spans, so the cut-off moves out with resolution and in with FOV.
+This fade is separate from the cascade fade on purpose: contact shadows are combined with `min()`
+after it, so the cascade fade never reached them.
+
 Parametry na `DirectionalLight`: `ContactShadows`, `ContactShadowLength` (0…1 m),
 `ContactShadowSteps` (4…`kMaxContactShadowSteps` = 64, tyle pobrań głębi na oświetlony piksel —
 to jedyne realne pokrętło wydajności; podniesienie zagęszcza przede wszystkim BLISKIE próbki),

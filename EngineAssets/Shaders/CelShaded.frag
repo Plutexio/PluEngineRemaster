@@ -242,9 +242,22 @@ float LinearizeSceneDepth(float depth01)
     return projection[3][2] / (ndcZ + projection[2][2]);
 }
 
-float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
+// World size of one screen pixel at view depth `depthView`. See PBR.frag.
+float PixelWorldSize(float depthView)
+{
+    return 2.0 * depthView / (projection[1][1] * float(textureSize(sceneDepthTexture, 0).y));
+}
+
+float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope, float depthView)
 {
     if (contactShadowSteps <= 0) return 1.0;
+
+    // Distance fade by the pixels the ray spans — past ~2 px it only hits its own surface and
+    // darkens everything far away. The bias grows to one pixel for the same reason. See PBR.frag.
+    float pixelWorld = PixelWorldSize(depthView);
+    float distanceFade = smoothstep(2.0, 4.0, contactShadowLength / pixelWorld);
+    if (distanceFade <= 0.0) return 1.0;
+    float bias = max(contactShadowBias, pixelWorld);
 
     // Wygaszanie przy świetle STYCZNYM — tam o trafieniu decyduje dyskretyzacja bufora głębi,
     // a nie geometria (resztka acne, której bias nie usuwa), a N·L jest i tak bliskie zeru.
@@ -255,11 +268,11 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
     // Start odsunięty wzdłuż NORMALNEJ, skalowany tan(θ) — przy świetle stycznym offset wzdłuż
     // samego promienia nie oddala go od powierzchni i promień łapie własną geometrię (acne).
     // Patrz PBR.frag.
-    vec3 originWorld = worldPos + normal * (contactShadowBias * (1.0 + 2.0 * slope));
+    vec3 originWorld = worldPos + normal * (bias * (1.0 + 2.0 * slope));
 
     vec3 rayOriginView = (view * vec4(originWorld, 1.0)).xyz;
     vec3 rayDirView    = normalize(mat3(view) * L);
-    rayOriginView += rayDirView * contactShadowBias;
+    rayOriginView += rayDirView * bias;
 
     int   steps  = min(contactShadowSteps, MAX_CONTACT_STEPS);
     float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
@@ -280,7 +293,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
         float diff = -samplePosView.z - LinearizeSceneDepth(texture(sceneDepthTexture, uv).r);
         if (diff > 0.0 && diff < contactShadowThickness)
         {
-            return mix(1.0, smoothstep(0.75, 1.0, t), grazingFade);
+            return mix(1.0, smoothstep(0.75, 1.0, t), grazingFade * distanceFade);
         }
     }
     return 1.0;
@@ -288,7 +301,7 @@ float ContactShadow(vec3 worldPos, vec3 normal, vec3 L, float slope)
 
 float ShadowVisibility(vec3 worldPos, vec3 normal, float depthView, float slope)
 {
-    float contact = ContactShadow(worldPos, normal, normalize(-dirLightDir), slope);
+    float contact = ContactShadow(worldPos, normal, normalize(-dirLightDir), slope, depthView);
 
     if (cascadeCount <= 0) return contact;
 

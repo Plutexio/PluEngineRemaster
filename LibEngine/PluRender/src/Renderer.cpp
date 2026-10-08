@@ -277,7 +277,6 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
                 created.System = CreateOwning<RenderParticleSystem>();
                 spawners->Insert(state.UUID.getUUID(), created);
                 existing = spawners->Find(state.UUID.getUUID());
-                PLU_CORE_TRACE("New Particle System Spawner UUID: {}", state.UUID.getUUID());
             }
             SyncParticleSystemSpawner(state, **found, snapshot->ParticleParameterValues, *existing);
             continue;
@@ -312,7 +311,6 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
     for (UInt64 uuid : removedSpawners) {
         DestroyRenderParticleSpawner(*spawners->Find(uuid));
         spawners->Remove(uuid);
-        PLU_CORE_TRACE("Destroying Particle Spawner UUID: {}", uuid);
     }
     if (spawners->IsEmpty()) {
         mParticleSpawners.Remove(snapshot->SceneHandle);
