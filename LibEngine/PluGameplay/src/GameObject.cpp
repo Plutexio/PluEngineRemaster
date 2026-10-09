@@ -105,6 +105,13 @@ void Plu::GameObject::TickObject(float deltaTime)
 	for (const auto& comp : mComponents) {
 		comp->OnUpdate(deltaTime);
 	}
+
+	if (mLifetime != 0) {
+		mElapsedLifetime += deltaTime;
+		if (mElapsedLifetime >= mLifetime) {
+			GetWorld()->DeleteGameObject(GetObjectHandle());
+		}
+	}
 }
 
 Plu::TUsePointer<Plu::GameObjectComponent> Plu::GameObject::AddComponent(TClassPointer<GameObjectComponent> componentClass, String componentName)
@@ -592,6 +599,22 @@ Plu::TUsePointer<Plu::SkeletalMeshComponent> Plu::GameObject::GetSkeletalAttachm
 	if (!mAttachParentComponent || mAttachSocketName.IsEmpty()) return nullptr;
 	if (!mAttachParentComponent->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) return nullptr;
 	return mObjectManager->GetObjectAsUser<SkeletalMeshComponent>(*mAttachParentComponent->GetEngineObjectHandle());
+}
+
+float Plu::GameObject::GetElapsedTimeSinceSpawn() const
+{
+	return mElapsedLifetime;
+}
+
+void Plu::GameObject::SetLifetime(float lifetime)
+{
+	if (lifetime < 0.0f) {
+		PLU_CORE_ERROR("Invalid Lifetime at Setter! Must be greater than 0!");
+	}
+	mLifetime = lifetime;
+	if (mLifetime <= mElapsedLifetime) {
+		GetWorld()->DeleteGameObject(GetObjectHandle());
+	}
 }
 
 Vec3 Plu::GameObject::GetObjectForwardVector() const

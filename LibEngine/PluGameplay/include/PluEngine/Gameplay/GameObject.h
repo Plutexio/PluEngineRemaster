@@ -94,6 +94,9 @@ namespace Plu
 		TUsePointer<class SceneWorld> mWorld;
 		TUsePointer<class EngineObjectManager> mObjectManager;
 
+		float mLifetime = 0.0f;
+		float mElapsedLifetime = 0.0f;
+
 		friend class GameObjectComponent;
 		friend class WorldComponent;
 		friend class SceneWorld;
@@ -288,6 +291,12 @@ namespace Plu
 		// is one frame behind it (which is exactly what used to happen when this was resolved from
 		// GameObject::TickObject).
 		[[nodiscard]] TUsePointer<SkeletalMeshComponent> GetSkeletalAttachmentParent() const;
+
+		PLU_FUNCTION()
+		float GetElapsedTimeSinceSpawn() const;
+		PLU_FUNCTION()
+		void SetLifetime(float lifetime);
+
 
 		// Whether this object's physics body simulates (Dynamic) or is Static. A JPH::Body has a
 		// single motion type for the whole compound shape, so this is a per-object property, not a
