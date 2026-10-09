@@ -52,7 +52,7 @@ void Plu::ParticleSystemViewport::OnOpened()
 	TypeInfo* moduleTypes[] = {
 		SpawnRateModule::GetStaticClass(), SpawnBurstModule::GetStaticClass(), InitLifetimeModule::GetStaticClass(),
 		InitLocationModule::GetStaticClass(), InitVelocityModule::GetStaticClass(), InitSizeModule::GetStaticClass(),
-		InitColorModule::GetStaticClass(), InitRotationModule::GetStaticClass(),
+		InitColorModule::GetStaticClass(), InitRotationModule::GetStaticClass(), InitSubUVFrameModule::GetStaticClass(),
 		GravityModule::GetStaticClass(), DragModule::GetStaticClass(), AccelerationModule::GetStaticClass(),
 		ColorOverLifeModule::GetStaticClass(), SizeOverLifeModule::GetStaticClass(), SizeBySpeedModule::GetStaticClass(),
 		RotationRateModule::GetStaticClass(), SubUVAnimationModule::GetStaticClass(), KillWhenSlowModule::GetStaticClass(),

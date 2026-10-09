@@ -408,6 +408,12 @@ namespace Plu
 			for (ParticleModuleNode* module : chain) if (module->GetStage() == EParticleModuleStage::Renderer) module->Compile(ctx);
 			for (ParticleModuleNode* module : chain) if (module->GetStage() != EParticleModuleStage::Renderer) module->Compile(ctx);
 
+			// Init SubUV Frame + SubUV Animation: the animation starts at each particle's random frame.
+			if (ctx.SubUVAnimationConstants >= 0 && ctx.SubUVStartCount > 0) {
+				out.Constants[static_cast<UInt32>(ctx.SubUVAnimationConstants) + 2] = static_cast<float>(ctx.SubUVStartFirst);
+				out.Constants[static_cast<UInt32>(ctx.SubUVAnimationConstants) + 3] = static_cast<float>(ctx.SubUVStartCount);
+			}
+
 			// A fused MulCurve reads and writes Flags&0x7F consecutive columns starting at A / Dst, but its
 			// operands name only the first. Every one of them must exist, or the executor skips the whole op
 			// (a colour gradient would only ever touch R, i.e. nothing).

@@ -102,6 +102,23 @@ namespace Plu
 		ctx.EmitSpawn(ParticleCompileContext::MakeOp(Op::Set, Col::Rotation, ctx.ResolveFloat(*this, "Rotation", Rotation)));
 	}
 
+	void InitSubUVFrameModule::Compile(ParticleCompileContext& ctx)
+	{
+		const Int32 total = static_cast<Int32>(std::max<UInt32>(1, ctx.Out.Sprite.SubUVColumns * ctx.Out.Sprite.SubUVRows));
+		const Int32 first = std::clamp(ctx.ResolveConstantInt(*this, "FirstFrame", FirstFrame), 0, total - 1);
+		const Int32 lastAuthored = ctx.ResolveConstantInt(*this, "LastFrame", LastFrame);
+		const Int32 last = lastAuthored < 0 ? total - 1 : std::clamp(lastAuthored, first, total - 1);
+
+		ctx.Require(Col::SubUVFrame);
+		ctx.Require(Col::Seed); // the start frame is derived from it, so SubUV Animation can recompute it every tick
+		ctx.SubUVStartFirst = static_cast<UInt32>(first);
+		ctx.SubUVStartCount = static_cast<UInt32>(last - first + 1);
+		// The SubUV op without the animate flag: just the start frame, written once at spawn.
+		const float params[4] = { 0.0f, static_cast<float>(total), static_cast<float>(ctx.SubUVStartFirst),
+		                          static_cast<float>(ctx.SubUVStartCount) };
+		ctx.EmitSpawn(ParticleCompileContext::MakeOp(Op::SubUV, Col::SubUVFrame, ctx.AddConstants(params, 4)));
+	}
+
 	// ---- update --------------------------------------------------------------------------------
 
 	void GravityModule::Compile(ParticleCompileContext& ctx)
@@ -163,15 +180,31 @@ namespace Plu
 	void RotationRateModule::Compile(ParticleCompileContext& ctx)
 	{
 		ctx.Require(Col::Rotation);
-		ctx.EmitUpdate(ParticleCompileContext::MakeOp(Op::MulAddDt, Col::Rotation, ctx.ResolveFloatProperty(*this, "Rate", Rate)));
+		const ParticleOperand rate = ctx.ResolveFloatProperty(*this, "Rate", Rate);
+		const float randomness = std::abs(ctx.ResolveConstantFloat(*this, "RateRandomness", RateRandomness));
+		if (randomness <= 0.0f) {
+			ctx.EmitUpdate(ParticleCompileContext::MakeOp(Op::MulAddDt, Col::Rotation, rate));
+			return;
+		}
+		// Random spin: drawn once at spawn into its own column — a random operand in the update list would be
+		// re-drawn every tick. A wired Rate (parameter / attribute) is sampled at spawn as well.
+		ctx.Require(Col::RotationRate);
+		ctx.EmitSpawn(ParticleCompileContext::MakeOp(Op::Set, Col::RotationRate, rate));
+		ctx.EmitSpawn(ParticleCompileContext::MakeOp(Op::Add, Col::RotationRate, ctx.Random(-randomness, randomness)));
+		ctx.EmitUpdate(ParticleCompileContext::MakeOp(Op::MulAddDt, Col::Rotation, ctx.AttributeOperand(Col::RotationRate)));
 	}
 
 	void SubUVAnimationModule::Compile(ParticleCompileContext& ctx)
 	{
 		ctx.Require(Col::SubUVFrame);
 		const float frames = static_cast<float>(std::max<UInt32>(1, ctx.Out.Sprite.SubUVColumns * ctx.Out.Sprite.SubUVRows));
-		const float params[2] = { std::max(0.0f, ctx.ResolveConstantFloat(*this, "FramesPerSecond", FramesPerSecond)), frames };
-		ctx.EmitUpdate(ParticleCompileContext::MakeOp(Op::SubUV, Col::SubUVFrame, ctx.AddConstants(params, 2)));
+		// first / count stay 0 unless an Init SubUV Frame module patches them in (ParticleSystemCompiler).
+		const float params[4] = { std::max(0.0f, ctx.ResolveConstantFloat(*this, "FramesPerSecond", FramesPerSecond)), frames, 0.0f, 0.0f };
+		const ParticleOperand constants = ctx.AddConstants(params, 4);
+		ctx.SubUVAnimationConstants = static_cast<Int32>(constants.Index);
+		ParticleOp op = ParticleCompileContext::MakeOp(Op::SubUV, Col::SubUVFrame, constants);
+		op.Flags = 1; // animate
+		ctx.EmitUpdate(op);
 	}
 
 	void KillWhenSlowModule::Compile(ParticleCompileContext& ctx)

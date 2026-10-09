@@ -480,6 +480,15 @@ namespace Plu
             Quaternion Rotation = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);
             DynamicArray<float> ParameterValues;
             UInt32 PendingExtraSpawn = 0;
+
+            // Spawned by a ParticleCommand (SceneWorld::SpawnParticleSystem), not by a component: no snapshot
+            // lists it, so reconciliation leaves it alone. DetachedState stands in for the snapshot entry —
+            // ProcessParticleCommands writes it, SyncParticleSpawners feeds it to SyncParticleSystemSpawner
+            // every frame, and the tick destroys the system once its run has no work left.
+            bool Detached = false;
+            ParticleSpawnerRenderObject DetachedState;
+            // Detached only: seconds of simulation left before the system deactivates itself; 0 = no limit.
+            float RemainingLifetime = 0.0f;
         };
 
         // A simulated spawner plus the GL buffer its particles are drawn from: either the legacy
@@ -495,8 +504,15 @@ namespace Plu
         void SyncParticleSystemSpawner(const ParticleSpawnerRenderObject& state,
                                        const CompiledParticleSystem& program,
                                        const DynamicArray<float>& snapshotParameterValues, RenderParticleSpawner& spawner);
-        // Reconciles mParticleSpawners[snapshot->SceneHandle] with snapshot->ParticleSpawners.
+        // Reconciles mParticleSpawners[snapshot->SceneHandle] with snapshot->ParticleSpawners. Detached
+        // systems are never reconciled away; they are synced from their DetachedState instead.
         void SyncParticleSpawners(RenderSnapshot* snapshot);
+        // Drains the main -> render ParticleCommand queue (RenderParticleCommands.h): creates, deactivates and
+        // destroys detached systems in whichever world each command names.
+        void ProcessParticleCommands();
+        // Programs of the detached systems by system uuid, filled from the commands that carry one. Never
+        // pruned — mirrors the sent-revision map on the main side, which assumes the cache keeps everything.
+        HashMap<UInt64, CompiledParticleSystem> mDetachedParticlePrograms;
         void DestroyRenderParticleSpawner(RenderParticleSpawner& spawner);
         void DestroyParticleSpawners();
         // Ticks the spawners of snapshot's world and uploads their positions / sprite instances. Runs

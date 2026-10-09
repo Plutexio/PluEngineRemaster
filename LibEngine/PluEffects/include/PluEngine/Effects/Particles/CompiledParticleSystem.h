@@ -41,7 +41,7 @@ namespace Plu
 		BaseSizeX, BaseSizeY,            // size at birth: SizeOverLife / SizeBySpeed scale it
 		BaseColR, BaseColG, BaseColB, BaseColA,
 		Custom0,                         // KillWhenSlow's "armed" flag
-		Custom1,                         // spare
+		RotationRate,                    // per-particle spin drawn at spawn (RotationRate.RateRandomness)
 		Count
 	};
 	constexpr UInt32 kParticleColumnCount = static_cast<UInt32>(EParticleColumn::Count);
@@ -83,7 +83,9 @@ namespace Plu
 		IntegratePosition, // Pos += Vel * dt
 		ComputeSpeed,      // Speed = |Vel|
 		KillSlow,          // Custom0 arms once Speed > A; Lifetime = 0 once armed and Speed <= A
-		SubUV,             // SubUVFrame from Age / NormalizedAge; params at Constants[A.Index..]
+		SubUV,             // SubUVFrame = (start + anim) mod frames; Constants[A.Index..] = fps, frames, first, count.
+		                   // start = first + random(Seed) in [0, count) (0 when count == 0); anim only with Flags & 1,
+		                   // from Age (fps > 0) or NormalizedAge
 		SpawnPosition,     // shape Flags; params at Constants[A.Index..], spawner transform applied
 		SpawnVelocity,     // speed operand A; direction params at Constants[B.Index..]
 		Count

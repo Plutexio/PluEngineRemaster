@@ -16,6 +16,7 @@
 namespace Plu
 {
 	class ParticleSpawnerComponent;
+	struct ParticleSystem;
 	class CameraComponent;
 	class DirectionalLight;
 	class SpotLight;
@@ -112,6 +113,26 @@ namespace Plu
 		// applies it: latches each spawner as seen, mirrors its alive count, and deletes objects whose
 		// AutoDestroyWhenFinished run completed. Runs every frame right before the snapshot is built.
 		void UpdateParticleLiveness();
+
+		// Fire-and-forget particle effect: spawns Asset at a world Location / Rotation (Euler degrees, like
+		// GetWorldRotation) without a GameObject or component. Main thread only. The request goes straight to
+		// the render thread through a FIFO command queue (RenderParticleCommands.h), never through the
+		// snapshot, so it is executed exactly once. The effect plays with the asset's default parameters,
+		// does not follow anything, and is destroyed on the render thread once its run has no work left —
+		// a looping one lives until DestroyParticleSystem / DeactivateParticleSystem, until its Lifetime runs
+		// out, or until this world is unloaded. Lifetime > 0: after that many seconds the effect deactivates
+		// itself (soft — live particles finish); 0 = no limit. Returns the effect's id for Deactivate/Destroy;
+		// 0 when Asset is null.
+		PLU_FUNCTION(PyExport)
+		UInt64 SpawnParticleSystem(TUsePointer<ParticleSystem> Asset, const Vec3& Location, const Vec3& Rotation, float Lifetime = 0.0f);
+		// Soft stop of a SpawnParticleSystem effect: no new particles, live ones finish. Unknown or already
+		// finished ids are ignored.
+		PLU_FUNCTION(PyExport)
+		void DeactivateParticleSystem(UInt64 EffectId);
+		// Hard stop of a SpawnParticleSystem effect: it disappears with its particles. Unknown or already
+		// finished ids are ignored.
+		PLU_FUNCTION(PyExport)
+		void DestroyParticleSystem(UInt64 EffectId);
 
 		// Debug drawing for this world (lines, shapes, raycasts; per frame or with a duration).
 		// Main thread only. Editor gizmos draw through it too: the editor's OnTick runs before

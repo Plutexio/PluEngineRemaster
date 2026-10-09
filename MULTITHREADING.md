@@ -271,6 +271,25 @@ Everything below is written in English on purpose (repo rule for new sections).
   The sprite texture is resolved on render with `GetAssetDataNoLoad` + `GetTextureForInfo`; a miss requests the
   load and skips that emitter for the frame, never I/O. Asset-driven emitters neither cast nor receive shadows and
   stay out of the depth prepass; `DrawParticleShadowCasters` and the receive path remain legacy-only.
+- *Detached systems, main -> render as commands (the one exception to "state, never impulses").*
+  `SceneWorld::SpawnParticleSystem(asset, location, rotation)` spawns an effect that no component describes, so
+  there is no state to re-send. It goes through `RenderParticleCommands.h` instead: a plain FIFO (one mutex +
+  `Queue<ParticleCommand>`) that is drained exactly once per particle tick by `Renderer::ProcessParticleCommands`,
+  right before `SyncParticleSpawners`. It never touches the `TripleBuffer`, so a command can be neither dropped nor
+  replayed. Commands: `Spawn` (optional `Lifetime`), `Deactivate` (soft), `Destroy` (hard), `ReleaseWorld` (pushed by
+  `SceneWorld::UnloadGameObjects`; FIFO order puts it behind every spawn of that world, so nothing leaks).
+  *Program transport* is separate from the snapshot cache: `PushParticleSpawnCommand` remembers, under the same
+  mutex, which `CompileRevision` of each system it has already sent and attaches a copy of the
+  `CompiledParticleSystem` only for a new one; render keeps them in `Renderer::mDetachedParticlePrograms` (never
+  pruned, like the sent map). A later spawn with a newer revision re-adopts the program for the live effects of
+  that system too; an asset edited in the editor does not reach effects already playing until then.
+  On render a detached effect is an ordinary `RenderParticleSpawner` in `mParticleSpawners[SceneHandle]` (so all
+  drawing paths pick it up) with `RenderParticleSystem::Detached` set and a `DetachedState`
+  (`ParticleSpawnerRenderObject`) standing in for the snapshot entry: reconciliation never removes it,
+  `SyncParticleSpawners` feeds `DetachedState` through `SyncParticleSystemSpawner` like a component's state, and
+  `TickParticleSpawners` destroys it once its run is done. A spawn `Lifetime` > 0 is counted down there in
+  simulation time (`RemainingLifetime`); at zero the effect deactivates itself, exactly like `Deactivate`. Default parameter values only; it does not move. Main
+  gets back nothing but the id it generated — no liveness for it is read.
 
 **Ustawienia cieni światła kierunkowego:** `DirLight` niesie POD `DirectionalLightShadowSettings`
 (`CastShadows`, `ShadowDistance`, `CascadeCount`, `SplitLambda`, `Resolution`, `NormalBias`,

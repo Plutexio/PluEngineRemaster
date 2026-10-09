@@ -82,6 +82,11 @@ namespace Plu
 		bool SpriteRendererSeen = false;
 		bool RibbonRendererSeen = false;
 		bool BurstSeen = false;
+		// Init SubUV Frame: the per-particle start frame range. SubUV Animation's op gets it patched in after
+		// all modules compiled (SubUVAnimationConstants = its first constant), so chain order does not matter.
+		UInt32 SubUVStartFirst = 0;
+		UInt32 SubUVStartCount = 0;
+		Int32 SubUVAnimationConstants = -1;
 
 	private:
 		struct PinResolution;

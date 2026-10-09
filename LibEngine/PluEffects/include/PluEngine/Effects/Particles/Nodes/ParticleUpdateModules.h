@@ -106,6 +106,10 @@ namespace Plu
 		// Radians per second.
 		PLU_PROPERTY()
 		float Rate = 1.0f;
+		// Each particle spins at Rate + a random value in [-RateRandomness, RateRandomness], drawn once at
+		// spawn and kept for its whole life. 0 = every particle spins at exactly Rate.
+		PLU_PROPERTY()
+		float RateRandomness = 0.0f;
 
 		void BuildPins() override { AddParticleInput(); AddParticleOutput(); BuildDataPinsFromReflection(); }
 		String GetDisplayName() override { return "Rotation Rate"; }
@@ -117,7 +121,8 @@ namespace Plu
 	{
 		REFLECTION_BODY_SUBUVANIMATIONMODULE()
 
-		// Plays the sprite atlas once over the particle's life (or loops FramesPerSecond when > 0).
+		// Plays the sprite atlas once over the particle's life (or loops FramesPerSecond when > 0). With an
+		// Init SubUV Frame module in the chain each particle starts at its random frame and wraps around.
 		PLU_PROPERTY()
 		float FramesPerSecond = 0.0f;
 

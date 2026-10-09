@@ -29,6 +29,20 @@ namespace Plu
 			return static_cast<float>(state >> 8) * (1.0f / 16777216.0f);
 		}
 
+		// A second uniform [0,1) per particle derived from its Seed. Hashed with a salt, so it does not correlate
+		// with the Seed itself (a gradient over Seed and a random SubUV frame stay independent).
+		inline float HashSeed(float seed, UInt32 salt)
+		{
+			UInt32 h;
+			std::memcpy(&h, &seed, sizeof(h));
+			h ^= salt;
+			h ^= h >> 16; h *= 0x7feb352dU;
+			h ^= h >> 15; h *= 0x846ca68bU;
+			h ^= h >> 16;
+			return static_cast<float>(h >> 8) * (1.0f / 16777216.0f);
+		}
+		constexpr UInt32 kSubUVStartSalt = 0x5ab0f3a1U;
+
 		// An operand with everything the inner loop needs already pulled out of the program.
 		struct Resolved
 		{
@@ -352,13 +366,19 @@ namespace Plu
 					break;
 				}
 				case EParticleOpCode::SubUV: {
-					const float* p = program.Constants.Data() + op.A.Index; // fps, totalFrames
+					const float* p = program.Constants.Data() + op.A.Index; // fps, totalFrames, first, count
 					const float fps = p[0], total = std::max(p[1], 1.0f);
+					const float first = p[2], startCount = p[3];
+					const bool animate = (op.Flags & 1) != 0;
 					const float* age = cols[EParticleColumn::Age] + begin;
 					const float* nage = cols[EParticleColumn::NormalizedAge] + begin;
+					const float* seed = startCount > 0.0f ? cols[EParticleColumn::Seed] : nullptr;
+					if (seed) seed += begin;
 					if (!dst) return;
 					for (UInt32 i = 0; i < count; ++i) {
-						float frame = fps > 0.0f ? std::floor(age[i] * fps) : std::floor(std::min(nage[i], 0.9999f) * total);
+						float frame = 0.0f;
+						if (seed) frame = first + std::min(std::floor(HashSeed(seed[i], kSubUVStartSalt) * startCount), startCount - 1.0f);
+						if (animate) frame += fps > 0.0f ? std::floor(age[i] * fps) : std::floor(std::min(nage[i], 0.9999f) * total);
 						dst[i] = std::fmod(frame, total);
 					}
 					break;

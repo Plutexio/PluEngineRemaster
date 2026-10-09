@@ -26,6 +26,7 @@
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Effects/Particles/ParticleSpawner.h"
 #include "PluEngine/Render/RenderParticleLiveness.h"
+#include "PluEngine/Render/RenderParticleCommands.h"
 #include <cstring>
 #include "PluEngine/Render/RenderParticleStats.h"
 #include "PluEngine/AssetTypes/Texture/Texture.h"
@@ -302,9 +303,20 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
         spawner->SyncSpawnRequests(state.RequestedParticles, state.LastBurstSize);
     }
 
+    // Detached systems (SceneWorld::SpawnParticleSystem) have no snapshot entry: their state comes from the
+    // commands. Synced like the rest, so a newer program revision brought by a later spawn is adopted.
+    const DynamicArray<float> noParameterValues;
+    for (auto& spawner : *spawners) {
+        RenderParticleSystem* system = spawner.second.System.GetRaw();
+        if (!system || !system->Detached) continue;
+        const CompiledParticleSystem* program = mDetachedParticlePrograms.Find(system->DetachedState.SystemUuid.getUUID());
+        if (program) SyncParticleSystemSpawner(system->DetachedState, *program, noParameterValues, spawner.second);
+    }
+
     DynamicArray<UInt64> removedSpawners;
     for (const auto& spawner : *spawners) {
-        if (!liveSpawners.Contains(spawner.first)) {
+        const bool detached = spawner.second.System && spawner.second.System->Detached;
+        if (!detached && !liveSpawners.Contains(spawner.first)) {
             removedSpawners.PushBack(spawner.first);
         }
     }
@@ -314,6 +326,80 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
     }
     if (spawners->IsEmpty()) {
         mParticleSpawners.Remove(snapshot->SceneHandle);
+    }
+}
+
+void Plu::Renderer::ProcessParticleCommands()
+{
+    Queue<ParticleCommand> commands; // a local, see ConcurrentQueue::Drain
+    DrainParticleCommands(commands);
+    if (commands.IsEmpty()) return;
+    PLU_PROFILE_SCOPE("Particle Commands");
+
+    auto destroyDetached = [this](HashMap<UInt64, RenderParticleSpawner>& spawners, UInt64 effectId) {
+        RenderParticleSpawner* spawner = spawners.Find(effectId);
+        if (!spawner || !spawner->System || !spawner->System->Detached) return;
+        DestroyRenderParticleSpawner(*spawner);
+        spawners.Remove(effectId);
+    };
+
+    for (ParticleCommand& command : commands) {
+        // Before the switch: the command carrying a program may be the very spawn that needs it.
+        if (command.HasProgram) {
+            mDetachedParticlePrograms.InsertOrAssign(command.SystemUuid, std::move(command.Program));
+        }
+
+        HashMap<UInt64, RenderParticleSpawner>* spawners = mParticleSpawners.Find(command.SceneHandle);
+        switch (command.Type) {
+            case EParticleCommandType::Spawn: {
+                if (!mDetachedParticlePrograms.Contains(command.SystemUuid)) {
+                    // Cannot happen (PushParticleSpawnCommand attaches the program in push order), but a
+                    // missing program must never crash the render thread.
+                    PLU_CORE_WARN("Particle system {} spawned without a program, skipped", command.SystemUuid);
+                    break;
+                }
+                if (!spawners) {
+                    mParticleSpawners.Insert(command.SceneHandle, {});
+                    spawners = mParticleSpawners.Find(command.SceneHandle);
+                }
+                RenderParticleSpawner created;
+                created.System = CreateOwning<RenderParticleSystem>();
+                created.System->Detached = true;
+                ParticleSpawnerRenderObject& state = created.System->DetachedState;
+                state.UUID = PluUUID(command.EffectId);
+                state.SystemUuid = PluUUID(command.SystemUuid);
+                state.EmissionState = EParticleEmissionState::Playing;
+                // The first sync sees a new activation and resets the emitters — Play() on a component.
+                state.ActivationVersion = 1;
+                state.Location = command.Location;
+                state.Rotation = command.Rotation;
+                state.LaunchDirection = command.Rotation * Vec3(0.0f, 0.0f, -1.0f);
+                created.System->RemainingLifetime = command.Lifetime;
+                spawners->InsertOrAssign(command.EffectId, created);
+                break;
+            }
+            case EParticleCommandType::Deactivate: {
+                RenderParticleSpawner* spawner = spawners ? spawners->Find(command.EffectId) : nullptr;
+                if (spawner && spawner->System && spawner->System->Detached) {
+                    spawner->System->DetachedState.EmissionState = EParticleEmissionState::Stopped;
+                }
+                break;
+            }
+            case EParticleCommandType::Destroy:
+                if (spawners) destroyDetached(*spawners, command.EffectId);
+                break;
+            case EParticleCommandType::ReleaseWorld: {
+                if (!spawners) break;
+                DynamicArray<UInt64> detached;
+                for (const auto& spawner : *spawners) {
+                    if (spawner.second.System && spawner.second.System->Detached) detached.PushBack(spawner.first);
+                }
+                for (UInt64 effectId : detached) destroyDetached(*spawners, effectId);
+                break;
+            }
+        }
+
+        if (spawners && spawners->IsEmpty()) mParticleSpawners.Remove(command.SceneHandle);
     }
 }
 
@@ -520,6 +606,7 @@ void Plu::Renderer::DestroyParticleSpawners()
 void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float deltaTime, const Matrix4& view)
 {
     PLU_PROFILE_SCOPE("Particles Tick");
+    ProcessParticleCommands();
     SyncParticleSpawners(snapshot);
     // Per-op timing only while the Debug Particles panel asks for it (renewed every frame).
     const bool profileOps = ConsumeParticleOpTimingsRequest();
@@ -528,6 +615,8 @@ void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float de
     // Feedback for main (RenderParticleLiveness.h): O(spawners), from counters the tick keeps anyway.
     ParticleLivenessFrame liveness;
     liveness.SceneHandle = snapshot->SceneHandle;
+    // Detached systems whose run has no work left; nothing on main waits for them, so they go right away.
+    DynamicArray<UInt64> finishedDetached;
 
     if (spawners) {
         for (auto& entry : *spawners) {
@@ -537,6 +626,16 @@ void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float de
 
             if (spawner.System) {
                 RenderParticleSystem& system = *spawner.System;
+                // Lifetime of a detached system ran out: soft stop, the live particles finish and the system
+                // is destroyed below once its run is done.
+                if (system.Detached && system.RemainingLifetime > 0.0f) {
+                    system.RemainingLifetime -= deltaTime;
+                    if (system.RemainingLifetime <= 0.0f) {
+                        system.RemainingLifetime = 0.0f;
+                        system.DetachedState.EmissionState = EParticleEmissionState::Stopped;
+                        system.State = EParticleEmissionState::Stopped;
+                    }
+                }
                 const bool paused = system.State == EParticleEmissionState::Paused;
 
                 ParticleTickParams params;
@@ -605,6 +704,7 @@ void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float de
                 // Monotonic: the run this state belongs to has no work left.
                 if (allDone) system.CompletedActivation = system.SyncedActivation;
                 alive.CompletedActivationVersion = system.CompletedActivation;
+                if (allDone && system.Detached) finishedDetached.PushBack(entry.first);
             } else if (spawner.Spawner) {
                 spawner.Spawner->TickParticles(deltaTime);
                 spawner.PointBuffer.Upload(spawner.Spawner->GetPositions(), spawner.Spawner->GetAliveCount());
@@ -612,6 +712,11 @@ void Plu::Renderer::TickParticleSpawners(Plu::RenderSnapshot *snapshot, float de
             }
             liveness.Spawners.PushBack(alive);
         }
+        for (UInt64 effectId : finishedDetached) {
+            DestroyRenderParticleSpawner(*spawners->Find(effectId));
+            spawners->Remove(effectId);
+        }
+        if (spawners->IsEmpty()) mParticleSpawners.Remove(snapshot->SceneHandle);
     }
     PublishParticleLiveness(std::move(liveness));
 }

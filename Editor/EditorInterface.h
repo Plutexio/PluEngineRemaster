@@ -46,6 +46,8 @@
 #include "PluEngine/Platform/WindowsManager.h"
 #include "EditorWindows/EditorWindowsManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
+#include "PluEngine/Gameplay/Scenes/ScenesManager.h"
+#include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -412,10 +414,10 @@ namespace Plu
         const float controlsStartX = xCursor + availableWidth - controlsWidth - ctrlSpacing * 0.35f;
         ImGui::SetCursorPosX(controlsStartX - ImGui::GetFontSize() - textWidth);
         if (gEditorAppContext->EditorProjectManager->IsAnyProjectOpen()) {
-            if (gEditorAppContext->EditorScenesManager->IsAnySceneOpen()) {
+            if (gEditorAppContext->EditorScenesManager->GetBaseSceneWorld()) {
                 String msg = String::FromWide(gEditorAppContext->EditorProjectManager->GetProjectName().CStr());
                 msg += " > ";
-                msg += gEditorAppContext->EditorScenesManager->GetCurrentWorldName();
+                msg += gEditorAppContext->EditorScenesManager->GetBaseSceneWorld()->Info->URL;
                 ImGui::TextAligned(1, textWidth, msg.CStr());
             } else {
                 ImGui::TextAligned(1, textWidth, String::FromWide(gEditorAppContext->EditorProjectManager->GetProjectName().CStr()).CStr());

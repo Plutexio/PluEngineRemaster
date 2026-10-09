@@ -154,6 +154,27 @@ namespace Plu
 		String GetDisplayName() override { return "Init Rotation"; }
 		void Compile(ParticleCompileContext& ctx) override;
 	};
+
+	// Gives every particle a random sprite atlas frame in [FirstFrame, LastFrame], so one atlas can hold
+	// several variants (debris, sparks, smoke puffs). Fixed for the particle's life; with a SubUV Animation
+	// module the animation starts there instead. The atlas size comes from the Sprite Renderer.
+	PLU_STRUCT()
+	struct PLUEFFECTS_API InitSubUVFrameModule : ParticleModuleNode
+	{
+		REFLECTION_BODY_INITSUBUVFRAMEMODULE()
+
+		// Zero-based, row by row (left to right, top to bottom).
+		PLU_PROPERTY()
+		int FirstFrame = 0;
+		// -1 = the last frame of the atlas. Equal to FirstFrame = every particle gets that one frame.
+		PLU_PROPERTY()
+		int LastFrame = -1;
+
+		[[nodiscard]] EParticleModuleStage GetStage() const override { return EParticleModuleStage::Spawn; }
+		void BuildPins() override { AddParticleInput(); AddParticleOutput(); BuildDataPinsFromReflection(); }
+		String GetDisplayName() override { return "Init SubUV Frame"; }
+		void Compile(ParticleCompileContext& ctx) override;
+	};
 }
 
 #endif //PLUENGINE_PARTICLESPAWNMODULES_H
