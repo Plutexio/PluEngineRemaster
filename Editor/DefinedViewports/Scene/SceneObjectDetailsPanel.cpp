@@ -157,27 +157,23 @@ bool ObjectAttachmentSection(const Plu::TUsePointer<Plu::GameObject>& object)
 	}
 
 	// Sockets exist only on skeletal meshes — the attach points authored on their skeleton.
-	if (currentComponent && currentComponent->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) {
-		auto* skeletalMesh = static_cast<SkeletalMeshComponent*>(currentComponent.GetRaw());
-		TUsePointer<SkeletalMesh> mesh = skeletalMesh->GetSkeletalMesh();
-		if (mesh && mesh->MeshSkeleton) {
-			const String& socket = object->GetAttachSocketName();
-			if (ImGui::BeginCombo("Socket", socket.IsEmpty() ? "(none)" : socket.CStr())) {
-				if (ImGui::Selectable("(none)", socket.IsEmpty())) {
-					object->AttachToComponent(currentComponent.GetRaw(), "", EAttachmentRule::KeepWorld);
+	if (currentComponent && currentComponent->HasAttachPoints()) {
+		const String& socket = object->GetAttachSocketName();
+		if (ImGui::BeginCombo("Socket", socket.IsEmpty() ? "(none)" : socket.CStr())) {
+			if (ImGui::Selectable("(none)", socket.IsEmpty())) {
+				object->AttachToComponent(currentComponent.GetRaw(), "", EAttachmentRule::KeepWorld);
+				changed = true;
+			}
+			for (const auto& attachName : currentComponent->GetAttachPoints()) {
+				if (ImGui::Selectable(attachName.CStr(), socket == attachName)) {
+					// SnapToTarget: picking a socket in the inspector means "sit on that bone",
+					// which is what the old AttachToSkeletalMeshComponent did. Nudge it off the
+					// bone afterwards with the relative transform if an offset is wanted.
+					object->AttachToComponent(currentComponent.GetRaw(), attachName, EAttachmentRule::SnapToTarget);
 					changed = true;
 				}
-				for (const auto& [attachName, attachPoint] : mesh->MeshSkeleton->AttachPoints) {
-					if (ImGui::Selectable(attachName.CStr(), socket == attachName)) {
-						// SnapToTarget: picking a socket in the inspector means "sit on that bone",
-						// which is what the old AttachToSkeletalMeshComponent did. Nudge it off the
-						// bone afterwards with the relative transform if an offset is wanted.
-						object->AttachToComponent(currentComponent.GetRaw(), attachName, EAttachmentRule::SnapToTarget);
-						changed = true;
-					}
-				}
-				ImGui::EndCombo();
 			}
+			ImGui::EndCombo();
 		}
 	}
 

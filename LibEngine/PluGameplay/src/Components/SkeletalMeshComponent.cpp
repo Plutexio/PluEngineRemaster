@@ -161,6 +161,25 @@ bool Plu::SkeletalMeshComponent::TryGetAttachPointWorldMatrix(const String& atta
 	return true;
 }
 
+DynamicArray<Plu::String> Plu::SkeletalMeshComponent::GetAttachPoints()
+{
+	DynamicArray<String> attachPointNames;
+	for (const auto& attachPoint : SkeletalMeshToDisplay->MeshSkeleton->AttachPoints) {
+		attachPointNames.PushBack(attachPoint.first);
+	}
+	return attachPointNames;
+}
+
+bool Plu::SkeletalMeshComponent::HasAttachPoints()
+{
+	return true;
+}
+
+bool Plu::SkeletalMeshComponent::GetWorldMatrixForAttachPoint(String attachPoint, Matrix4 *outMatrix)
+{
+	return TryGetAttachPointWorldMatrix(attachPoint, *outMatrix);
+}
+
 Vec3 Plu::SkeletalMeshComponent::GetAttachPointLocationInWorld(String attachPointName)
 {
 	Matrix4 attachPointWorld;

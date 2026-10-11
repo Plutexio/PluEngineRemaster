@@ -90,6 +90,11 @@ namespace Plu
 		PLU_FUNCTION()
 		DynamicArray<TUsePointer<WorldComponent>> GetChildren();
 
+		//Attachment
+		virtual bool HasAttachPoints() {return false;}
+		virtual DynamicArray<String> GetAttachPoints() {return {};};
+		virtual bool GetWorldMatrixForAttachPoint(String attachPoint, Matrix4* outMatrix) {return false;};
+
 		// Attaches this component under newAttachPoint, or directly under the owning game object when
 		// newAttachPoint is null. Both components must belong to the same game object — parenting
 		// across objects is a GameObject-level concept (see GameObject::AttachToComponent).

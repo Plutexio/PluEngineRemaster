@@ -274,15 +274,10 @@ Vec3 Plu::GameObject::GetObjectScale() const
 Matrix4 Plu::GameObject::GetAttachParentWorldMatrix() const
 {
 	if (mAttachParentComponent) {
-		if (!mAttachSocketName.IsEmpty()) {
-			if (auto* skeletalMesh = dynamic_cast<SkeletalMeshComponent*>(mAttachParentComponent.GetRaw())) {
-				Matrix4 socketMatrix;
-				// False until the parent mesh has a pose (no snapshot built since the mesh was
-				// assigned). Falling back to the component frame keeps the object near its parent
-				// for those first frames instead of teleporting it to the world origin.
-				if (skeletalMesh->TryGetAttachPointWorldMatrix(mAttachSocketName, socketMatrix)) {
-					return socketMatrix;
-				}
+		if (!mAttachSocketName.IsEmpty() && mAttachParentComponent->HasAttachPoints()) {
+			Matrix4 attachMatrix;
+			if (mAttachParentComponent->GetWorldMatrixForAttachPoint(mAttachSocketName, &attachMatrix)) {
+				return attachMatrix;
 			}
 		}
 		return mAttachParentComponent->GetWorldMatrix();

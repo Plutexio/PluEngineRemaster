@@ -18,8 +18,14 @@ namespace Plu
         SpringArmComponent() = default;
         virtual ~SpringArmComponent() override = default;
 
+        bool HasAttachPoints() override;
+        DynamicArray<String> GetAttachPoints() override;
+        bool GetWorldMatrixForAttachPoint(String attachPoint, Matrix4 *outMatrix) override;
+
         void OnUpdate(float deltaTime) override;
 
+        PLU_PROPERTY(PyExport)
+        bool DebugDraw = false;
         PLU_PROPERTY(PyExport)
         float ArmLength = 1;
         PLU_PROPERTY(PyExport)

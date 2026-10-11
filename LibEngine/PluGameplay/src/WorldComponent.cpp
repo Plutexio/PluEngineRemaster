@@ -178,6 +178,7 @@ const Matrix4& Plu::WorldComponent::GetWorldMatrixRef()
 		// so it has to be applied first (glm is column-vector, rightmost factor applies first).
 		if (mParentComponent) {
 			mWorldMatrix = mParentComponent->GetWorldMatrixRef() * localMatrix;
+			//TODO attach points for components
 		} else {
 			mWorldMatrix = GetParentGameObject()->GetObjectWorldMatrix() * localMatrix;
 		}
@@ -263,7 +264,7 @@ void Plu::WorldComponent::SetRelativeScale(Vec3 newScale)
 
 Vec3 Plu::WorldComponent::GetWorldLocation()
 {
-	return Vec3(GetWorldMatrixRef()[3]);
+	return GetLocationFromMatrix(GetWorldMatrix());
 }
 
 Vec3 Plu::WorldComponent::GetWorldScale()
@@ -275,14 +276,7 @@ Vec3 Plu::WorldComponent::GetWorldScale()
 
 Vec3 Plu::WorldComponent::GetWorldRotation()
 {
-	const Matrix4& m = GetWorldMatrixRef();
-	Vec3 scale = GetWorldScale();
-	glm::mat3 rotMat = glm::mat3(
-		Vec3(m[0]) / scale.x,
-		Vec3(m[1]) / scale.y,
-		Vec3(m[2]) / scale.z
-	);
-	return glm::degrees(glm::eulerAngles(glm::quat_cast(rotMat)));
+	return GetRotationFromMatrix(GetWorldMatrix());
 }
 
 Vec3 Plu::WorldComponent::GetWorldForwardVector()

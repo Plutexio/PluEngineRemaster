@@ -196,6 +196,10 @@ namespace Plu
 		// pair below when the whole frame is wanted — it keeps the bone's basis exactly.
 		bool TryGetAttachPointWorldMatrix(const String& attachPointName, Matrix4& outMatrix);
 
+		DynamicArray<String> GetAttachPoints() override;
+		bool HasAttachPoints() override;
+		bool GetWorldMatrixForAttachPoint(String attachPoint, Matrix4 *outMatrix) override;
+
 		PLU_FUNCTION(PyExport)
 		Vec3 GetAttachPointLocationInWorld(String attachPointName);
 		PLU_FUNCTION(PyExport)
