@@ -72,7 +72,7 @@ namespace Plu
         void Play();
         // Soft stop: no new particles, live ones finish.
         PLU_FUNCTION(PyExport)
-        void Deactivate();
+        void DeactivateSpawner();
         // Hard stop: no new particles and live ones vanish now.
         PLU_FUNCTION(PyExport)
         void Stop();

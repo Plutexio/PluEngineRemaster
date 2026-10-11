@@ -363,7 +363,7 @@ void Plu::ParticlesDebugPanel::DrawSelectedSystemSpawner(ParticleSpawnerComponen
 	// Lifecycle controls — the same calls gameplay makes. Work outside PIE too.
 	if (ImGui::Button(ICON_FA_PLAY " Play")) component.Play();
 	ImGui::SameLine();
-	if (ImGui::Button("Deactivate")) component.Deactivate();
+	if (ImGui::Button("Deactivate")) component.DeactivateSpawner();
 	ImGui::SetItemTooltip("Soft stop: no new particles, live ones finish.");
 	ImGui::SameLine();
 	if (ImGui::Button(ICON_FA_STOP " Stop")) component.Stop();

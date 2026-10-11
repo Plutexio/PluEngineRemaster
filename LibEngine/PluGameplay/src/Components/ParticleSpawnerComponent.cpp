@@ -35,7 +35,7 @@ void Plu::ParticleSpawnerComponent::Play()
     ++mActivationVersion;
 }
 
-void Plu::ParticleSpawnerComponent::Deactivate()
+void Plu::ParticleSpawnerComponent::DeactivateSpawner()
 {
     mEmissionState = EParticleEmissionState::Stopped; // no bump: live particles are left to finish
 }
