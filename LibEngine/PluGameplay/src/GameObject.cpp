@@ -385,10 +385,6 @@ void Plu::GameObject::SetRelativeScale(const Vec3 &scale)
 	mScale = scale;
 	MarkWorldMatrixForRegeneration();
 	GetObjectEventDispatcher()->Dispatch("ScaleChange");
-	// Jolt collision shapes are baked at a fixed scale; rebuild the body so colliders match.
-	if (mWorld) {
-		mWorld->OnGameObjectScaleChanged(this);
-	}
 }
 
 bool Plu::GameObject::DeleteGameObjectComponentImpl(TUsePointer<GameObjectComponent> component)

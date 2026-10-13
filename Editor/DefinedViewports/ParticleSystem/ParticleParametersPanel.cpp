@@ -8,6 +8,7 @@
 #include "PluEngine/Effects/Particles/ParticleSystem.h"
 #include "PluEngine/Effects/Particles/ParticleSystemInstance.h"
 #include "EditorAppContext.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -75,17 +76,10 @@ void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
 			DynamicArray<ParticleSystemInstance*>& liveInstances = ParticleSystemInstance::GetLiveInstances(system->Uuid.getUUID());
 			if (!liveInstances.IsEmpty()) {
 				ParticleSystemInstance* inspected = viewport->GetInspectedInstance();
-				const String previewLabel = inspected ? inspected->DebugName : String("Defaults");
 				ImGui::SetNextItemWidth(-FLT_MIN);
-				if (ImGui::BeginCombo("##InstancePicker", previewLabel.CStr())) {
-					if (ImGui::Selectable("Defaults", inspected == nullptr)) viewport->SetInspectedInstance(nullptr);
-					for (ParticleSystemInstance* instance : liveInstances) {
-						if (!instance) continue;
-						ImGui::PushID(instance);
-						if (ImGui::Selectable(instance->DebugName.CStr(), instance == inspected)) viewport->SetInspectedInstance(instance);
-						ImGui::PopID();
-					}
-					ImGui::EndCombo();
+				if (ImGuiWidgets::ComboValue("##InstancePicker", &inspected, liveInstances,
+						[](ParticleSystemInstance* instance) { return instance->DebugName.CStr(); }, "Defaults")) {
+					viewport->SetInspectedInstance(inspected);
 				}
 				ImGui::Separator();
 			}

@@ -13,6 +13,7 @@
 #include "PluEngine/Platform/Window.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Render/RenderingManager.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 
 namespace {
 using Plu::String;
@@ -145,30 +146,18 @@ void Plu::EditorSettingsPanel::DrawDisplaySection() {
   ImGui::BeginDisabled(window->GetFullscreenType() !=
                            FullscreenType::Fullscreen ||
                        mCachedResolutions.IsEmpty());
-  String preview = String("—");
-  if (mSelectedResolutionIndex >= 0) {
-    IVec2 res = mCachedResolutions[mSelectedResolutionIndex];
-    preview =
-        String::Format("{0}x{1}  ({2})", res.x, res.y, AspectRatioString(res));
-  }
-  if (ImGui::BeginCombo("Resolution", preview.CStr())) {
-    for (int i = 0; i < static_cast<int>(mCachedResolutions.Size()); ++i) {
-      IVec2 res = mCachedResolutions[i];
-      String label = String::Format("{0}x{1}  ({2})", res.x, res.y,
-                                    AspectRatioString(res));
-      bool isSelected = (i == mSelectedResolutionIndex);
-      if (ImGui::Selectable(label.CStr(), isSelected)) {
-        mSelectedResolutionIndex = i;
-        if (window->GetFullscreenType() == FullscreenType::Fullscreen) {
-          window->MakeFullscreen(FullscreenType::Fullscreen,
-                                 mCachedResolutions[i]);
-        }
-        PersistDisplaySettings();
-      }
-      if (isSelected)
-        ImGui::SetItemDefaultFocus();
+  auto resolutionLabel = [](const IVec2& res) {
+    return String::Format("{0}x{1}  ({2})", res.x, res.y,
+                          AspectRatioString(res));
+  };
+  if (ImGuiWidgets::Combo("Resolution", &mSelectedResolutionIndex,
+                          mCachedResolutions, resolutionLabel, nullptr, 0,
+                          "—")) {
+    if (window->GetFullscreenType() == FullscreenType::Fullscreen) {
+      window->MakeFullscreen(FullscreenType::Fullscreen,
+                             mCachedResolutions[mSelectedResolutionIndex]);
     }
-    ImGui::EndCombo();
+    PersistDisplaySettings();
   }
   ImGui::EndDisabled();
 }

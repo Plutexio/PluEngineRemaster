@@ -361,7 +361,7 @@ void Plu::SceneManager::DeserializeWorldComponent(DeserializationContext* dc, co
 	// AddComponent hangs the component off the object; the JSON nesting is what says otherwise.
 	// KeepRelative — the relative transform read below is authored against the attach point.
 	if (parentComponent) {
-		newComponent->AttachTo(parentComponent.GetRaw(), EAttachmentRule::KeepRelative);
+		newComponent->AttachTo(parentComponent.GetRaw(), newComponent->GetAttachPointName(), EAttachmentRule::KeepRelative);
 	}
 
 	if (j.contains("relativeLocation")) {
@@ -563,7 +563,7 @@ void Plu::SceneManager::CloneWorldComponent(TUsePointer<WorldComponent> source, 
 		if (!target) return;
 		// Mirror the source's attachment — AddComponent puts every component directly on the object.
 		if (parentComponent) {
-			target->AttachTo(parentComponent.GetRaw(), EAttachmentRule::KeepRelative);
+			target->AttachTo(parentComponent.GetRaw(), source->GetAttachPointName(), EAttachmentRule::KeepRelative);
 		}
 		target->SetRelativeLocation(source->GetRelativeLocation());
 		target->SetRelativeRotation(source->GetRelativeRotation());

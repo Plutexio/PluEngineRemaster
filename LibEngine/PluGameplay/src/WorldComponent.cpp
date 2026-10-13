@@ -51,13 +51,6 @@ DynamicArray<Plu::TUsePointer<Plu::GameObject>> Plu::WorldComponent::GetAttached
 	return mAttachedObjects;
 }
 
-void Plu::WorldComponent::MarkOwnerCollisionDirty()
-{
-	TUsePointer<SceneWorld> world = GetWorld();
-	if (!world) return;
-	world->OnComponentTransformChanged(GetParentGameObject().GetRaw());
-}
-
 Plu::TUsePointer<Plu::WorldComponent> Plu::WorldComponent::GetParentComponent() const
 {
 	return mParentComponent;
@@ -83,7 +76,7 @@ bool Plu::WorldComponent::IsAttachedTo(WorldComponent *component) const
 	return false;
 }
 
-void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRule rule)
+void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, String attachPointName, EAttachmentRule rule)
 {
 	TUsePointer<GameObject> owner = GetParentGameObject();
 	if (!owner) {
@@ -105,7 +98,7 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 			GetComponentName().CStr(), newAttachPoint->GetComponentName().CStr());
 		return;
 	}
-	if (mParentComponent.GetRaw() == newAttachPoint) return;
+	if (mParentComponent.GetRaw() == newAttachPoint && mAttachPointName == attachPointName) return;
 
 	// Snapshot before the reparent: GetWorldMatrix() answers against the OLD chain here.
 	const Matrix4 previousWorldMatrix = (rule == EAttachmentRule::KeepWorld) ? GetWorldMatrix() : Matrix4(1.0f);
@@ -113,6 +106,7 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 	// Owning reference held across the whole swap — the old list drops its owning pointer below, and
 	// without this the component would be destroyed mid-call.
 	TOwningPointer<WorldComponent> self = GetObjectManagerFromParent()->GetObjectAsOwner<WorldComponent>(*GetEngineObjectHandle());
+	mAttachPointName = attachPointName;
 
 	owner->OnDetachComponent(self, mParentComponent);
 	mParentComponent = newAttachPoint
@@ -127,12 +121,11 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 	// The component's transform relative to the game object changed even under KeepWorld (the chain
 	// it is baked from is different), and sub-shape offsets are baked at body build time.
 	OnRelativeTransformChanged();
-	MarkOwnerCollisionDirty();
 }
 
 void Plu::WorldComponent::Detach(EAttachmentRule rule)
 {
-	AttachTo(nullptr, rule);
+	AttachTo(nullptr,"", rule);
 }
 
 void Plu::WorldComponent::SnapToAttachParent(bool keepScale)
@@ -177,8 +170,13 @@ const Matrix4& Plu::WorldComponent::GetWorldMatrixRef()
 		// parent * local in both branches — the local transform is expressed in the parent's space,
 		// so it has to be applied first (glm is column-vector, rightmost factor applies first).
 		if (mParentComponent) {
-			mWorldMatrix = mParentComponent->GetWorldMatrixRef() * localMatrix;
-			//TODO attach points for components
+			if (mAttachPointName != "") {
+				mWorldMatrix = Matrix4(1.0f);
+				mParentComponent->GetWorldMatrixForAttachPoint(mAttachPointName, &mWorldMatrix);
+				mWorldMatrix *= localMatrix;
+			} else {
+				mWorldMatrix = mParentComponent->GetWorldMatrixRef() * localMatrix;
+			}
 		} else {
 			mWorldMatrix = GetParentGameObject()->GetObjectWorldMatrix() * localMatrix;
 		}

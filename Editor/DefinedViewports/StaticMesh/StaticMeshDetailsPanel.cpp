@@ -15,6 +15,7 @@
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/AssetPipeline/StaticMesh/StaticMeshAssimpLoader.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 #include "PluEngine/Physics/JoltIntializer.h"
 #include "PluEngine/Physics/PhysicsWorld.h"
 #include "PluEngine/Physics/StaticMeshCollision.h"
@@ -73,23 +74,16 @@ void Plu::StaticMeshDetailsPanel::OnUpdate(float deltaTime)
 				}
 
 				bool changed = false;
-				if (ImGui::BeginCombo("Current Collision", staticMesh->CollisionData ? staticMesh->CollisionData->GetClass()->TypeName.CStr() : "No collision"))
+				TypeInfo* collisionType = staticMesh->CollisionData ? staticMesh->CollisionData->GetClass() : nullptr;
+				if (ImGuiWidgets::ComboValue("Current Collision", &collisionType, collisionTypeInfos,
+						[](TypeInfo* type) { return type->TypeName.CStr(); }, nullptr, 0, "No collision"))
 				{
-					for (UInt32 i = 0; i < collisionTypeInfos.Size(); ++i)
-					{
-						const bool selected = collisionTypeInfos[i] == (staticMesh->CollisionData ? staticMesh->CollisionData->GetClass() : nullptr);
-						if (ImGui::Selectable(collisionTypeInfos[i]->TypeName.CStr(), selected))
-						{
-							staticMesh->CollisionName = collisionTypeInfos[i]->TypeName.CStr();
-							PluUUID uuid = gApplicationInfo->AppScenesManager->GetCurrentWorld()->GetGameObjectOfClass(EditorMeshObject::GetStaticClass())->GetObjectUUID();
-							JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetCurrentWorld()->GetObjectHandle())->RebuildObjectCollision(uuid);
-							JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetBaseSceneWorld()->GetObjectHandle())->RebuildObjectsThatUseMesh(staticMesh.GetRaw());
-							changed = true;
-							PanelChangedAsset();
-						}
-						if (selected) ImGui::SetItemDefaultFocus();
-					}
-					ImGui::EndCombo();
+					staticMesh->CollisionName = collisionType->TypeName.CStr();
+					PluUUID uuid = gApplicationInfo->AppScenesManager->GetCurrentWorld()->GetGameObjectOfClass(EditorMeshObject::GetStaticClass())->GetObjectUUID();
+					JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetCurrentWorld()->GetObjectHandle())->RebuildObjectCollision(uuid);
+					JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetBaseSceneWorld()->GetObjectHandle())->RebuildObjectsThatUseMesh(staticMesh.GetRaw());
+					changed = true;
+					PanelChangedAsset();
 				}
 
 				PhysicsWorld* physicsWorld = JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetCurrentWorld()->GetObjectHandle()).GetRaw();

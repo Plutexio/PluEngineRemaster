@@ -354,20 +354,6 @@ namespace Plu
 		}
 	}
 
-	void SceneWorld::OnGameObjectScaleChanged(GameObject* gameObject)
-	{
-		if (!mIsPlaying || !gameObject) return;
-		// Only objects that already have a physics body need their colliders rebuilt.
-		if (!mEngineObjectManager->IsValid(gameObject->mPhysicsBodyHandle)) return;
-	}
-
-	void SceneWorld::OnComponentTransformChanged(GameObject* gameObject)
-	{
-		if (!mIsPlaying || !gameObject) return;
-		// Deferred, unlike the scale path above: transform setters are called per frame while a
-		// value is dragged in the editor, and a rebuild per call would be wasteful.
-	}
-
 	TUsePointer<GameObject> SceneWorld::SpawnGameObject(TClassPointer<GameObject> objectClass)
 	{
 		return SpawnGameObjectInternal(objectClass, true);

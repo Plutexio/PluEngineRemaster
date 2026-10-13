@@ -34,6 +34,8 @@ namespace Plu
 		// component's array or the game object's own mWorldComponents.
 		DynamicArray<TOwningPointer<WorldComponent>> mWorldComponents;
 		TUsePointer<WorldComponent> mParentComponent;
+		PLU_PROPERTY()
+		String mAttachPointName;
 
 		// GameObjects riding this component (GameObject::AttachToComponent). Non-owning: an attached
 		// object keeps its own lifetime, exactly like an attached AActor in UE — it is detached, not
@@ -77,9 +79,6 @@ namespace Plu
 		// offsets are baked into the compound shape when the body is built, so a moved component is
 		// invisible to physics until the body is rebuilt.
 		virtual void OnRelativeTransformChanged() {}
-		// Queues a rebuild of the owning object's physics body. No-op outside of play, or when the
-		// object has no body yet.
-		void MarkOwnerCollisionDirty();
 	public:
 		WorldComponent() = default;
 		virtual ~WorldComponent() override = default;
@@ -101,7 +100,7 @@ namespace Plu
 		// Rejected (with an error log, leaving the attachment untouched): attaching to itself, or to
 		// one of its own descendants, which would build a transform cycle.
 		PLU_FUNCTION()
-		void AttachTo(WorldComponent* newAttachPoint, EAttachmentRule rule = EAttachmentRule::KeepRelative);
+		void AttachTo(WorldComponent* newAttachPoint, String attachPointName = "", EAttachmentRule rule = EAttachmentRule::KeepRelative);
 		// Shorthand for AttachTo(nullptr, rule) — moves the component back under the game object.
 		PLU_FUNCTION()
 		void Detach(EAttachmentRule rule = EAttachmentRule::KeepRelative);
@@ -114,6 +113,9 @@ namespace Plu
 		// are a handful of levels deep) and is what guards AttachTo against cycles.
 		PLU_FUNCTION()
 		[[nodiscard]] bool IsAttachedTo(WorldComponent* component) const;
+
+		PLU_FUNCTION()
+		String GetAttachPointName() { return mAttachPointName; }
 
 		// GameObjects riding this component (GameObject::AttachToComponent), one level deep.
 		PLU_FUNCTION()

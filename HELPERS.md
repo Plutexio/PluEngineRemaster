@@ -1638,6 +1638,21 @@ Wołającym jest `SceneViewport` — kolejkuje nazwy z eventu `"NewPythonType"`
 z samego handlera: event leci ze środka `RegisterPluClass`, czyli w trakcie `RunProjectScripts`, gdy
 pozostałe moduły projektu są już wyrzucone z `sys.modules` i jeszcze nie zaimportowane.
 
+## ImGui widgets — `PluEngine/Core/Widgets/`
+
+Header-only, usable from every engine module and the editor (not gated on `PLU_ENGINE_EDITOR_BUILD`).
+
+| Function | File | Description |
+|---|---|---|
+| `bool ImGuiWidgets::Combo(label, Int32* currentIndex, const DynamicArray<T>& items, getLabel, const char* noneLabel = nullptr, ImGuiComboFlags flags = 0, const char* emptyPreview = nullptr)` | `Combo.h` | Combo over a `DynamicArray`, picked by index (`-1` / out of range = nothing selected). `getLabel(const T&)` returns `const char*` or `String` (a temporary is fine). `noneLabel` adds a leading entry that sets the index to `-1` and is the preview while nothing is selected; `emptyPreview` sets that preview without adding an entry (e.g. `"No collision"` when there is nothing to reset to). Items are ID-scoped by index, so duplicate labels work. Returns `true` when the selection changes. Overload without `getLabel` for arrays of `String` / `const char*`. |
+| `bool ImGuiWidgets::ComboValue(label, T* value, const DynamicArray<T>& items, getLabel, const char* noneLabel = nullptr, ImGuiComboFlags flags = 0, const char* emptyPreview = nullptr)` | `Combo.h` | Same, picked by value: the current item is the first one `== *value`, a pick copies it into `*value`, the `noneLabel` entry resets `*value` to `T{}`. A value not in `items` shows `emptyPreview` / `noneLabel` as the preview. A label getter returning `.CStr()` of a temporary dangles — return the `String` itself instead. Overload without `getLabel` for `String` / `const char*` arrays. |
+
+```cpp
+ImGuiWidgets::ComboValue("Socket", &socketName, component->GetAttachPoints(), "(none)");
+ImGuiWidgets::Combo("Attach to", &index, components,
+                    [](const TUsePointer<WorldComponent>& c) { return c->GetComponentName(); });
+```
+
 ## Editor — `Editor/Utils/`
 
 | Funkcja | Plik | Opis |
