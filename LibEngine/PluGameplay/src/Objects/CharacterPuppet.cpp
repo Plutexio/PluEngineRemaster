@@ -16,6 +16,11 @@ Plu::TUsePointer<Plu::CameraComponent> Plu::CharacterPuppet::GetCamera()
 	return Camera;
 }
 
+bool Plu::CharacterPuppet::CanSprint()
+{
+	return true;
+}
+
 bool Plu::CharacterPuppet::IsGrounded() const
 {
 	return mIsGrounded;
@@ -106,8 +111,7 @@ void Plu::CharacterPuppet::OnUpdate(float deltaTime)
 	if (mIsMoving)
 	{
 		mIsSprinting = mSprinting && (!SprintForwardOnly || mMovingForward);
-		float speed = WalkSpeed * (mIsSprinting ? SprintSpeedMultiplier : 1.f)
-			* (mIsGrounded ? 1.f : AirControl);
+		float speed = (mIsSprinting && CanSprint() ? SprintSpeed : WalkSpeed) * (mIsGrounded ? 1.f : AirControl);
 		hVel = glm::normalize(mMoveInput) * speed;
 	}
 

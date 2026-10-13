@@ -40,7 +40,7 @@ namespace Plu
 		float WalkSpeed = 5.f;
 
 		PLU_PROPERTY(PyExport)
-		float SprintSpeedMultiplier = 2.f;
+		float SprintSpeed = 8.f;
 
 		PLU_PROPERTY(PyExport)
 		float JumpForce = 8.f;
@@ -67,6 +67,9 @@ namespace Plu
 
 		PLU_FUNCTION(PyExport)
 		TUsePointer<CameraComponent> GetCamera();
+
+		PLU_FUNCTION(PyExport, PyOverride)
+		virtual bool CanSprint();
 
 		// Cached result of the last CheckGrounded() done in OnUpdate().
 		PLU_FUNCTION(PyExport)

@@ -39,7 +39,7 @@ bool Plu::SpringArmComponent::GetWorldMatrixForAttachPoint(String attachPoint, M
             }
         }
         Matrix4 out = glm::translate(glm::mat4(1.0f), direction * (result.HitFraction * ArmLength));
-        *outMatrix = GetWorldMatrix() * out;
+        *outMatrix = out * GetWorldMatrix();
         return true;
     } else {
         return WorldComponent::GetWorldMatrixForAttachPoint(attachPoint, outMatrix);
