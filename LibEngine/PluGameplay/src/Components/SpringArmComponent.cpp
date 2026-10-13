@@ -23,7 +23,7 @@ bool Plu::SpringArmComponent::GetWorldMatrixForAttachPoint(String attachPoint, M
     if (attachPoint == "EndOfArm") {
         Vec3 direction;
         TUsePointer<Puppet> parent = DynamicCast<Puppet>(GetParentGameObject());
-        if (UsePuppetControlRotation && parent) {
+        if (UsePuppetControlRotation && parent && parent->GetController()) {
             direction = parent->GetController()->GetControlRotationForPuppet();
         } else {
             direction = GetWorldForwardVector();
