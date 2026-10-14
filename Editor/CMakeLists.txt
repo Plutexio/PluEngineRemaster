@@ -37,6 +37,10 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/AnimationGraph/AnimationGraphVariablesPanel.cpp
         ./DefinedViewports/AnimationGraph/AnimationGraphViewport.cpp
         ./DefinedViewports/AnimationGraph/AnimationGraphViewportPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceCanvasPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceDetailsPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceViewport.cpp
         ./NodeGraph/NodeGraphEditor.cpp
         ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.cpp
         ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.cpp
@@ -106,6 +110,12 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/AnimationGraph/AnimationGraphDetailsPanel.h
         ./DefinedViewports/AnimationGraph/AnimationGraphViewport.h
         ./DefinedViewports/AnimationGraph/AnimationGraphViewportPanel.h
+        ./DefinedViewports/AnimationGraph/AnimBlendSpaceNodeView.h
+        ./DefinedViewports/BlendSpace/BlendSpaceCanvasPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceDetailsPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceDrawing.h
+        ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceViewport.h
         ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.h
         ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.h
         ./DefinedViewports/ParticleSystem/ParticleGraphPanel.h

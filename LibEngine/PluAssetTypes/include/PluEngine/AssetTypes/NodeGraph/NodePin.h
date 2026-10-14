@@ -33,6 +33,11 @@ namespace Plu
 		EPinDirection Direction = EPinDirection::Input;
 		EPinCategory  Category  = EPinCategory::Flow;
 		String TypeId;                             // Flow: flow kind ("Pose"/"Exec"); Data: type name
+		// Optional text the editor shows instead of Name (e.g. a blend space axis name). Display
+		// only — links keep addressing the pin by Name, so a label may change freely.
+		String Label;
+
+		[[nodiscard]] const String& GetLabel() const { return Label.IsEmpty() ? Name : Label; }
 
 		NodePin() = default;
 		NodePin(const String& name, EPinDirection direction, EPinCategory category, const String& typeId)

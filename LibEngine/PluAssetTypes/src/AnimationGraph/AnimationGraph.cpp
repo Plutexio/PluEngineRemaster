@@ -3,6 +3,7 @@
 //
 
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
+#include "PluEngine/AssetTypes/Animation/AnimGraphInstance.h"
 #include "PluEngine/AssetTypes/AnimationGraph/Nodes/AnimOutputPoseNode.h"
 #include "PluEngine/AssetTypes/AnimationGraph/Nodes/AnimVariableNode.h"
 // RegisterBuiltInTypes() instantiates AnimationGraphVariable<T>::DeSerialize/Serialize/
@@ -91,6 +92,16 @@ namespace Plu
 		// evaluating the asset on its own (editor preview) gets the graph's authoring skeleton.
 		if (!context.TargetSkeleton)
 			context.TargetSkeleton = TargetSkeleton;
+		if (context.Instance)
+		{
+			// Delta from the graph clock rather than the frame's dt: a paused component (clock
+			// frozen) gets 0, so stateful nodes hold still exactly like the stateless ones do.
+			AnimGraphInstance& instance = *context.Instance;
+			const float delta = context.TimeSeconds - instance.LastEvalTimeSeconds;
+			context.DeltaSeconds = delta > 0.0f ? delta : 0.0f;
+			instance.LastEvalTimeSeconds = context.TimeSeconds;
+			context.EvaluationId = ++instance.EvaluationId;
+		}
 		for (TOwningPointer<GraphNode>& node : Nodes)
 		{
 			if (auto* output = dynamic_cast<AnimOutputPoseNode*>(node.GetRaw()))

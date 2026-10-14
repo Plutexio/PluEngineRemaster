@@ -8,6 +8,7 @@
 #include "AnimationGraphDetailsPanel.h"
 #include "AnimationGraphVariablesPanel.h"
 #include "AnimBlendNodeView.h"
+#include "AnimBlendSpaceNodeView.h"
 #include "AnimVariableNodeView.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
@@ -23,6 +24,8 @@ namespace Plu
 	static AnimBlendNodeView sAnimBlendNodeView;
 	// Likewise for the compact "capsule" variable-node view.
 	static AnimVariableNodeView sAnimVariableNodeView;
+	// Blend space thumbnail under the node's pins.
+	static AnimBlendSpaceNodeView sAnimBlendSpaceNodeView;
 }
 
 Plu::StringW Plu::AnimationGraphViewport::GetLayoutPath()
@@ -46,6 +49,7 @@ void Plu::AnimationGraphViewport::OnOpened()
 	// Register domain-specific node visuals ("smaczki"); everything else uses the default view.
 	mNodeGraphEditor.Registry().Register("AnimBlendNode", &sAnimBlendNodeView);
 	mNodeGraphEditor.Registry().Register("AnimVariableNode", &sAnimVariableNodeView);
+	mNodeGraphEditor.Registry().Register("AnimBlendSpaceNode", &sAnimBlendSpaceNodeView);
 
 	mNodeGraphEditor.LoadLayout(GetLayoutPath());
 

@@ -110,6 +110,20 @@ void Plu::AnimationGraphViewportPanel::OnUpdate(float deltaTime)
 				}
 			});
 
+			// Some nodes derive their pins from another asset (AnimBlendSpaceNode: axis count and
+			// names of a BlendSpace edited in its own window) — rebuild when that changed. Only a
+			// pruned link is a real edit of this graph; relabelled pins are not.
+			bool pinsStale = false;
+			for (TOwningPointer<GraphNode>& node : graph->Nodes) {
+				if (node && node->ArePinsStale()) { pinsStale = true; break; }
+			}
+			if (pinsStale) {
+				const UInt64 linkCount = graph->Links.Size();
+				graph->RebuildAllPins();
+				graph->PruneInvalidLinks();
+				if (graph->Links.Size() != linkCount) PanelChangedAsset();
+			}
+
 			ImGuiNodeEditor::SetCurrentEditor(viewport->GetNodeEditorContext());
 			ImGuiNodeEditor::Begin("Animation Graph");
 

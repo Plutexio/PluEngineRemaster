@@ -28,10 +28,9 @@ void Plu::SkeletalMeshComponent::OnUpdate(float deltaTime)
 	// see RenderSnapshotBuilder) or just one.
 	if (AnimGraph)
 	{
+		// The instance's own bookkeeping (LastEvalTimeSeconds → AnimEvalContext::DeltaSeconds) is
+		// derived from this clock inside AnimationGraph::Evaluate — nothing to push here.
 		GraphTimeSeconds += deltaTime;
-		if (AnimGraphInstance* instance = EnsureAnimGraphInstance()) {
-			instance->TimeSeconds = GraphTimeSeconds;
-		}
 	}
 
 	if (!AnimationToShow)

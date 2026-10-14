@@ -8,11 +8,27 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/AssetTypes/Animation/AnimGraphVariableStore.h"
 #include "Pointers/TUsePointer.h"
+#include "Pointers/Casts.h"
+#include "HashMap/HashMap.h"
 #include "AnimGraphInstance.generated.h"
 
 namespace Plu
 {
 	struct AnimationGraph;
+
+	// Base for a graph node's per-instance runtime state (e.g. AnimBlendSpaceNode's sync phase and
+	// smoothed input). Graph nodes live on the shared asset, so anything that must persist between
+	// evaluations of ONE user goes here instead, keyed by the node's uuid
+	// (AnimGraphInstance::GetNodeState). Not reflected — pure runtime, never serialized.
+	struct PLUASSETTYPES_API AnimNodeRuntimeState
+	{
+		virtual ~AnimNodeRuntimeState() = default;
+
+		// AnimEvalContext::EvaluationId of the last evaluation that advanced this state. A node
+		// whose output feeds several consumers is evaluated more than once per graph evaluation;
+		// comparing against this keeps time-based state (phase, smoothing) advancing only once.
+		UInt64 LastEvaluationId = 0;
+	};
 
 	// Per-user live values for one AnimationGraph. Owned by SkeletalMeshComponent
 	// (SkeletalMeshComponent::EnsureAnimGraphInstance), never the asset — two components driving the
@@ -68,9 +84,30 @@ namespace Plu
 		PLU_FUNCTION(PyExport)
 		DynamicArray<String> GetVariableNames();
 
-		// Evaluation state per instance — today just the playback clock; state-machine state will
-		// live here too once graphs grow one.
-		float TimeSeconds = 0.0f;
+		// Runtime state of node `nodeUuid` (GraphNode::Uuid), created on first use. T must derive
+		// AnimNodeRuntimeState and be default-constructible; one node always asks for the same T —
+		// a mismatch (node uuid reused by a different node type after an edit) resets the state.
+		template <typename T>
+		T& GetNodeState(UInt64 nodeUuid)
+		{
+			if (TOwningPointer<AnimNodeRuntimeState>* existing = mNodeStates.Find(nodeUuid)) {
+				if (T* typed = dynamic_cast<T*>(existing->GetRaw())) return *typed;
+			}
+			TOwningPointer<T> created = CreateOwning<T>();
+			T* raw = created.GetRaw();
+			mNodeStates.InsertOrAssign(nodeUuid, TOwningPointer<AnimNodeRuntimeState>(std::move(created)));
+			return *raw;
+		}
+
+		// Drops every node's runtime state (phases restart, smoothed inputs snap to their targets).
+		void ResetNodeStates() { mNodeStates.Clear(); }
+
+		// Graph clock (AnimEvalContext::TimeSeconds) at the previous evaluation — the next one
+		// derives AnimEvalContext::DeltaSeconds from it. Maintained by AnimationGraph::Evaluate.
+		float LastEvalTimeSeconds = 0.0f;
+
+		// Bumped once per AnimationGraph::Evaluate; copied into AnimEvalContext::EvaluationId.
+		UInt64 EvaluationId = 0;
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
 		// Debug label set by SkeletalMeshComponent ("<GameObject> / <Component>") so the Variables
@@ -86,6 +123,7 @@ namespace Plu
 	private:
 		TUsePointer<AnimationGraph> mGraph;
 		AnimGraphVariableStore mVariables;
+		HashMap<UInt64, TOwningPointer<AnimNodeRuntimeState>> mNodeStates;
 		UInt64 mBoundGraphUuid = 0;
 		UInt32 mBoundVariablesRevision = 0;
 	};

@@ -41,6 +41,7 @@ namespace Plu
 			RemoveLiveInstance(mBoundGraphUuid, this);
 #endif
 			mGraph = nullptr;
+			mNodeStates.Clear();
 			mBoundGraphUuid = 0;
 			mBoundVariablesRevision = 0;
 			return;
@@ -66,6 +67,8 @@ namespace Plu
 			RemoveLiveInstance(mBoundGraphUuid, this);
 #endif
 			mVariables.RebuildFrom(graph->Variables);
+			// Node states are keyed by the old graph's node uuids — meaningless for the new one.
+			mNodeStates.Clear();
 #ifdef PLU_ENGINE_EDITOR_BUILD
 			GetLiveInstances(newUuid).PushBack(this);
 #endif

@@ -48,7 +48,7 @@ namespace Plu
 	static float PinRowWidth(const NodePin& pin)
 	{
 		return kPinDotRadius * 2.0f + ImGui::GetStyle().ItemSpacing.x
-			+ ImGui::CalcTextSize(pin.Name.CStr()).x;
+			+ ImGui::CalcTextSize(pin.GetLabel().CStr()).x;
 	}
 
 	// ---- NodeViewRegistry ---------------------------------------------------------------------
@@ -151,7 +151,7 @@ namespace Plu
 			ed::BeginPin(editor.PinId(node->Uuid, pin.Name, EPinDirection::Input), ed::PinKind::Input);
 			DrawPinDot(editor.GetPinColor(pin));
 			ImGui::SameLine();
-			ImGui::TextUnformatted(pin.Name.CStr());
+			ImGui::TextUnformatted(pin.GetLabel().CStr());
 			ed::EndPin();
 		}
 		// Zero-size groups confuse the SameLine below; a dummy keeps the column real when a node
@@ -167,7 +167,7 @@ namespace Plu
 				// Right-align each row inside the column so every dot lands on the same edge.
 				ImGui::SetCursorPosX(columnX + (outputsWidth - PinRowWidth(pin)));
 				ed::BeginPin(editor.PinId(node->Uuid, pin.Name, EPinDirection::Output), ed::PinKind::Output);
-				ImGui::TextUnformatted(pin.Name.CStr());
+				ImGui::TextUnformatted(pin.GetLabel().CStr());
 				ImGui::SameLine();
 				DrawPinDot(editor.GetPinColor(pin));
 				ed::EndPin();
