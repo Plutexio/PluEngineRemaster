@@ -20,7 +20,7 @@ struct IDropTarget;
 namespace Plu
 {
     PLU_CLASS()
-    class WindowsWindow : public IWindow
+    class PLUPLATFORM_API WindowsWindow : public IWindow
     {
         REFLECTION_BODY_WINDOWSWINDOW()
     private:

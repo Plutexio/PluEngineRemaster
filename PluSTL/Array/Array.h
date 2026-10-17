@@ -20,7 +20,10 @@ public:
     using AllocatorType = Allocator;
 
     // Konstruktory z obsługą instancji alokatora
-    explicit DynamicArray(const Allocator& alloc = Allocator())
+    DynamicArray()
+        : mData(nullptr), mSize(0), mCapacity(0), mAllocator(Allocator()) {}
+
+    explicit DynamicArray(const Allocator& alloc)
         : mData(nullptr), mSize(0), mCapacity(0), mAllocator(alloc) {}
 
     explicit DynamicArray(SizeType capacity, const Allocator& alloc = Allocator())

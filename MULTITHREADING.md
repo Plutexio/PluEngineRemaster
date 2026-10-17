@@ -516,6 +516,14 @@ main i render przestawiając kontekst na *różne* okna nadpisywałyby sobie naw
 (assert `g.WithinFrameScope` w pierwszej klatce z drugim oknem). Przy jednym oknie było to
 nieszkodliwe, bo oba wątki ustawiały ten sam wskaźnik.
 
+On Windows imgui is built as a single DLL instead (a static imgui linked into each engine DLL
+would give every DLL its own private copy, and PE has no symbol interposition to merge them). A
+`thread_local` cannot be `dllimport`-ed, so there `GImGui` expands to `PluImGuiCurrentContext()`, an
+accessor exported from the imgui DLL that returns a reference to its thread-local slot, and
+`imconfig.h` defines `PLU_IMGUI_TLS_IN_DLL` so `ImGuiRenderState.cpp` does not define `PluImGuiTLS`.
+Anything else that is a static library built on imgui (e.g. `ThirdParty/ImGuizmo`) must not mark
+its own functions `IMGUI_API`, since that now means `dllimport` from imgui.
+
 **VSync przy N oknach.** Swap interval należy do kontekstu GL, a kontekst jest jeden — N swapów
 z vsync=1 to N stalli na klatkę (refresh/N). Okna wtórne swapują z interwałem 0
 (`IWindow::ApplySwapInterval`), okno 0 swapuje ostatnie i przywraca skonfigurowany interwał.

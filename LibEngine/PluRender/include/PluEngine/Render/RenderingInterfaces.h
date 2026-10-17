@@ -30,7 +30,7 @@ namespace Plu
 	};
 
 	PLU_STRUCT(PyExport)
-	struct CameraOptions
+	struct PLURENDER_API CameraOptions
 	{
 		REFLECTION_BODY_CAMERAOPTIONS()
 

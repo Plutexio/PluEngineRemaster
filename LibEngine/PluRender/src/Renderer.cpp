@@ -255,7 +255,7 @@ void Plu::Renderer::SyncParticleSpawners(Plu::RenderSnapshot *snapshot)
         liveSpawners.Insert(state.UUID.getUUID());
 
         RenderParticleSpawner* existing = spawners->Find(state.UUID.getUUID());
-        const bool wantsSystem = state.SystemUuid != 0;
+        const bool wantsSystem = state.SystemUuid.getUUID() != 0;
 
         // The component was pointed at an asset (or lost it): the other kind of spawner is rebuilt.
         if (existing && static_cast<bool>(existing->System) != wantsSystem) {

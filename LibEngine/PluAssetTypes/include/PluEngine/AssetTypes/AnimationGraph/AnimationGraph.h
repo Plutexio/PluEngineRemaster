@@ -7,6 +7,7 @@
 
 #include "PluEngine/AssetTypes/NodeGraph/NodeGraph.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimGraphNode.h"
+#include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "AnimationGraph.generated.h"
 
 namespace Plu
@@ -50,7 +51,7 @@ namespace Plu
     };
 
     template <typename T>
-    struct PLUASSETTYPES_API AnimationGraphVariable : public IAnimationGraphVariable
+    struct AnimationGraphVariable : public IAnimationGraphVariable
     {
     private:
         T mValue;

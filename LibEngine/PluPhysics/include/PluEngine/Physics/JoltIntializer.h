@@ -5,6 +5,8 @@
 #ifndef PLUENGINE_JOLTINTIALIZER_H
 #define PLUENGINE_JOLTINTIALIZER_H
 
+#include "PluEngine/Core.h"
+
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/RegisterTypes.h>
@@ -23,11 +25,11 @@ namespace Plu
 }
 
 namespace Plu::JoltPhysics {
-	void Init(ApplicationInfo* applicationInfo);
-	void Shutdown();
+	PLUPHYSICS_API void Init(ApplicationInfo* applicationInfo);
+	PLUPHYSICS_API void Shutdown();
 
-	TUsePointer<PhysicsWorld> GetPhysicsWorldBySceneHandle(EngineObjectHandle sceneHandle);
-	TOwningPointer<JPH::JobSystem> GetJoltThreadPool();
+	PLUPHYSICS_API TUsePointer<PhysicsWorld> GetPhysicsWorldBySceneHandle(EngineObjectHandle sceneHandle);
+	PLUPHYSICS_API TOwningPointer<JPH::JobSystem> GetJoltThreadPool();
 }
 
 #endif //PLUENGINE_JOLTINTIALIZER_H

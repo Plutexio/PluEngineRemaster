@@ -12,7 +12,7 @@
 
 namespace Plu
 {
-    class WinAPIInputBackend final : public PlatformInputBackend
+    class PLUPLATFORM_API WinAPIInputBackend final : public PlatformInputBackend
     {
     public:
         // =========================================================
