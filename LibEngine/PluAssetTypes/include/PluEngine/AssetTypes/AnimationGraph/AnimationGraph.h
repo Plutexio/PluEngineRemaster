@@ -20,6 +20,10 @@ namespace Plu
     {
         REFLECTION_BODY_IANIMATIONGRAPHVARIABLE()
 
+        // Variables are owned and deleted through TOwningPointer<IAnimationGraphVariable>; without
+        // this the concrete AnimationGraphVariable<T> destructor (and T's, e.g. String) never ran.
+        virtual ~IAnimationGraphVariable() = default;
+
         virtual void* GetData() = 0;
         [[nodiscard]] virtual JSON Serialize() = 0;
         virtual void DeSerialize(const JSON& jsonData, DeserializationContext* deserializationContext) = 0;
