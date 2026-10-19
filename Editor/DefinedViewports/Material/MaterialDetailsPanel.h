@@ -2,8 +2,8 @@
 // Created by Plutex on 1/14/26.
 //
 
-#ifndef PLUENGINE_STATICMESHDETAILSPANEL_H
-#define PLUENGINE_STATICMESHDETAILSPANEL_H
+#ifndef PLUENGINE_MATERIALDETAILSPANEL_H
+#define PLUENGINE_MATERIALDETAILSPANEL_H
 #include "EditorViewports/IEditorPanel.h"
 #include "MaterialDetailsPanel.generated.h"
 
@@ -24,4 +24,4 @@ namespace Plu
 	};
 }
 
-#endif //PLUENGINE_STATICMESHDETAILSPANEL_H
+#endif //PLUENGINE_MATERIALDETAILSPANEL_H

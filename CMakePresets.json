@@ -7,7 +7,9 @@
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x64-linux-dynamic"
+        "VCPKG_TARGET_TRIPLET": "x64-linux-dynamic",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
       }
     },
     {

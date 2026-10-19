@@ -1401,6 +1401,65 @@ def _CollectAllOverrideFns(Cls: TypeInfo, AllTypes: List[TypeInfo],
     return [F for F in NameToFunc.values() if not _HasUnbindableParams(F.Params, AllParsedTypes or AllTypes)]
 
 
+def ReadEngineModuleOrder() -> List[str]:
+    """
+    Engine modules bottom-up, read from PLU_MODULES in LibEngine/CMakeLists.txt so the order the
+    per-module bindings are registered in cannot drift from the layering.
+    """
+    CMakeListsPath = os.path.join(ProjectDir, "LibEngine", "CMakeLists.txt")
+    with open(CMakeListsPath, "r", encoding="utf-8") as F:
+        Match = re.search(r"set\(PLU_MODULES\s+(.*?)\s+CACHE\b", F.read(), re.S)
+    if not Match:
+        raise RuntimeError(f"PLU_MODULES not found in {CMakeListsPath}")
+    return Match.group(1).split()
+
+
+def ModuleOfPath(FilePath) -> str:
+    """Owning project of a scanned file: the engine module for LibEngine/<Module>/..., else the top-level dir."""
+    Parts = Path(FilePath).resolve().relative_to(Path(ProjectDir).resolve()).parts
+    return Parts[1] if Parts[0] == "LibEngine" and len(Parts) > 1 else Parts[0]
+
+
+# Target size of one bindings chunk, in generated characters. Measured: every bindings TU pays ~6 s
+# for pybind11 and the headers, plus ~0.12 s per KB of generated bindings.
+BindingsChunkTargetChars = 16000
+
+_RE_BINDINGS_CHUNK_FILE = re.compile(r"PluEngineBindings_([A-Za-z0-9]+)_(\d+)\.cpp")
+
+
+def BindingsRegisterFuncName(Module: str, Index: int) -> str:
+    return f"RegisterPluEngineBindings_{Module}_{Index}"
+
+
+def ReadBindingsLayout(LayoutPath: str) -> Optional[dict]:
+    """Chunk file count per module from BindingsLayout.cmake, or None when there is none yet."""
+    if not os.path.exists(LayoutPath):
+        return None
+    Layout: dict = {}
+    with open(LayoutPath, "r", encoding="utf-8") as F:
+        for Match in _RE_BINDINGS_CHUNK_FILE.finditer(F.read()):
+            Layout[Match.group(1)] = max(Layout.get(Match.group(1), 0), int(Match.group(2)) + 1)
+    return Layout
+
+
+def PackBindingsBlocks(Blocks: List[tuple], BlockSize, ChunkCount: int) -> List[list]:
+    """Splits Blocks, in order, into ChunkCount chunks of about the same generated size."""
+    Chunks: List[list] = [[] for _ in range(ChunkCount)]
+    if ChunkCount == 0:
+        return Chunks
+    ChunkLimit = -(-sum(BlockSize(N, C) for N, C in Blocks) // ChunkCount)
+    Index, ChunkSize = 0, 0
+    for Name, Code in Blocks:
+        Size = BlockSize(Name, Code)
+        # Close the chunk when this block would end mostly past the limit.
+        if Chunks[Index] and ChunkSize + Size / 2 > ChunkLimit and Index < ChunkCount - 1:
+            Index, ChunkSize = Index + 1, 0
+        Chunks[Index].append((Name, Code))
+        ChunkSize += Size
+    return Chunks
+
+
+
 def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []):
     """
     Generuje:
@@ -1455,48 +1514,102 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             if HasPyParam(Enum.ReflectionParams, "PyExport"):
                 ExportedEnums.append(Enum)
 
+    # Bindings are compiled into PluApp, the only module that sees every other one, so only engine
+    # modules can export. Anything else used to overwrite the engine's bindings file.
+    ModuleOrder = ReadEngineModuleOrder()
+    def IsEngineItem(Item) -> bool:
+        Module = ModuleOfPath(Item.FilePath)
+        if Module in ModuleOrder:
+            return True
+        print(f"Bindings: skipping {Item.Name} from {Module} – only engine modules can PyExport.")
+        return False
+    ExportedTypes  = [T for T in ExportedTypes if IsEngineItem(T)]
+    AllGlobalFuncs = [GF for GF in AllGlobalFuncs if IsEngineItem(GF)]
+    ExportedEnums  = [E for E in ExportedEnums if IsEngineItem(E)]
+
     if not ExportedTypes and not AllGlobalFuncs and not ExportedEnums:
         print("Bindings: nothing to export – nothing generated.")
         return
 
-    os.makedirs(OutputDir, exist_ok=True)
+    # A module's bindings are packed, in order, into ceil(size / BindingsChunkTargetChars)
+    # translation units (ReflectionCache/Bindings/PluEngineBindings_<Module>_<N>.cpp), each defining
+    # RegisterPluEngineBindings_<Module>_<N>(), plus PluEngineBindings.cpp that calls them bottom-up.
+    # A single file was the longest compile of the whole build, and splitting by module alone left
+    # PluGameplay holding most of it. Bottom-up is enough for pybind11's ordering needs: a base
+    # class, or a type used as a default argument, lives in the same module or one below it, and a
+    # trampoline stays in the chunk of its class.
+    #
+    # The file set lives in BindingsLayout.cmake, which CMake include()s. This runs inside the build,
+    # after CMake fixed the list of sources, so it always writes the files of the layout CMake already
+    # knows – bigger chunks when more are wanted, empty ones when fewer – and only records the wanted
+    # layout. A changed BindingsLayout.cmake reconfigures on the next build, which then switches.
+    BindingsDir = os.path.join(OutputDir, "Bindings")
+    os.makedirs(BindingsDir, exist_ok=True)
     BindingsCpp = os.path.join(OutputDir, "PluEngineBindings.cpp")
+    LayoutPath  = os.path.join(OutputDir, "BindingsLayout.cmake")
     StubPyi     = os.path.join(OutputDir, "PluEngine.pyi")
+    CurrentLayout = ReadBindingsLayout(LayoutPath)
+    WantedLayout: dict = {}
+    WrittenLayout: dict = {}
+    # Bindings of a module that has no file in the current layout (its first export) go into
+    # PluEngineBindings.cpp for this one build, rather than missing from Python until the next.
+    MainFileBindings: List[str] = []
 
-    # ── PluEngineBindings.cpp ─────────────────────────────────────────
-    B = io.StringIO()
-    if True:
-        B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
-        B.write("// pybind11 bindings for PluEngine\n\n")
-        B.write('#include <pybind11/embed.h>\n')
-        B.write('#include <pybind11/stl.h>\n')
-        B.write('#include <pybind11/operators.h>\n\n')
-        B.write('#include "PluEngine/Scripting/PythonMath.h"\n')
-        B.write('#include "PluEngine/Scripting/PythonPointers.h"\n\n')
-        B.write("namespace py = pybind11;\n\n")
+    # Types already registered in the module – only their values can go into py::arg(...) = default
+    # (pybind11 converts default arguments when .def() runs).
+    RegisteredNames: set = set(MATH_TYPE_NAMES)
 
-        # Includes per plik źródłowy
+    for Module in ModuleOrder:
+        ModuleTypes        = [T for T in ExportedTypes if ModuleOfPath(T.FilePath) == Module]
+        ModuleGlobalFuncs  = [GF for GF in AllGlobalFuncs if ModuleOfPath(GF.FilePath) == Module]
+        ModuleEnums        = [E for E in ExportedEnums if ModuleOfPath(E.FilePath) == Module]
+
+        # Every bindings TU must include the same pybind11 headers: type casters (stl.h) present in
+        # one and missing in another is an ODR violation.
+        H = io.StringIO()
+        H.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+        H.write(f"// pybind11 bindings for {Module}, registered from PluEngineBindings.cpp\n\n")
+        H.write('#include <pybind11/embed.h>\n')
+        H.write('#include <pybind11/stl.h>\n')
+        H.write('#include <pybind11/operators.h>\n\n')
+        # The String / DynamicArray type_casters. Every bindings TU needs them, right after pybind11:
+        # one without them instantiates pybind11's generic caster under the same symbol names, and
+        # the linker keeps whichever copy comes first – then no String argument converts anywhere
+        # (create(): incompatible function arguments). The single bindings file only got this
+        # header by accident, through some other module's header.
+        H.write('#include "PluEngine/Core/Reflection/TypeTraits.h"\n')
+        H.write('#include "PluEngine/Scripting/PythonMath.h"\n')
+        H.write('#include "PluEngine/Scripting/PythonPointers.h"\n')
+        # Named by the generated code itself (asset pointer properties/params), not by the headers
+        # being bound – the single bindings file used to get them from some other module's header.
+        H.write('#include "PluEngine/Core/IAssetData.h"\n')
+        H.write('#include "PluEngine/AssetCore/EngineAssetManager.h"\n\n')
+        H.write("namespace py = pybind11;\n\n")
+
+        # The exported headers of this module and of every module below it – the include context the
+        # single bindings file gave each binding. A bound header that only forward-declares a type
+        # from a lower module (TUsePointer<MaterialInfo>) still needs it complete here.
+        VisibleModules = set(ModuleOrder[:ModuleOrder.index(Module) + 1])
         IncludedFiles: set = set()
-        for Cls in ExportedTypes:
-            FP = str(Cls.FilePath).replace("\\", "/")
+        for Item in [*ExportedTypes, *AllGlobalFuncs, *ExportedEnums]:
+            if ModuleOfPath(Item.FilePath) not in VisibleModules:
+                continue
+            FP = str(Item.FilePath).replace("\\", "/")
             if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
-                IncludedFiles.add(FP)
-        for GF in AllGlobalFuncs:
-            FP = str(GF.FilePath).replace("\\", "/")
-            if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
-                IncludedFiles.add(FP)
-        for Enum in ExportedEnums:
-            FP = str(Enum.FilePath).replace("\\", "/")
-            if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
+                H.write(f'#include "{FP}"\n')
                 IncludedFiles.add(FP)
 
-        B.write("\nusing namespace Plu;\n\n")
+        H.write("\nusing namespace Plu;\n\n")
+        ChunkHeader = H.getvalue()
+
+        # Each enum, class and global function is generated into a block of its own, a class's
+        # trampoline into Trampolines – the chunking below needs them separable.
+        Trampolines: dict = {}
+        Blocks: List[tuple] = []   # (class name or "", code)
 
         # ── Trampoline klasy dla PyDerive + PyOverride ─────────────────
-        for Cls in ExportedTypes:
+        for Cls in ModuleTypes:
+            B = Trampolines.setdefault(Cls.Name, io.StringIO())
             IsDerive    = HasPyParam(Cls.ReflectionParams, "PyDerive")
             OwnOverride = [F for F in Cls.Functions if HasPyParam(F.MacroParams, "PyOverride")
                            and not _HasUnbindableParams(F.Params, AllClasses)]
@@ -1547,19 +1660,10 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 B.write(f"    }}\n\n")
             B.write(f"}};\n\n")
 
-        B.write("PYBIND11_EMBEDDED_MODULE(PluEngine, m) {\n")
-        B.write('    m.doc() = "PluEngine Python bindings";\n\n')
-
-        # ── Typy matematyczne ─────────────────────────────────────────
-        # Vec2/3/4, IVec2/3/4, Quaternion i Matrix4 – ręcznie pisane bindingi. Muszą pójść przed
-        # enumami i klasami: pybind11 rozwiązuje typy argumentów i wartości domyślne w .def().
-        B.write("    // Math types (hand-written bindings)\n")
-        B.write("    RegisterMathTypes(m);\n\n")
-
         # ── Enumy ──────────────────────────────────────────────────────
-        if ExportedEnums:
-            B.write("    // Enums\n")
-        for Enum in ExportedEnums:
+        for Enum in ModuleEnums:
+            B = io.StringIO()
+            Blocks.append(("", B))
             PyName  = GetPyParamValue(Enum.ReflectionParams, "PyName") or Enum.Name
             PyDoc   = GetPyDoc(Enum.ReflectionParams)
             B.write(f'    py::enum_<{Enum.Name}>(m, "{PyName}"')
@@ -1576,11 +1680,11 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             B.write(f'        .def_static("FromString", [](const Plu::String& s) {{ return FromString<{Enum.Name}>(s); }}, py::arg("str"))\n')
             B.write(f'        ;\n\n')
 
-        # Typy już zarejestrowane w module – tylko ich konstrukcje/wartości mogą trafić do
-        # py::arg(...) = default (pybind11 konwertuje domyślne argumenty w momencie .def()).
-        RegisteredNames: set = {E.Name for E in ExportedEnums} | MATH_TYPE_NAMES
+        RegisteredNames |= {E.Name for E in ModuleEnums}
 
-        for Cls in ExportedTypes:
+        for Cls in ModuleTypes:
+            B = io.StringIO()
+            Blocks.append((Cls.Name, B))
             PyName      = GetPyName(Cls)
             PyDoc       = GetPyDoc(Cls.ReflectionParams)
             IsAbstr     = HasPyParam(Cls.ReflectionParams, "Abstract")
@@ -1738,9 +1842,9 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             RegisteredNames.add(Cls.Name)
 
         # ── Funkcje globalne ───────────────────────────────────────────
-        if AllGlobalFuncs:
-            B.write("    // Global functions\n")
-        for GF in AllGlobalFuncs:
+        for GF in ModuleGlobalFuncs:
+            B = io.StringIO()
+            Blocks.append(("", B))
             if _HasUnbindableParams(GF.Params, AllClasses):
                 continue
             ArgList = _BuildPySignature(GF.Params, RegisteredNames)
@@ -1758,7 +1862,99 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 B.write(f', "{FDoc}"')
             B.write(");\n")
 
-        B.write("}\n")
+        # ── Pack the blocks into chunks ───────────────────────────────
+        Blocks = [(Name, Buf.getvalue()) for Name, Buf in Blocks if Buf.getvalue()]
+        BlockSize = lambda Name, Code: len(Code) + len(Trampolines[Name].getvalue() if Name in Trampolines else "")
+        TotalChars = sum(BlockSize(N, C) for N, C in Blocks)
+        WantedLayout[Module] = -(-TotalChars // BindingsChunkTargetChars)
+        FileCount = WantedLayout[Module] if CurrentLayout is None else CurrentLayout.get(Module, 0)
+        WrittenLayout[Module] = FileCount
+
+        def WriteChunk(Out, Chunk: list, RegisterFunc: str):
+            Out.write(ChunkHeader)
+            for Name, _ in Chunk:
+                if Name in Trampolines:
+                    Out.write(Trampolines[Name].getvalue())
+            Out.write(f"void {RegisterFunc}(py::module_& m) {{\n")
+            for _, Code in Chunk:
+                Out.write(Code)
+            Out.write("}\n\n")
+
+        if FileCount == 0 and Blocks:
+            M = io.StringIO()
+            WriteChunk(M, Blocks, BindingsRegisterFuncName(Module, 0))
+            MainFileBindings.append(M.getvalue())
+
+        for Index, Chunk in enumerate(PackBindingsBlocks(Blocks, BlockSize, min(FileCount, WantedLayout[Module]))
+                                      + [[]] * max(0, FileCount - WantedLayout[Module])):
+            ChunkPath    = os.path.join(BindingsDir, f"PluEngineBindings_{Module}_{Index}.cpp")
+            RegisterFunc = BindingsRegisterFuncName(Module, Index)
+            B = io.StringIO()
+            if not Chunk:
+                # Kept until CMake drops it on the next configure. No pybind11 include – it is most of
+                # the compile time.
+                B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+                B.write(f"// Unused bindings chunk of {Module}, registered from PluEngineBindings.cpp\n\n")
+                B.write("namespace pybind11 { class module_; }\n\n")
+                B.write(f"void {RegisterFunc}(pybind11::module_&) {{}}\n")
+            else:
+                WriteChunk(B, Chunk, RegisterFunc)
+            Changed = WriteIfChanged(ChunkPath, B.getvalue())
+            if Changed:
+                print(f"Generated {ChunkPath} ({len(Chunk)} block(s))")
+
+    def LayoutFiles(Layout: dict) -> List[str]:
+        return [f"PluEngineBindings_{M}_{I}.cpp" for M in ModuleOrder for I in range(Layout.get(M, 0))]
+
+    # Bindings/ belongs to this function alone. Files of the layout CMake builds from must stay even
+    # when unused; anything else is a leftover the next configure would not compile anyway.
+    KeptFiles = set(LayoutFiles(WrittenLayout))
+    for FileName in os.listdir(BindingsDir):
+        if FileName not in KeptFiles:
+            os.remove(os.path.join(BindingsDir, FileName))
+            print(f"Removed stale {os.path.join(BindingsDir, FileName)}")
+
+    L = io.StringIO()
+    L.write("# AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+    L.write("# pybind11 bindings chunks, include()d by LibEngine/CMakeLists.txt. A change here reconfigures\n")
+    L.write("# CMake on the next build.\n")
+    L.write("set(PLU_BINDINGS_SOURCES\n")
+    for FileName in LayoutFiles(WantedLayout):
+        L.write(f'        "${{CMAKE_SOURCE_DIR}}/ReflectionCache/Bindings/{FileName}"\n')
+    L.write(")\n")
+    if WriteIfChanged(LayoutPath, L.getvalue()) and CurrentLayout is not None:
+        print(f"Bindings layout changed – CMake reconfigures on the next build: {WantedLayout}")
+
+    # ── PluEngineBindings.cpp ─────────────────────────────────────────
+    B = io.StringIO()
+    B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+    B.write("// pybind11 module for PluEngine. The bindings themselves are in Bindings/, chunked per module.\n\n")
+    B.write('#include <pybind11/embed.h>\n')
+    B.write('#include <pybind11/stl.h>\n')
+    B.write('#include <pybind11/operators.h>\n\n')
+    # Same type_casters as every chunk – see the chunk header above.
+    B.write('#include "PluEngine/Core/Reflection/TypeTraits.h"\n')
+    B.write('#include "PluEngine/Scripting/PythonMath.h"\n\n')
+    for Module in ModuleOrder:
+        for Index in range(WrittenLayout.get(Module, 0)):
+            B.write(f"void {BindingsRegisterFuncName(Module, Index)}(pybind11::module_& m);\n")
+    B.write("\n")
+    for Code in MainFileBindings:
+        B.write(Code)
+    B.write("PYBIND11_EMBEDDED_MODULE(PluEngine, m) {\n")
+    B.write('    m.doc() = "PluEngine Python bindings";\n\n')
+    # Vec2/3/4, IVec2/3/4, Quaternion and Matrix4 – hand-written bindings. They go before every
+    # module: pybind11 resolves default argument values when .def() runs.
+    B.write("    // Math types (hand-written bindings)\n")
+    B.write("    Plu::RegisterMathTypes(m);\n\n")
+    B.write("    // Engine modules, bottom-up – bases before derived classes\n")
+    for Module in ModuleOrder:
+        Count = WrittenLayout.get(Module, 0)
+        if Count == 0 and any(f"void {BindingsRegisterFuncName(Module, 0)}(" in Code for Code in MainFileBindings):
+            Count = 1
+        for Index in range(Count):
+            B.write(f"    {BindingsRegisterFuncName(Module, Index)}(m);\n")
+    B.write("}\n")
 
     Changed = WriteIfChanged(BindingsCpp, B.getvalue())
     print(f"{'Generated' if Changed else 'Unchanged'} {BindingsCpp} ({len(ExportedTypes)} type(s), {len(AllGlobalFuncs)} global func(s))")

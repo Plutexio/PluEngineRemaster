@@ -187,9 +187,11 @@ target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCor
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h")
+target_precompile_headers(PluEditor PUBLIC ${PLU_THIRDPARTY_PCH_HEADERS})
 
+# No `-include stdpch.h` here: cmake_pch.hxx already includes it, and GCC only uses the .gch when
+# it is the first include — a forced include in front of it silently disables the PCH.
 target_compile_options(PluEditor PRIVATE
-        $<$<CXX_COMPILER_ID:GNU,Clang>:-include ${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h>
         # Generated reflection/binding translation units can exceed the COFF
         # per-object section limit (65279) on MSVC → need /bigobj.
         $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
@@ -222,20 +224,15 @@ set_target_properties(PluEditor PROPERTIES
 
 # Engine is an INTERFACE target now, so there is no single $<TARGET_FILE:Engine> to copy: every
 # module is its own shared library and all of them have to sit next to the executable, which is
-# what the $ORIGIN RPATH expects to find. glad is shared for the same reason (one function-pointer
-# table for the whole process) and travels with them.
-foreach (PLU_MODULE IN LISTS PLU_MODULES)
+# what the $ORIGIN RPATH expects to find. glad and spdlog are shared for the same reason (one
+# function-pointer table / logger registry for the whole process) and travel with them.
+foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
     add_custom_command(TARGET PluEditor POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:${PLU_MODULE}>
             $<TARGET_FILE_DIR:PluEditor>
     )
 endforeach ()
-add_custom_command(TARGET PluEditor POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:glad>
-        $<TARGET_FILE_DIR:PluEditor>
-)
 
 add_custom_command(TARGET PluEditor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -249,7 +246,7 @@ add_custom_command(TARGET PluEditor POST_BUILD
 #
 #  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Editor presets).
 #  Assembles a self-contained editor into ${CMAKE_SOURCE_DIR}/EditorDist:
-#    - PluEditor(.exe) + every engine module library and glad (+ vcpkg runtime libraries)
+#    - PluEditor(.exe) + every engine module library, glad and spdlog (+ vcpkg runtime libraries)
 #    - EngineAssets/, ThirdParty/UI/ (fonts + icons), PluEngine.pyi
 #    - obfuscated (PyArmor) ShaderCodeParser.py in PythonTools/ — the only Python
 #      tool run at editor runtime (via the embedded interpreter).
@@ -269,10 +266,9 @@ if(PLU_DISTRIBUTION)
     # Built from PLU_MODULES rather than spelled out, so a new engine module is packaged without
     # anyone remembering this list (a hand-written one silently left PluEffects out).
     set(PLU_ENGINE_LIB_FILES "")
-    foreach (PLU_MODULE IN LISTS PLU_MODULES)
+    foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
         list(APPEND PLU_ENGINE_LIB_FILES "$<TARGET_FILE:${PLU_MODULE}>")
     endforeach ()
-    list(APPEND PLU_ENGINE_LIB_FILES "$<TARGET_FILE:glad>")
 
     add_custom_target(DistributeEditor
             COMMAND ${CMAKE_COMMAND}

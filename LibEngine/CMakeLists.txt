@@ -21,11 +21,46 @@ set(PLU_MODULES
 
 set(PLU_THIRDPARTY_DIR "${CMAKE_SOURCE_DIR}/ThirdParty")
 
+# Generated reflection sources merged into one unity translation unit (see plu_add_engine_module).
+set(PLU_REFLECTION_UNITY_BATCH_SIZE 8 CACHE STRING "Generated reflection sources per unity batch")
+
+# Added to every engine module's precompiled header (and the editor's).
+set(PLU_THIRDPARTY_PCH_HEADERS
+        <pybind11/pybind11.h>
+        <nlohmann/json.hpp>
+        <imgui.h>
+        <glm/glm.hpp>
+        <glm/gtc/quaternion.hpp>
+        CACHE INTERNAL "Third-party headers in the engine precompiled headers"
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Third-party
 # ─────────────────────────────────────────────────────────────────────────────
-add_library(spdlog INTERFACE)
-target_include_directories(spdlog INTERFACE "${PLU_THIRDPARTY_DIR}/spdlog/include")
+# spdlog compiled once instead of header-only. Header-only, every translation unit compiled
+# spdlog's and the bundled fmt's implementation again: 57% of the code in a trivial object file, and
+# 40–47% of its compile time. SHARED for the same reason as glad below: the logger registry is
+# global state, and a static archive would give every engine library a registry of its own.
+set(PLU_SPDLOG_DIR "${PLU_THIRDPARTY_DIR}/spdlog")
+add_library(spdlog SHARED
+        "${PLU_SPDLOG_DIR}/src/spdlog.cpp"
+        "${PLU_SPDLOG_DIR}/src/stdout_sinks.cpp"
+        "${PLU_SPDLOG_DIR}/src/color_sinks.cpp"
+        "${PLU_SPDLOG_DIR}/src/file_sinks.cpp"
+        "${PLU_SPDLOG_DIR}/src/async.cpp"
+        "${PLU_SPDLOG_DIR}/src/cfg.cpp"
+        "${PLU_SPDLOG_DIR}/src/bundled_fmtlib_format.cpp"
+)
+target_include_directories(spdlog PUBLIC "${PLU_SPDLOG_DIR}/include")
+# What spdlog's own CMakeLists sets for a shared build. spdlog_EXPORTS, which picks dllexport over
+# dllimport on Windows, is defined by CMake for this target.
+target_compile_definitions(spdlog
+        PUBLIC SPDLOG_COMPILED_LIB SPDLOG_SHARED_LIB FMT_SHARED
+        PRIVATE FMT_LIB_EXPORT
+)
+target_compile_options(spdlog PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4251 /wd4275>)
+find_package(Threads REQUIRED)
+target_link_libraries(spdlog PUBLIC Threads::Threads)
 
 add_library(json INTERFACE)
 target_include_directories(json INTERFACE "${PLU_THIRDPARTY_DIR}/nlohmann")
@@ -63,6 +98,11 @@ if (WIN32)
     target_compile_definitions(glad PUBLIC GLAD_GLAPI_EXPORT)
 endif ()
 
+# Third-party shared libraries that, like the engine modules, have to sit next to the executable.
+set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog
+        CACHE INTERNAL "Third-party shared libraries consumers copy next to their executable."
+)
+
 find_package(OpenGL REQUIRED)
 find_package(Python3 COMPONENTS Interpreter Development)
 find_package(Jolt CONFIG REQUIRED)
@@ -77,12 +117,22 @@ endif ()
 # ─────────────────────────────────────────────────────────────────────────────
 # Bootstrap on the first configure so the per-module globs have files to collect. Afterwards the
 # EngineReflection target below keeps them regenerated on every build.
-if (NOT EXISTS "${CMAKE_SOURCE_DIR}/ReflectionCache/PluCore")
+if (NOT EXISTS "${CMAKE_SOURCE_DIR}/ReflectionCache/PluCore" OR NOT EXISTS "${CMAKE_SOURCE_DIR}/ReflectionCache/BindingsLayout.cmake")
     execute_process(
             COMMAND ${VENV_EXECUTABLE} "${CMAKE_SOURCE_DIR}/PythonTools/ReflectionGeneratorRegex.py" -bp LibEngine
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
 endif ()
+
+# PLU_BINDINGS_SOURCES: the pybind11 bindings chunks PluApp compiles. The generator sizes the chunk
+# count per module and rewrites this file when it changes; include() makes that reconfigure CMake on
+# the next build. The chunks and PluEngineBindings.cpp are BYPRODUCTS below: a chunk the new layout
+# adds is then something Ninja knows how to make before the generator has written it, and Ninja
+# re-checks these files after the generator ran instead of trusting what it saw at startup (the
+# main file changes along with the layout, and a stale object of it fails the link).
+include("${CMAKE_SOURCE_DIR}/ReflectionCache/BindingsLayout.cmake")
+set(PLU_BINDINGS_MAIN_SOURCE "${CMAKE_SOURCE_DIR}/ReflectionCache/PluEngineBindings.cpp")
+set_source_files_properties(${PLU_BINDINGS_SOURCES} ${PLU_BINDINGS_MAIN_SOURCE} PROPERTIES GENERATED TRUE)
 
 # One run for the whole engine, before any module compiles. It was a PRE_BUILD command on the
 # single Engine target; with ten of them it has to be a target they all depend on, or it would run
@@ -90,6 +140,7 @@ endif ()
 add_custom_target(EngineReflection
         COMMENT "Generating Reflection Data"
         COMMAND ${VENV_EXECUTABLE} "${CMAKE_SOURCE_DIR}/PythonTools/ReflectionGeneratorRegex.py" -bp LibEngine
+        BYPRODUCTS ${PLU_BINDINGS_SOURCES} ${PLU_BINDINGS_MAIN_SOURCE}
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
@@ -162,18 +213,26 @@ function(plu_add_engine_module NAME)
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h"
+            # Third-party headers nearly every TU reaches through X.generated.h → ReflectionBase.h
+            # and PluTypes.h.
+            ${PLU_THIRDPARTY_PCH_HEADERS}
     )
+    # No `-include stdpch.h` here: cmake_pch.hxx already includes it, and GCC only uses the .gch
+    # when it is the first include — a forced include in front of it silently disables the PCH.
     target_compile_options(${NAME} PRIVATE
-            $<$<CXX_COMPILER_ID:GNU,Clang>:-include ${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h>
             # The generated pybind11 bindings exceed the COFF per-object section limit on MSVC.
             $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
     )
 
-    # OFF for the duration of the split: a unity build merges translation units, so a header that
-    # forgets an include still compiles as long as a neighbour in the same batch supplies it. Turn
-    # back ON once things have settled.
+    # Unity build for the generated reflection sources only. Each is a few KB of its own code that
+    # paid the full header cost (~5–7 s) as a translation unit of its own. Hand-written sources stay
+    # out: a unity batch hides a header that forgets an include as long as a neighbour supplies it.
+    # Sources added to the target later (PluApp's bindings) are not in this list and must opt out
+    # themselves.
+    set_source_files_properties(${MOD_SOURCES} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
     set_target_properties(${NAME} PROPERTIES
-            UNITY_BUILD OFF
+            UNITY_BUILD ON
+            UNITY_BUILD_BATCH_SIZE ${PLU_REFLECTION_UNITY_BATCH_SIZE}
             # Every engine library sits next to the executable that loads it.
             INSTALL_RPATH "$ORIGIN"
             BUILD_RPATH "$ORIGIN"

@@ -8,6 +8,9 @@ project(PluEngine)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# The engine uses no C++20 modules. With scanning on, every TU gets an extra dependency-scan step
+# and -fmodules-ts/-fmodule-mapper flags, which ccache refuses to cache.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Multi-config generators (Visual Studio) only. Distribution builds are Release + PLU_DISTRIBUTION,
 # not a configuration of their own.
@@ -90,9 +93,24 @@ endif()
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
-    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
-    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    # Without this sloppiness ccache will not cache anything compiled against a precompiled header.
+    set(PLU_CCACHE_LAUNCHER ${CCACHE_PROGRAM} sloppiness=pch_defines,time_macros,include_file_mtime,include_file_ctime)
+    set(CMAKE_C_COMPILER_LAUNCHER ${PLU_CCACHE_LAUNCHER})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${PLU_CCACHE_LAUNCHER})
 endif()
+
+# Faster linker than the default GNU ld: mold if installed, otherwise lld. A -DCMAKE_LINKER_TYPE=...
+# on the command line wins.
+if(NOT MSVC AND NOT DEFINED CMAKE_LINKER_TYPE)
+    find_program(PLU_MOLD_PROGRAM mold)
+    find_program(PLU_LLD_PROGRAM ld.lld)
+    if(PLU_MOLD_PROGRAM)
+        set(CMAKE_LINKER_TYPE MOLD)
+    elseif(PLU_LLD_PROGRAM)
+        set(CMAKE_LINKER_TYPE LLD)
+    endif()
+endif()
+message(STATUS "Linker type: ${CMAKE_LINKER_TYPE}")
 
 option(PLU_BUILD_EDITOR "Build with editor support" OFF)
 option(PLU_DISTRIBUTION "Build a standalone distributable (resources resolved next to the exe)" OFF)

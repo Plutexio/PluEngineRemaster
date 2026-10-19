@@ -41,17 +41,28 @@ cmake --build --preset PluDebugLinux-Runtime
 
 Other presets follow the pattern `Plu{Debug|Release|RelDbg}{Linux|Windows}-{Editor|Runtime}`.
 
+### Build speed setup
+
+Measured choices — keep them unless you re-measure:
+
+- Linux presets compile with **Clang** (`base-linux` in `CMakePresets.json`): a full Debug editor build is ~2.3× faster than with GCC 16 (31 s vs 71 s wall, 440 s vs 1030 s CPU, measured 2026-10-19). Switching the compiler of an existing build dir makes CMake wipe its cache once.
+- `CMAKE_CXX_SCAN_FOR_MODULES OFF` (root `CMakeLists.txt`). The engine has no C++20 modules; scanning made ccache refuse every compile and silently disabled unity builds.
+- ccache runs with PCH-friendly `sloppiness`; the linker is mold (lld fallback) via `CMAKE_LINKER_TYPE`.
+- spdlog is compiled once as a **shared** library (`SPDLOG_COMPILED_LIB`), not header-only: header-only it was over half of every object file. Shared for the same reason as glad — one logger registry per process. Both are in `PLU_THIRDPARTY_SHARED_LIBS` and get copied next to the executable.
+- Engine modules unity-build only the generated `*.generated.cpp` (batch `PLU_REFLECTION_UNITY_BATCH_SIZE`); hand-written sources are `SKIP_UNITY_BUILD_INCLUSION` so missing includes still show up.
+- The engine PCH holds `Core.h`, `Log.h`, `Timer.h`, `stdpch.h` and the heavy third-party headers (`PLU_THIRDPARTY_PCH_HEADERS`). Do not force-include anything in front of `cmake_pch.hxx` — GCC then ignores the `.gch`.
+
 ### vcpkg
 
 `vcpkg/` is a gitignored clone **pinned** to `PLU_VCPKG_COMMIT` in `cmake/PluVcpkg.cmake`. Every configure clones it if missing, fetches + checks out the pin if HEAD differs (refuses if the clone has local changes), and re-runs the bootstrap when the executable doesn't match the checkout. Never `git pull` inside `vcpkg/` (or use CLion's "Update vcpkg"): the tool and `scripts/` feed every package's ABI hash, so moving them rebuilds the whole dependency tree — and the next configure moves it back to the pin anyway. To update vcpkg, change the pin (and optionally `builtin-baseline` in `vcpkg.json`) in a commit. Patch ports only through overlays in `vcpkg-overlays/`; overlays ignore `builtin-baseline` and `overrides`, so their version is whatever the overlay says. `-DPLU_VCPKG_SYNC=OFF` leaves the checkout alone; `-DPLU_VCPKG_USE_ENV_ROOT=ON` uses `$VCPKG_ROOT` unpinned.
 
 ## Reflection Code Generation
 
-**Critical**: any time you add or change `PLU_CLASS`, `PLU_STRUCT`, `PLU_ENUM`, `PLU_PROPERTY`, or `PLU_FUNCTION` annotations in a header, the reflection generator must be re-run before building. It scans header files with regex (no libclang) and writes `*.generated.{h,cpp}` plus `PluEngineBindings.cpp` / `PluEngine.pyi` into `ReflectionCache/`. The build (CMake) runs it automatically as a pre-build step; run it manually only when iterating outside a build. Note: `ReflectionCache/` is gitignored — it is regenerated on every build.
+**Critical**: any time you add or change `PLU_CLASS`, `PLU_STRUCT`, `PLU_ENUM`, `PLU_PROPERTY`, or `PLU_FUNCTION` annotations in a header, the reflection generator must be re-run before building. It scans header files with regex (no libclang) and writes `*.generated.{h,cpp}` plus `PluEngineBindings.cpp` / `PluEngine.pyi` into `ReflectionCache/`. The pybind11 bindings themselves are chunked into `ReflectionCache/Bindings/PluEngineBindings_<Module>_<N>.cpp` (per module, ceil(generated size / `BindingsChunkTargetChars`) files, packed bottom-up) so they compile in parallel; `PluEngineBindings.cpp` only holds `PYBIND11_EMBEDDED_MODULE` and calls the chunks in layer order. All of them compile into `PluApp`. The chunk list is `ReflectionCache/BindingsLayout.cmake`, include()d by `LibEngine/CMakeLists.txt`: when the wanted layout changes, the generator still fills the layout CMake already knows for that build and rewrites the file, so CMake reconfigures on the next build. The build (CMake) runs it automatically as a pre-build step; run it manually only when iterating outside a build. Note: `ReflectionCache/` is gitignored — it is regenerated on every build.
 
 The generator takes `-p`/`--project <name>` (required), `-b`/`--bindings`, `-F`/`--force`, `-q`/`--quiet`.
 
-**Gotcha**: the generator never prunes. Moving a reflected header between modules leaves the old `ReflectionCache/<OldModule>/*.generated.*` behind, and CMake's glob keeps compiling it — you get a "No such file or directory" on the header's old absolute path. `git mv` also preserves mtime, so the cache thinks nothing changed. After moving reflected files, `rm -rf ReflectionCache`. There is **no** single-file mode. `<name>` is a subdirectory to scan (e.g. `Editor`) or `ALL` to scan the whole repo. CMake invokes it as `-bp Engine` for `LibEngine` and `-bp Editor` for the editor.
+**Gotcha**: the generator never prunes (except `ReflectionCache/Bindings/`, which the bindings step owns and cleans). Moving a reflected header between modules leaves the old `ReflectionCache/<OldModule>/*.generated.*` behind, and CMake's glob keeps compiling it — you get a "No such file or directory" on the header's old absolute path. `git mv` also preserves mtime, so the cache thinks nothing changed. After moving reflected files, `rm -rf ReflectionCache`. There is **no** single-file mode. `<name>` is a subdirectory to scan (e.g. `Editor`) or `ALL` to scan the whole repo. CMake invokes it as `-bp Engine` for `LibEngine` and `-bp Editor` for the editor.
 
 ```bash
 # Run from project root with the build venv. -b also regenerates pybind11 bindings + .pyi stubs.
