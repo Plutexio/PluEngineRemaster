@@ -1,0 +1,3 @@
+[submodule "PluSTL"]
+	path = PluSTL
+	url = https://github.com/Plutexio/PluSTL.git
