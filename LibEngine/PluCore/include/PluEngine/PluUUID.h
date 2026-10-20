@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_PLUUUID_H
 #define PLUENGINE_PLUUUID_H
 #include "Core.h"
-#include "String/String.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

@@ -4,7 +4,7 @@
 
 #include "PluEngine/AssetTypes/Animation/BoneTransform.h"
 
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 
 // gtc only — glm/gtx/quaternion.hpp is an experimental extension and slerp/conjugate both live
 // in ext/quaternion_common.hpp, which gtc/quaternion.hpp pulls in.

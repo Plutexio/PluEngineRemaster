@@ -7,11 +7,11 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
-#include "Array/Array.h"
-#include "HashMap/HashMap.h"
-#include "Pointers/TOwningPointer.h"
-#include "Pointers/TUsePointer.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/Pointers/TOwningPointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

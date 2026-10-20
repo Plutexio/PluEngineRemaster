@@ -9,7 +9,7 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Effects/Particles/CompiledParticleSystem.h"
 #include "PluEngine/Effects/Particles/ParticleBlockStorage.h"
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 
 namespace Plu
 {

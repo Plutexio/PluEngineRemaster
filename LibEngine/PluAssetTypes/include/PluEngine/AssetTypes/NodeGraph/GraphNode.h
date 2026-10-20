@@ -9,8 +9,8 @@
 #include "PluEngine/PluUUID.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
 #include "PluEngine/AssetTypes/NodeGraph/GraphEvalContext.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 #include "GraphNode.generated.h"
 
 namespace Plu

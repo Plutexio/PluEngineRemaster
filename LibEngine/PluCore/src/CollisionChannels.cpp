@@ -4,8 +4,8 @@
 
 #include "PluEngine/Core/CollisionChannels.h"
 
-#include "String/String.h"
-#include "Array/Array.h"
+#include "PluSTL/String/String.h"
+#include "PluSTL/Array/Array.h"
 #include "json.hpp"
 
 using namespace Plu;

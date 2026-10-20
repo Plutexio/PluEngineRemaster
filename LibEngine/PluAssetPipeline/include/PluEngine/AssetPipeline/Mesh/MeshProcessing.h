@@ -16,8 +16,8 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Log.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"   // Vertex
 
 namespace Plu::MeshProcessing

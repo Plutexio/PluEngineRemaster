@@ -6,7 +6,7 @@
 #define PLUENGINE_PLUUTILS_H
 
 #include "Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluTypes.h"
 #include <cmath>
 

@@ -4,7 +4,7 @@
 
 #include "PluEngine/Render/RenderParticleCommands.h"
 
-#include "HashMap/HashMap.h"
+#include "PluSTL/HashMap/HashMap.h"
 
 #include <mutex>
 

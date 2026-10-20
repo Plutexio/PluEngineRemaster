@@ -4,7 +4,7 @@
 
 #ifndef PLUENGINE_TEXTUREIMPORTER_H
 #define PLUENGINE_TEXTUREIMPORTER_H
-#include "Path/Path.h"
+#include "PluSTL/Path/Path.h"
 #include "PluEngine/AssetTypes/Texture/Texture.h"
 
 namespace Plu

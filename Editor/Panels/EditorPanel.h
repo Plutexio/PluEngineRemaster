@@ -8,7 +8,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "EditorPanel.generated.h"
-#include "Pointers/TUsePointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
 
 namespace Plu
 {

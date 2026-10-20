@@ -7,9 +7,9 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/AssetTypes/Animation/AnimGraphVariableStore.h"
-#include "Pointers/TUsePointer.h"
-#include "Pointers/Casts.h"
-#include "HashMap/HashMap.h"
+#include "PluSTL/Pointers/TUsePointer.h"
+#include "PluSTL/Pointers/Casts.h"
+#include "PluSTL/HashMap/HashMap.h"
 #include "AnimGraphInstance.generated.h"
 
 namespace Plu

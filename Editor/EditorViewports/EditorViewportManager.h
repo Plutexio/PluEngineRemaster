@@ -6,7 +6,7 @@
 #include <imgui.h>
 
 #include "IEditorViewport.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "EditorViewportManager.generated.h"
 

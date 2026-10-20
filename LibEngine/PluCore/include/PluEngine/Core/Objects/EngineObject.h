@@ -11,6 +11,10 @@
 
 namespace Plu
 {
+    class EngineObject;
+    template<typename T>
+    concept EngineObjectConc = std::is_same_v<EngineObject, T> || std::is_base_of_v<EngineObject, T>;
+
     PLU_CLASS(Abstract, PyExport, PyDerive)
     class PLUCORE_API EngineObject
     {

@@ -10,8 +10,8 @@
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodeLink.h"
 #include "NodeGraph/NodeViewRegistry.h"
-#include "HashMap/HashMap.h"
-#include "String/String.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/String/String.h"
 #include <imgui-node-editor/imgui_node_editor.h>
 #include <functional>
 

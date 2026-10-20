@@ -4,7 +4,7 @@
 
 #ifndef PLUENGINE_APPLICATION_H
 #define PLUENGINE_APPLICATION_H
-#include <PluSTL_FWD.h>
+#include "PluSTL/PluSTL_FWD.h"
 #include <argparse/argparse.hpp>
 
 #include "PluEngine/Core.h"

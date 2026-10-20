@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_ENGINEOBJECTHANDLE_H
 #define PLUENGINE_ENGINEOBJECTHANDLE_H
 #include "PluEngine/Core.h"
-#include "Hashers/Default.h"  // DefaultHash + HashCombine, used by the specialization below
+#include "PluSTL/Hashers/Default.h"  // DefaultHash + HashCombine, used by the specialization below
 
 namespace Plu
 {

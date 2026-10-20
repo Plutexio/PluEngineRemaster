@@ -5,8 +5,8 @@
 #ifndef PLUENGINE_WINDOW_H
 #define PLUENGINE_WINDOW_H
 
-#include <PluSTL_FWD.h>
-#include "Array/Array.h"
+#include "PluSTL/PluSTL_FWD.h"
+#include "PluSTL/Array/Array.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PluEngine/Core.h"
 #include "Window.generated.h"

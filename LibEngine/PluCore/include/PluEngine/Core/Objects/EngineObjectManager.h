@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_ENGINEOBJECTMANAGER_H
 #define PLUENGINE_ENGINEOBJECTMANAGER_H
 
-#include <PluSTL_FWD.h>
+#include "PluSTL/PluSTL_FWD.h"
 
 #include "EngineObjectHandle.h"
 #include "PluEngine/Core.h"

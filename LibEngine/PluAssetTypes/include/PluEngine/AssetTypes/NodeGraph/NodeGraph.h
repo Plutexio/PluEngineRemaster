@@ -9,8 +9,8 @@
 #include "PluEngine/Core/IAssetData.h"
 #include "PluEngine/AssetTypes/NodeGraph/GraphNode.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodeLink.h"
-#include "Array/Array.h"
-#include "Pointers/TOwningPointer.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/Pointers/TOwningPointer.h"
 #include "NodeGraph.generated.h"
 
 namespace Plu

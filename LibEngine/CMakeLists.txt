@@ -191,14 +191,13 @@ function(plu_add_engine_module NAME)
             "${CMAKE_SOURCE_DIR}/ReflectionCache/${NAME}"
             "${CMAKE_SOURCE_DIR}/ReflectionCache"     # EngineAssets.h
             "${CMAKE_SOURCE_DIR}/ThirdParty"
-            "${CMAKE_SOURCE_DIR}/PluSTL"
             PRIVATE
             # Private headers next to the sources (Platforms/<os>/*.h) are reached with a path
             # relative to the module's src root.
             "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
 
-    target_link_libraries(${NAME} PUBLIC ${PLU_MOD_DEPENDS})
+    target_link_libraries(${NAME} PUBLIC ${PLU_MOD_DEPENDS} PluSTL::PluSTL)
 
     target_compile_definitions(${NAME} PUBLIC $<$<CONFIG:Debug>:PLU_DEBUG>)
     if (NOT PLU_DISTRIBUTION)
@@ -208,7 +207,7 @@ function(plu_add_engine_module NAME)
     endif ()
 
     target_precompile_headers(${NAME} PRIVATE
-            "${CMAKE_SOURCE_DIR}/PluSTL/PluSTL_FWD.h"
+            "${CMAKE_SOURCE_DIR}/PluSTL/include/PluSTL/PluSTL_FWD.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Core.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h"

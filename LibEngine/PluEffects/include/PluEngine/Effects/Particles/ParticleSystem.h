@@ -10,8 +10,8 @@
 #include "PluEngine/AssetTypes/NodeGraph/NodeGraph.h"
 #include "PluEngine/Effects/Particles/Nodes/ParticleModuleNode.h"
 #include "PluEngine/Effects/Particles/ParticleParameter.h"
-#include "Array/Array.h"
-#include "Pointers/TOwningPointer.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/Pointers/TOwningPointer.h"
 #include "ParticleSystem.generated.h"
 
 namespace Plu

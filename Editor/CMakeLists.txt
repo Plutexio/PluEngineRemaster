@@ -182,7 +182,7 @@ find_package(Jolt CONFIG REQUIRED)
 target_link_libraries(PluEditor PRIVATE Jolt::Jolt)
 target_compile_definitions(PluEditor PRIVATE JPH_DEBUG_RENDERER)
 
-target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluSTL/PluSTL_FWD.h")
+target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluSTL/include/PluSTL/PluSTL_FWD.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Core.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h")

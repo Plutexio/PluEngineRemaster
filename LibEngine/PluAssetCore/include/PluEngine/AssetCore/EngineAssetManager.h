@@ -9,8 +9,8 @@
 #include "EngineAssetManager.generated.h"
 #include "PluEngine/PluUUID.h"
 #include "PluEngine/Core/Threading/ThreadAffinity.h"
-#include "HashSet/HashSet.h"
-#include "Concurrent/ConcurrentHashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
+#include "PluSTL/Concurrent/ConcurrentHashSet.h"
 #include <shared_mutex>
 #include <mutex>
 

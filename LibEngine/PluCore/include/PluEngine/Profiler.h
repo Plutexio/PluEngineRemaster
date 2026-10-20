@@ -6,8 +6,8 @@
 #define PLUENGINE_PROFILER_H
 
 #include "Core.h"
-#include "PluSTL_FWD.h"
-#include "Concurrent/ConcurrentHashMap.h"
+#include "PluSTL/PluSTL_FWD.h"
+#include "PluSTL/Concurrent/ConcurrentHashMap.h"
 
 namespace Plu {
 

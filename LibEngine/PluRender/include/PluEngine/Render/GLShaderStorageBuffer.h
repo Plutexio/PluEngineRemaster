@@ -9,7 +9,7 @@
 #include <type_traits>
 #include "PluEngine/Core.h"
 #include "PluEngine/Log.h"
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 
 // When glm is reachable, detect 3-component glm vectors so we can reject them as T:
 // vec3 is 12 B in C++ but std430 gives an array of vec3 a 16 B stride, so a raw upload

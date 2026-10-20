@@ -12,7 +12,7 @@
 #define PLUENGINE_THREADAFFINITY_H
 
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 #include <thread>
 

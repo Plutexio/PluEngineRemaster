@@ -31,7 +31,7 @@
 #include "PluEngine/AssetTypes/Animation/SkeletalAnimation.h"
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
 #include <glm/gtc/quaternion.hpp>

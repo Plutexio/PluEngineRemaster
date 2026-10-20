@@ -6,8 +6,8 @@
 #define PLUENGINE_NODEVIEWREGISTRY_H
 
 #include "PluEngine/Core.h"
-#include "HashMap/HashMap.h"
-#include "String/String.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/String/String.h"
 #include "NodeGraph/INodeView.h"
 
 namespace Plu

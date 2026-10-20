@@ -6,7 +6,7 @@
 #define PLUENGINE_EDITORPROJECTMANAGER_H
 #include "PluEngine/Core.h"
 #include "EditorProjectManager.generated.h"
-#include "Path/Path.h"
+#include "PluSTL/Path/Path.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 

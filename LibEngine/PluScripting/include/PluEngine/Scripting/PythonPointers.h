@@ -6,7 +6,7 @@
 #define PLUENGINE_PYTHONPOINTERS_H
 
 #include <pybind11/pybind11.h>
-#include "Pointers/ControlBlock.h"
+#include "PluSTL/Pointers/ControlBlock.h"
 #include "PluEngine/Core/Reflection/ClassPointer.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
@@ -21,7 +21,7 @@ namespace Plu
 		PyControlBlock(T* raw, pybind11::object keeper)
 			: ControlBlock<T>(raw), pyKeeper(std::move(keeper))
 		{
-			this->isPython = true;
+			this->externallyOwned = true;   // the interpreter destroys it (main thread, under the GIL)
 		}
 	};
 
@@ -31,8 +31,7 @@ namespace Plu
 	{
 		pybind11::object obj = type();   // wywołaj konstruktor Pythona
 		B* raw = obj.cast<B*>();
-		TOwningPointer<B> result;
-		result.control = new PyControlBlock<B>(raw, std::move(obj));
+		TOwningPointer<B> result = TOwningPointer<B>::AdoptControlBlock(new PyControlBlock<B>(raw, std::move(obj)));
 		std::string name = pybind11::str(type.attr("__name__"));
 		TypeInfo* newType = TypeRegistry::GetInstance()->GetTypeOfName(name.c_str());
 		if (!newType) {

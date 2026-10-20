@@ -8,7 +8,7 @@
 #include "PluEngine/Effects/Particles/Nodes/ParticleModuleNode.h"
 #include "PluEngine/AssetTypes/Texture/Texture.h"
 #include "PluEngine/Effects/Particles/ParticleAttributes.h"
-#include "Pointers/TUsePointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
 #include "ParticleRendererNodes.generated.h"
 
 namespace Plu

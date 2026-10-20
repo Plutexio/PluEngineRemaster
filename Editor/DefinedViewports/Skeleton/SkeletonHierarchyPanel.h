@@ -7,9 +7,9 @@
 #include "EditorViewports/IEditorPanel.h"
 #include "SkeletonHierarchyPanel.generated.h"
 #include "PluEngine/Core.h"
-#include "Array/Array.h"
-#include "HashMap/HashMap.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

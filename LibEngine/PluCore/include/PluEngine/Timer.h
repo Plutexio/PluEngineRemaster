@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include "Log.h"
 #include "Profiler.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu {
 

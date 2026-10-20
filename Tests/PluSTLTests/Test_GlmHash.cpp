@@ -9,8 +9,8 @@
 
 #include "PluEngine/Core/GlmHash.h"
 
-#include "HashMap/HashMap.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/HashSet/HashSet.h"
 
 #include <cmath>
 #include <set>

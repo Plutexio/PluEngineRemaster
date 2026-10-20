@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 
 namespace Plu
 {

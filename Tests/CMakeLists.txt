@@ -1,27 +1,16 @@
 project(PluTests)
 
-# ThreadSanitizer build of the tests. Opt-in, because TSan roughly halves the speed and
-# needs its own binary — the stress suites are where it earns its keep (striped map,
-# lock-free array, SPSC ring).
-option(PLU_TESTS_TSAN "Build the tests with ThreadSanitizer" OFF)
+# The container tests themselves live in the PluSTL submodule (PluSTL/tests, target
+# PluSTLTests) and are enabled from the root CMakeLists through PLUSTL_BUILD_TESTS. This
+# directory holds the engine-side tests that reuse its runner.
 
-add_executable(PluSTLTests
-        PluSTLTests/Main.cpp
-        PluSTLTests/Test_DynamicArray.cpp
+add_executable(PluEngineTests
+        ${CMAKE_SOURCE_DIR}/PluSTL/tests/Main.cpp
         PluSTLTests/Test_GlmHash.cpp
-        PluSTLTests/Test_HashMap.cpp
-        PluSTLTests/Test_HashSet.cpp
-        PluSTLTests/Test_Hashers.cpp
-        PluSTLTests/Test_Queue.cpp
-        PluSTLTests/Test_ConcurrentHashMap.cpp
-        PluSTLTests/Test_ConcurrentHashSet.cpp
-        PluSTLTests/Test_ConcurrentQueue.cpp
-        PluSTLTests/Test_ConcurrentArray.cpp
-        PluSTLTests/Test_ConcurrentString.cpp
 )
 
-target_include_directories(PluSTLTests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/PluSTLTests
+target_include_directories(PluEngineTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/PluSTL/tests       # TestFramework.h
         # Test_GlmHash.cpp covers PluEngine/Core/GlmHash.h — the DefaultHash
         # specializations for Vec2/3/4, Quaternion and Matrix4. That header depends on
         # glm and PluSTL only, both header-only, so covering it here costs no engine
@@ -29,20 +18,13 @@ target_include_directories(PluSTLTests PRIVATE
         ${CMAKE_SOURCE_DIR}/ThirdParty/glm
         ${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include)
 
-# Container tests — no engine target, no window, no GL. PluSTL brings the include dir and
-# Threads::Threads with it.
-target_link_libraries(PluSTLTests PRIVATE PluSTL)
-
-target_compile_features(PluSTLTests PRIVATE cxx_std_20)
+target_link_libraries(PluEngineTests PRIVATE PluSTL::PluSTL)
 
 if(PLU_TESTS_TSAN)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(PluSTLTests PRIVATE -fsanitize=thread -g -O1 -fno-omit-frame-pointer)
-        target_link_options(PluSTLTests PRIVATE -fsanitize=thread)
-    else()
-        message(WARNING "PLU_TESTS_TSAN is only supported on GCC/Clang — building without it")
+        target_compile_options(PluEngineTests PRIVATE -fsanitize=thread -g -O1 -fno-omit-frame-pointer)
+        target_link_options(PluEngineTests PRIVATE -fsanitize=thread)
     endif()
 endif()
 
-enable_testing()
-add_test(NAME PluSTLTests COMMAND PluSTLTests)
+add_test(NAME PluEngineTests COMMAND PluEngineTests)

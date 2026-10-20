@@ -14,8 +14,8 @@
 // the complete type — a forward declaration only compiles while some other translation unit in
 // the same unity batch happens to supply the definition.
 #include "PluEngine/AssetTypes/Animation/SkeletalAnimation.h"
-#include "HashMap/HashMap.h"
-#include "Pointers/Casts.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/Pointers/Casts.h"
 #include <utility>
 
 namespace Plu

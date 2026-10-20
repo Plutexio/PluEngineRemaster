@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/Effects/Particles/ParticleParameterStore.h"
-#include "Pointers/TUsePointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
 #include "ParticleSystemInstance.generated.h"
 
 namespace Plu

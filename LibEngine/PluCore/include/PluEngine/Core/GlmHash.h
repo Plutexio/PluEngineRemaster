@@ -14,7 +14,7 @@
 #include "glm/vec3.hpp"
 #include "glm/vec4.hpp"
 
-#include "Hashers/Default.h"
+#include "PluSTL/Hashers/Default.h"
 
 // ============================================================================
 // DefaultHash for glm types — the bridge that lets Vec3 & friends key a HashMap

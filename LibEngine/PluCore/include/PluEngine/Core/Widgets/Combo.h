@@ -10,8 +10,8 @@
 #include <imgui.h>
 
 #include "PluEngine/Core.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

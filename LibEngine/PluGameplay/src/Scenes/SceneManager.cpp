@@ -13,7 +13,7 @@
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 #include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 
 void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)

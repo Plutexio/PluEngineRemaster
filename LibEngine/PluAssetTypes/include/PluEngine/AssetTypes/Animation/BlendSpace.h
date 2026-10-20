@@ -11,8 +11,8 @@
 #include "PluEngine/AssetTypes/Animation/SkeletalAnimation.h"
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 #include "BlendSpace.generated.h"
 
 namespace Plu

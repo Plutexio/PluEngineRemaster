@@ -9,7 +9,7 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
 #include "PluEngine/Effects/Particles/CompiledParticleSystem.h"
-#include "Queue/Queue.h"
+#include "PluSTL/Queue/Queue.h"
 
 namespace Plu
 {

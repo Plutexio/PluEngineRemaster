@@ -6,7 +6,7 @@
 #define PLUENGINE_SCENESMANAGER_H
 
 #include "PluEngine/Core/IAssetData.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "ScenesManager.generated.h"
 
 namespace Plu

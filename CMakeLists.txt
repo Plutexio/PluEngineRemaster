@@ -118,9 +118,26 @@ option(PLU_BUILD_TESTS "Build PluSTL tests" OFF)
 # Tests-only configure: skips LibEngine/Editor/Runtime entirely, so the container tests can be
 # built and run without a full engine build. Implies PLU_BUILD_TESTS.
 option(PLU_TESTS_ONLY "Configure only the test targets (no engine)" OFF)
+# ThreadSanitizer build of the tests. Opt-in, because TSan roughly halves the speed and needs its
+# own binary.
+option(PLU_TESTS_TSAN "Build the tests with ThreadSanitizer" OFF)
 
 if(PLU_TESTS_ONLY)
     set(PLU_BUILD_TESTS ON)
+endif()
+
+# PluSTL is its own repository (github.com/Plutexio/PluSTL), checked out here as a git submodule.
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluSTL/CMakeLists.txt")
+    message(FATAL_ERROR "PluSTL/ is empty — the submodule is not checked out. Run:\n"
+            "  git submodule update --init")
+endif()
+set(PLUSTL_BUILD_TESTS ${PLU_BUILD_TESTS} CACHE BOOL "" FORCE)
+set(PLUSTL_TESTS_TSAN ${PLU_TESTS_TSAN} CACHE BOOL "" FORCE)
+add_subdirectory(PluSTL)
+
+if(PLU_BUILD_TESTS)
+    # At the top level, so ctest run from the build directory picks up every test.
+    enable_testing()
 endif()
 
 if(NOT PLU_TESTS_ONLY)
@@ -131,7 +148,6 @@ if(NOT PLU_TESTS_ONLY)
         add_subdirectory(Runtime)
     endif ()
 endif()
-add_subdirectory(PluSTL)
 
 if(PLU_BUILD_TESTS)
     add_subdirectory(Tests)

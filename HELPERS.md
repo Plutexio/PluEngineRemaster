@@ -1030,7 +1030,7 @@ Statyczne helpery na `BasicString` (`String` / `StringW`). Dostępne jako `Strin
 
 Purpose-built containers for data touched by more than one thread. Header-only, `namespace Plu`.
 **Not** pulled in by `PluSTL_FWD.h` (it is the PCH for the whole project) — include the one header
-you need, e.g. `#include "Concurrent/ConcurrentHashMap.h"`, or `Concurrent/Concurrent.h` for all of
+you need, e.g. `#include "PluSTL/Concurrent/ConcurrentHashMap.h"`, or `PluSTL/Concurrent/Concurrent.h` for all of
 them (it also carries the canonical write-up of the rules below).
 
 **The API is the single-threaded one.** Each container mirrors its PluSTL counterpart name for
@@ -1069,7 +1069,7 @@ Three rules apply to every type here:
    "is there anything to do at all" fast-outs, never control flow that assumes the answer holds.
 
 All containers are non-copyable and non-movable: each is meant to be owned by one subsystem for its
-whole lifetime. Covered by `Tests/PluSTLTests` (unit + stress, clean under TSan).
+whole lifetime. Covered by `PluSTL/tests` (unit + stress, clean under TSan).
 
 ### `LockPrimitives.h`
 
@@ -1379,6 +1379,8 @@ Każdy obiekt jest **przypięty do wątku, który go stworzył** (`ControlBlock:
 | `TUsePointer` — cała klasa (trzymanie, kopia, `operator->`, deref) | **dowolny** | kanał cross-thread |
 
 **Uwaga — to lifetime, nie synchronizacja.** `TUsePointer` pozwala bezpiecznie *trzymać i deref'ować* uchwyt z innego wątku, ale **nie chroni pól obiektu przed wyścigiem danych**. Współdzielone dane między wątkami → przez snapshot (`RenderSnapshot`/`TripleBuffer`), nie przez deref use-ptr. Warstwa wskaźników pilnuje tylko refcountu/lifetime i łapie przypadkowe przekroczenie wątku owningiem.
+
+**Externally owned objects / custom control blocks.** `TOwningPointer<T>::AdoptControlBlock(ControlBlock<T>* block)` wraps a freshly constructed control block (strong = weak = 1, not yet shared) — the way to attach extra state to an object's refcount. Setting `ControlBlockBase::externallyOwned` makes the last owner only drop its reference instead of deleting the object. The engine uses both for Python-created objects: `PyControlBlock` in `Scripting/PythonPointers.h` holds the `pybind11::object` keeper, and `OwnerFromPython` adopts it. `EngineObjectConc<T>` (T is or derives from `EngineObject`) is an engine concept and lives in `Core/Objects/EngineObject.h`, not in PluSTL.
 
 Konsekwencje praktyczne: zasoby GL (`FrameBuffer`/`Texture`) tworzone na render threadzie są render-owned (owningThread=render) — owning działa na renderze, main co najwyżej obserwuje przez `TUsePointer`. `EngineObjectManager` jest re-entrant-safe: `CreateObject` konstruuje obiekt PRZED `unique_lock`, `DestroyObject` odczepia slot pod lockiem i niszczy obiekt PO zwolnieniu locka (`shared_mutex` jest nierekurencyjny).
 

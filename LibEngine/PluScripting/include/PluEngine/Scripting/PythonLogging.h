@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_PYTHONLOGGING_H
 #define PLUENGINE_PYTHONLOGGING_H
 
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/Log.h"
 

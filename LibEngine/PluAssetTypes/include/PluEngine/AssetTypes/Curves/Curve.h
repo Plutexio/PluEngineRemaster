@@ -8,8 +8,8 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 #include "Curve.generated.h"
 
 namespace Plu

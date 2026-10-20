@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/PluUUID.h"
-#include "String/String.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

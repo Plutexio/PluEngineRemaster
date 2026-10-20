@@ -7,7 +7,7 @@
 #include "PluEngine/Render/RenderParticleCommands.h"
 #include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
 #include "PluEngine/Timer.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Timer.h"
 #include "../../include/PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
 #include "PluEngine/Gameplay/Components/StaticMeshComponent.h"

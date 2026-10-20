@@ -14,7 +14,7 @@
 #include "ParticlePointBuffer.h"
 #include "ParticleInstanceBuffer.h"
 #include "PluEngine/Effects/Particles/ParticleEmitterInstance.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Objects/EngineObject.h"

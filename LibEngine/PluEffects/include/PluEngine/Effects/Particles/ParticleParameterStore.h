@@ -7,8 +7,8 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/Effects/Particles/ParticleParameter.h"
-#include "Array/Array.h"
-#include "HashMap/HashMap.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/HashMap/HashMap.h"
 
 namespace Plu
 {

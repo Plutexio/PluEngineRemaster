@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/Effects/Particles/CompiledParticleSystem.h"
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 
 namespace Plu
 {

@@ -11,8 +11,8 @@
 #include "PluEngine/Timer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "UI/IconsFontAwesome7.h"
-#include "String/String.h"
-#include "Array/Array.h"
+#include "PluSTL/String/String.h"
+#include "PluSTL/Array/Array.h"
 #include <cstdio>
 #include <cfloat>
 

@@ -8,7 +8,7 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
-#include "String/String.h"
+#include "PluSTL/String/String.h"
 #include "GraphValue.generated.h"
 
 namespace Plu

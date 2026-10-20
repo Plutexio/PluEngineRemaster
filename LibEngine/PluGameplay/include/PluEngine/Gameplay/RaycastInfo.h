@@ -7,8 +7,8 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
-#include "Array/Array.h"
-#include "Pointers/TUsePointer.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/Pointers/TUsePointer.h"
 #include "RaycastInfo.generated.h"
 
 namespace Plu

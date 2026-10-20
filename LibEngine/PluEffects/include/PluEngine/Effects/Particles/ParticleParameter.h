@@ -8,9 +8,9 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
-#include "Pointers/TOwningPointer.h"
-#include "Pointers/TUsePointer.h"
-#include "String/String.h"
+#include "PluSTL/Pointers/TOwningPointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
+#include "PluSTL/String/String.h"
 #include "ParticleParameter.generated.h"
 
 #include <functional>

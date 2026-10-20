@@ -6,7 +6,7 @@
 #define PLUENGINE_RENDERUSAGESTATS_H
 
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu {
 

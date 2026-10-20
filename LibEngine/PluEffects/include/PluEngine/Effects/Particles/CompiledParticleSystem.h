@@ -9,8 +9,8 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/PluUUID.h"
 #include "PluEngine/Effects/Particles/ParticleAttributes.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 
 // Flat, pointer-free (apart from the containers) description of a ParticleSystem that the executor
 // runs. Built once per CompileRevision on the main thread by ParticleSystemCompiler, then only read.

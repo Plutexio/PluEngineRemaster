@@ -8,7 +8,7 @@
 #include "EditorViewports/IEditorViewport.h"
 #include <imgui-node-editor/imgui_node_editor.h>
 #include "NodeGraph/NodeGraphEditor.h"
-#include "HashMap/HashMap.h"
+#include "PluSTL/HashMap/HashMap.h"
 #include "ParticleSystemViewport.generated.h"
 
 namespace ImGuiNodeEditor = ax::NodeEditor;

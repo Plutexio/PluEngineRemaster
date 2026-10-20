@@ -435,7 +435,7 @@ read by `OnContactRemoved` to skip blocking contacts). Scene objects, components
 `OnOverlapBegin`/`OnOverlapEnd` calls happen in the drain. `OnContactRemoved` gets no bodies at all
 (they may already be destroyed): everything it needs is looked up by contact key in what the begin stored.
 
-Tests: `Tests/PluSTLTests` (configure with the `PluDebugLinux-Tests` preset, or
+Tests: `PluSTL/tests` (configure with the `PluDebugLinux-Tests` preset, or
 `PluDebugLinux-Tests-TSan` for the ThreadSanitizer build). Every container has a single-threaded
 correctness suite plus a stress suite sized to `hardware_concurrency`. Any TSan report is a
 blocker, not a warning.

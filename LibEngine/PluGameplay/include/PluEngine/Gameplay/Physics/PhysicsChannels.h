@@ -8,7 +8,7 @@
 #include <limits>
 
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PhysicsChannels.generated.h"
 
 namespace Plu

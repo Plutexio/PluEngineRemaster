@@ -10,7 +10,7 @@
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
 #include "PluEngine/Effects/Particles/ParticleSpawner.h"
 #include "PluEngine/Effects/Particles/CompiledParticleSystem.h"
-#include "String/String.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

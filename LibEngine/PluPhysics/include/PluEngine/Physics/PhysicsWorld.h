@@ -9,8 +9,8 @@
 #include "JoltIntializer.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PhysicsWorld.generated.h"
-#include "Concurrent/ConcurrentHashMap.h"
-#include "Concurrent/ConcurrentQueue.h"
+#include "PluSTL/Concurrent/ConcurrentHashMap.h"
+#include "PluSTL/Concurrent/ConcurrentQueue.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 
 namespace JPH

@@ -7,7 +7,7 @@
 
 #include <glm/glm.hpp>
 #include "PluEngine/Physics/JoltShapeExtractor.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu
 {
