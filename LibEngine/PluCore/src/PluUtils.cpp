@@ -11,6 +11,12 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
 
+#ifdef PLU_PLATFORM_WINDOWS
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+	#include <windows.h>
+#endif
+
 namespace
 {
 	// Last published frame delta (seconds) per thread. Written by the owning loop, read from
@@ -77,6 +83,34 @@ Plu::PathW Plu::GetEngineResourcesDir()
 	return StringW::FromNarrow(PLU_PROJECT_ROOT);
 #else
 	return GetExePath().GetParentPath();
+#endif
+}
+
+Plu::PathW Plu::GetExePath()
+{
+#if defined(PLU_PLATFORM_WINDOWS)
+
+	wchar_t buffer[MAX_PATH];
+	DWORD size = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+
+	if (size == 0) {
+		throw std::runtime_error("GetModuleFileNameW failed");
+	}
+
+	return buffer;
+
+#elif defined(PLU_PLATFORM_LINUX)
+
+	char buffer[PATH_MAX];
+	ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+
+	if (len == -1) {
+		throw std::runtime_error("readlink(/proc/self/exe) failed");
+	}
+
+	buffer[len] = '\0';
+	return PathW(StringW::FromNarrow(buffer));
+
 #endif
 }
 

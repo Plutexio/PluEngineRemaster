@@ -20,6 +20,7 @@
 #include "imgui_internal.h"
 #include "glad/glad_wgl.h"
 #include "PluEngine/Platform/WinAPIInputBackend.h"
+#include "spdlog/sinks/wincolor_sink.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, ImGuiIO& io);
 
