@@ -131,6 +131,12 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluSTL/CMakeLists.txt")
     message(FATAL_ERROR "PluSTL/ is empty — the submodule is not checked out. Run:\n"
             "  git submodule update --init")
 endif()
+# PluBase is too (github.com/Plutexio/PluBase). LibEngine adds it once the third-party targets it
+# links exist; the check is here because the tests include its headers as well.
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluBase/CMakeLists.txt")
+    message(FATAL_ERROR "PluBase/ is empty — the submodule is not checked out. Run:\n"
+            "  git submodule update --init")
+endif()
 set(PLUSTL_BUILD_TESTS ${PLU_BUILD_TESTS} CACHE BOOL "" FORCE)
 set(PLUSTL_TESTS_TSAN ${PLU_TESTS_TSAN} CACHE BOOL "" FORCE)
 add_subdirectory(PluSTL)
