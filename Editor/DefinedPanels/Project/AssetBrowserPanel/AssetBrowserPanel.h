@@ -9,7 +9,7 @@
 
 #include "Panels/EditorPanel.h"
 #include "AssetBrowserPanel.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

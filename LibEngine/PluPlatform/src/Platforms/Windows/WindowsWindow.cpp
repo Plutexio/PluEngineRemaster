@@ -4,7 +4,7 @@
 
 #include "PluEngine/Platforms/Windows/WindowsWindow.h"
 
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_WINDOWS

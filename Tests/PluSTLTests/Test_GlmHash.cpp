@@ -1,13 +1,13 @@
 //
 // Created by Plutex on 2026-09-19.
 //
-// DefaultHash for the glm types (PluEngine/Core/GlmHash.h). That header depends on
-// glm and PluSTL only — no engine — so the container suite can cover it without
-// pulling in PluCore.
+// DefaultHash for the glm types (PluBase/GlmHash.h). That header depends on
+// glm and PluSTL only, so the container suite can cover it without building
+// PluBase or the engine.
 
 #include "TestFramework.h"
 
-#include "PluEngine/Core/GlmHash.h"
+#include "PluBase/GlmHash.h"
 
 #include "PluSTL/HashMap/HashMap.h"
 #include "PluSTL/HashSet/HashSet.h"

@@ -4,7 +4,7 @@
 
 #include "PluEngine/Engine.h"
 
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 namespace Plu
 {

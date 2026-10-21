@@ -11,12 +11,12 @@ add_executable(PluEngineTests
 
 target_include_directories(PluEngineTests PRIVATE
         ${CMAKE_SOURCE_DIR}/PluSTL/tests       # TestFramework.h
-        # Test_GlmHash.cpp covers PluEngine/Core/GlmHash.h — the DefaultHash
+        # Test_GlmHash.cpp covers PluBase/GlmHash.h — the DefaultHash
         # specializations for Vec2/3/4, Quaternion and Matrix4. That header depends on
         # glm and PluSTL only, both header-only, so covering it here costs no engine
-        # dependency: nothing below links or builds any PluEngine target.
+        # dependency: nothing below links or builds any PluEngine or PluBase target.
         ${CMAKE_SOURCE_DIR}/ThirdParty/glm
-        ${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include)
+        ${CMAKE_SOURCE_DIR}/PluBase/include)
 
 target_link_libraries(PluEngineTests PRIVATE PluSTL::PluSTL)
 

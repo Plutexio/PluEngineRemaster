@@ -15,7 +15,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluSTL/Array/Array.h"
 #include "PluSTL/String/String.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"   // Vertex

@@ -12,7 +12,7 @@
 
 #include "../EditorApp.h"
 #include "PluEngine/Application.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 
 

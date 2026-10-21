@@ -9,7 +9,7 @@
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PluEngine/Effects/Particles/Particle.h"
 #include "ParticleSpawner.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

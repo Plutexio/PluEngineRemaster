@@ -6,7 +6,7 @@
 #define PLUENGINE_ASSETSMANAGER_H
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "IAssetData.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

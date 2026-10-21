@@ -11,7 +11,7 @@
 #include "Managers/Project/EditorProjectManager.h"
 #include "EditorSettings/EditorSettings.h"
 #include "EditorSettings/EditorSettingsManager.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/FrameDemand.h"
 #include "PluEngine/Timer.h"
 #include "PluEngine/Render/RenderingManager.h"

@@ -6,7 +6,7 @@
 
 #include <utility>
 #include "Managers/Project/EditorProjectManager.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 
 Plu::EditorTypeRegistry * Plu::EditorTypeRegistry::GetInstance()

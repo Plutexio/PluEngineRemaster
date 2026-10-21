@@ -2,15 +2,15 @@
 // Created by Plutex on 1/3/26.
 //
 
-#ifndef PLUENGINE_PLUUUID_H
-#define PLUENGINE_PLUUUID_H
-#include "Core.h"
+#ifndef PLUBASE_PLUUUID_H
+#define PLUBASE_PLUUUID_H
+#include "PluBase/Base.h"
 #include "PluSTL/String/String.h"
 
 namespace Plu
 {
 	//0 is invalid UUID
-	class PLUCORE_API PluUUID
+	class PLUBASE_API PluUUID
 	{
 		UInt64 mUUID;
 	public:
@@ -38,4 +38,4 @@ namespace Plu
 	};
 }
 
-#endif //PLUENGINE_PLUUUID_H
+#endif //PLUBASE_PLUUUID_H

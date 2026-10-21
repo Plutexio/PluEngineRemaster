@@ -11,7 +11,7 @@
 #include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
 #include "PluEngine/AssetTypes/Animation/BlendSpace.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

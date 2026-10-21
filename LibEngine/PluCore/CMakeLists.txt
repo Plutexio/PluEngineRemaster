@@ -2,6 +2,7 @@
 plu_add_engine_module(PluCore)
 
 target_link_libraries(PluCore PUBLIC
+        PluBase::PluBase      # types, logging, asserts, UUIDs, thread affinity
         glm
         json
         spdlog

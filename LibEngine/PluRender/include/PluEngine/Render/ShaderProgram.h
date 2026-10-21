@@ -16,7 +16,7 @@
 #include <sstream>
 
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Core/IAssetData.h"
 
 namespace Plu

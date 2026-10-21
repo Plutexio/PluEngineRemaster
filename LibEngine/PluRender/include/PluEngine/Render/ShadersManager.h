@@ -6,7 +6,7 @@
 #define PLUENGINE_SHADERSMANAGER_H
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "ShadersManager.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

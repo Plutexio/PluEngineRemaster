@@ -2,8 +2,8 @@
 // Created by Plutex on 2026-09-19.
 //
 
-#ifndef PLUENGINE_GLMHASH_H
-#define PLUENGINE_GLMHASH_H
+#ifndef PLUBASE_GLMHASH_H
+#define PLUBASE_GLMHASH_H
 
 #include <cstddef>
 
@@ -35,7 +35,7 @@
 // *itself*, so a NaN key never matches on lookup however it is hashed. That is an
 // equality property, not a hashing one. Keep NaN out of keys.
 //
-// Included by PluTypes.h, so any translation unit that can name Vec3 can also key
+// Included by Types.h, so any translation unit that can name Vec3 can also key
 // a HashMap with it — the hasher travels with the type, the same rule String.h and
 // Path.h follow for BasicString / BasicPath.
 
@@ -80,4 +80,4 @@ namespace Plu
     };
 }
 
-#endif //PLUENGINE_GLMHASH_H
+#endif //PLUBASE_GLMHASH_H

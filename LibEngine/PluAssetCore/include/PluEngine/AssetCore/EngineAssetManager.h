@@ -7,8 +7,8 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "EngineAssetManager.generated.h"
-#include "PluEngine/PluUUID.h"
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/PluUUID.h"
+#include "PluBase/ThreadAffinity.h"
 #include "PluSTL/HashSet/HashSet.h"
 #include "PluSTL/Concurrent/ConcurrentHashSet.h"
 #include <shared_mutex>

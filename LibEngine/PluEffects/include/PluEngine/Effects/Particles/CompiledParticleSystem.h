@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Effects/Particles/ParticleAttributes.h"
 #include "PluSTL/Array/Array.h"
 #include "PluSTL/String/String.h"

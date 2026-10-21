@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_GAMEOBJECTCOMPONENT_H
 #define PLUENGINE_GAMEOBJECTCOMPONENT_H
 #include "GameObjectComponent.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 
 namespace Plu

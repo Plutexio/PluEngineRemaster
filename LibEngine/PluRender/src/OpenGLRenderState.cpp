@@ -5,7 +5,7 @@
 #include "PluEngine/Render/OpenGLRenderState.h"
 
 #include "glad/glad.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 namespace
 {

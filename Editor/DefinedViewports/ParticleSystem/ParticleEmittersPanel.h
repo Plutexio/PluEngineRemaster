@@ -7,7 +7,7 @@
 #include "EditorViewports/IEditorPanel.h"
 #include "ParticleEmittersPanel.generated.h"
 #include "PluEngine/Core.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 namespace Plu
 {

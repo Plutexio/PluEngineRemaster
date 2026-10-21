@@ -2,18 +2,20 @@
 // Created by Plutex on 12/30/25.
 //
 
-#ifndef PLUENGINE_LOG_H
-#define PLUENGINE_LOG_H
+#ifndef PLUBASE_LOG_H
+#define PLUBASE_LOG_H
 
-#include "Core.h"
+#include "PluBase/Base.h"
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
 
 namespace Plu {
 
-	class PLUCORE_API Log {
+	class PLUBASE_API Log {
 	public:
-		static void Init();
+		// Two loggers: the core one for library/engine code (PLU_CORE_*), the client one
+		// for the application on top (PLU_*). Call once, before the first log line.
+		static void Init(const char* coreLoggerName = "ENGINE", const char* clientLoggerName = "APP");
 
 		static std::shared_ptr<spdlog::logger>& GetCoreLogger() { return s_CoreLogger; }
 		static std::shared_ptr<spdlog::logger>& GetClientLogger() { return s_ClientLogger; }
@@ -36,4 +38,4 @@ namespace Plu {
 #define PLU_ERROR(...)         ::Plu::Log::GetClientLogger()->error(__VA_ARGS__)
 #define PLU_CRITICAL(...)      ::Plu::Log::GetClientLogger()->critical(__VA_ARGS__)
 
-#endif //PLUENGINE_LOG_H
+#endif //PLUBASE_LOG_H

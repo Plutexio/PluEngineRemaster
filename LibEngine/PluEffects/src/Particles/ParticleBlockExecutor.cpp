@@ -4,7 +4,7 @@
 
 #include "PluEngine/Effects/Particles/ParticleBlockExecutor.h"
 #include "PluEngine/Timer.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <chrono>

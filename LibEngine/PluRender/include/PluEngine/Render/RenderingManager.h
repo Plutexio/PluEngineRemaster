@@ -8,7 +8,7 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "RenderingManager.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Render/ImGuiRenderState.h"
 #include "PluEngine/Render/OpenGLRenderState.h"
 #include "PluEngine/Core/Threading/TripleBuffer.h"

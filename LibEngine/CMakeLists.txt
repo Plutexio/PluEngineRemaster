@@ -74,6 +74,11 @@ target_include_directories(pybind11 INTERFACE "${PLU_THIRDPARTY_DIR}/pybind11/in
 add_library(glm INTERFACE)
 target_include_directories(glm INTERFACE "${PLU_THIRDPARTY_DIR}/glm")
 
+# The names PluBase asks for; with these defined it uses the vendored copies instead of
+# find_package.
+add_library(spdlog::spdlog ALIAS spdlog)
+add_library(glm::glm ALIAS glm)
+
 find_package(imgui CONFIG REQUIRED)
 
 add_library(ImGuizmo STATIC "${PLU_THIRDPARTY_DIR}/ImGuizmo/ImGuizmo.cpp")
@@ -98,8 +103,13 @@ if (WIN32)
     target_compile_definitions(glad PUBLIC GLAD_GLAPI_EXPORT)
 endif ()
 
-# Third-party shared libraries that, like the engine modules, have to sit next to the executable.
-set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog
+# PluBase: common types, logging, asserts, UUIDs and thread affinity, a library of its own so other
+# projects can use it without the engine. Here, after the third-party targets it links.
+add_subdirectory("${CMAKE_SOURCE_DIR}/PluBase" "${CMAKE_BINARY_DIR}/PluBase")
+
+# Shared libraries outside the engine modules that, like the modules, have to sit next to the
+# executable.
+set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog PluBase
         CACHE INTERNAL "Third-party shared libraries consumers copy next to their executable."
 )
 
@@ -209,7 +219,7 @@ function(plu_add_engine_module NAME)
     target_precompile_headers(${NAME} PRIVATE
             "${CMAKE_SOURCE_DIR}/PluSTL/include/PluSTL/PluSTL_FWD.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Core.h"
-            "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h"
+            "${CMAKE_SOURCE_DIR}/PluBase/include/PluBase/Log.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h"
             "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h"
             # Third-party headers nearly every TU reaches through X.generated.h → ReflectionBase.h

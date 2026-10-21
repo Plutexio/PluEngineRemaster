@@ -896,7 +896,7 @@ counterparts. It handles directly:
 | `float` / `double` | Bits, **after canonicalizing**: `-0.0` hashes as `+0.0` (they compare equal) and every NaN hashes alike. |
 | `T*` | The address. |
 | `std::pair<A, B>` | `DefaultHash<A>` of `first`, then `HashCombine` with `DefaultHash<B>` of `second` — both members need a `DefaultHash`, nests (`pair<String, EngineObjectHandle>`, `pair<pair<…>, …>`). Order matters. Without it a pair key would not compile: `std::pair` is never trivially copyable. |
-| `Vec2/3/4`, `IVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluEngine/Core/GlmHash.h`, pulled in by `PluTypes.h`. Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
+| `Vec2/3/4`, `IVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluBase/GlmHash.h`, pulled in by `PluBase/Types.h` (and so by `PluTypes.h`). Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
 | `String` / `StringW` (`BasicString`), `Path` / `PathW` (`BasicPath`) | FNV-1a over the characters, so two equal strings hash equally regardless of SSO vs heap. |
 | `const char*` / `char*` / `const wchar_t*` / `wchar_t*` | The text, not the pointer. `nullptr` → 0. |
 | anything else | **Falls back to hashing the object's raw bytes.** |
@@ -1208,7 +1208,9 @@ a value. For anything else, pass a plain `String` by value.
 
 ---
 
-## Logowanie — `PluEngine/Log.h`
+## Logging — `PluBase/Log.h`
+
+Logging, asserts, the integer/math aliases, `PluUUID` and thread affinity live in **PluBase** (`PluBase/`, its own shared library linked by `PluCore`), so other projects can use them without the engine. The API is unchanged; only the include paths moved to `PluBase/…`.
 
 Makra spdlog. Wersje `PLU_CORE_*` logują na logger silnika, `PLU_*` na logger klienta/gry.
 Format z placeholderami `{0}`, `{1}`, …
@@ -1221,7 +1223,7 @@ Format z placeholderami `{0}`, `{1}`, …
 | `PLU_ERROR(...)` / `PLU_CORE_ERROR(...)` | error |
 | `PLU_CRITICAL(...)` / `PLU_CORE_CRITICAL(...)` | critical |
 
-`Plu::Log::Init()` inicjalizuje loggery (wołane raz przy starcie).
+`Plu::Log::Init(coreLoggerName = "ENGINE", clientLoggerName = "APP")` creates both loggers; call it once at startup (the engine does, in `Application`). The names are what shows up in every log line.
 
 ## Profilowanie / timery — `PluEngine/Timer.h` + `PluEngine/Profiler.h`
 
@@ -1344,17 +1346,18 @@ Render-thread particle state for the **Debug Particles** panel (View → Debug).
 | `struct ParticlePointBuffer` | (`PluEngine/Render/ParticlePointBuffer.h`) Render thread. One spawner's VAO + VBO of positions (attribute 0, vec3) drawn as `GL_POINTS`: `Upload(positions, count)` (GL objects created lazily, capacity grows 2x, storage orphaned each upload), `Draw()`, `Destroy()`. A copyable **handle**, not move-only RAII — `HashMap` copies values on rehash — so call `Destroy` exactly once. Drawn by `Renderer::RenderParticles` with `EngineAssets::ParticlePointProgram` (`uViewProj`, `uColor`); color and point size per spawner come from `ParticleClass::Color` / `PointSize` (clamped to >= 1 px). |
 | `const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& SceneWorld::GetParticleSpawnerComponents() const` | Main thread. Live spawner components by component UUID — the same UUID the render-side stats use. |
 
-## Debug / asercje — `PluEngine/Core.h`
+## Debug / asserts — `PluBase/Assert.h` (pulled in by `PluEngine/Core.h`)
 
 | Makro | Opis |
 |---|---|
 | `PLU_ASSERT(x, msg...)` | Asercja na loggerze klienta (tylko `PLU_DEBUG`). |
 | `PLU_CORE_ASSERT(x, msg...)` | Asercja na loggerze silnika (tylko `PLU_DEBUG`). |
 | `PLU_DEBUGBREAK()` | Przerwanie debuggera (`__debugbreak` / `SIGTRAP`); no-op poza debugiem. |
+| `PLU_ENABLE_ASSERTS` | Defined by `PluBase/Base.h` when `PLU_DEBUG` is (the PluBase target sets `PLU_DEBUG` for Debug); define it yourself to keep asserts in other configurations. |
 
 ---
 
-## Thread affinity — `PluEngine/Threading/ThreadAffinity.h` (`namespace Plu`)
+## Thread affinity — `PluBase/ThreadAffinity.h` (`namespace Plu`)
 
 Identyfikacja wątku głównego dla egzekwowania thread-confinementu (multithreading: core mutowany tylko na main, render czyta snapshot) + nazwy wątków dla diagnostyki.
 

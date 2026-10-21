@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 
 namespace Plu {
 

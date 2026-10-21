@@ -6,7 +6,7 @@
 #define PLUENGINE_SHADERCODE_H
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "ShaderCode.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "glm/vec4.hpp"

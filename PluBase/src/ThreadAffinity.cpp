@@ -2,7 +2,7 @@
 // Created by Plutex.
 //
 
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 
 #include <sstream>
 

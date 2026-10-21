@@ -7,7 +7,7 @@
 
 #include "glm/detail/type_quat.hpp"
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Effects/Particles/Particle.h"
 #include "PluEngine/Effects/Particles/ParticleAttributes.h"
 #include "PluEngine/Effects/Particles/CompiledParticleSystem.h"

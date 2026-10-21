@@ -5,7 +5,7 @@
 #include "PluEngine/Platform/WindowsManager.h"
 
 #include "PluEngine/Core/ApplicationInfo.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 #include "PluEngine/Timer.h"
 

@@ -21,7 +21,7 @@
 #include "PluEngine/Render/ImGuiDrawSnapshot.h"
 #include "PluEngine/Render/Renderer.h"
 #include "PluEngine/Render/RenderThreading.h"
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 #include "PluEngine/FrameDemand.h"
 #include "PluEngine/Platform/Window.h"
 

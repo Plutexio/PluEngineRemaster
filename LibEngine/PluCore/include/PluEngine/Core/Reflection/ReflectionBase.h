@@ -12,7 +12,7 @@
 #include "json_fwd.hpp"
 #include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #pragma warning(push, 0)
 #include "pybind11/pybind11.h"
 #pragma warning(pop)

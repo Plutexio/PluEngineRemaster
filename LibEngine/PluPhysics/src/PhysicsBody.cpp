@@ -4,7 +4,7 @@
 
 #include "PluEngine/Physics/PhysicsBody.h"
 #include <Jolt/Physics/Body/Body.h>
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 using namespace Plu;
 

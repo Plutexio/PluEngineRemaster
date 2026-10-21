@@ -7,7 +7,7 @@
 #include "glad/glad.h"
 #include "imgui_impl_sdl3.h"
 #include "PluEngine/Platform/SDLInputBackend.h"
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 #include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_LINUX

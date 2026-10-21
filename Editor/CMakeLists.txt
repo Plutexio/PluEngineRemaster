@@ -184,7 +184,7 @@ target_compile_definitions(PluEditor PRIVATE JPH_DEBUG_RENDERER)
 
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluSTL/include/PluSTL/PluSTL_FWD.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Core.h")
-target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h")
+target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluBase/include/PluBase/Log.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h")
 target_precompile_headers(PluEditor PUBLIC ${PLU_THIRDPARTY_PCH_HEADERS})

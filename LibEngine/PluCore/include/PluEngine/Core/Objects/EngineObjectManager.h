@@ -9,7 +9,7 @@
 
 #include "EngineObjectHandle.h"
 #include "PluEngine/Core.h"
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 
 #include <mutex>
 #include <shared_mutex>

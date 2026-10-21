@@ -6,7 +6,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/Platform/Window.h"
 
 #ifdef PLU_PLATFORM_WINDOWS

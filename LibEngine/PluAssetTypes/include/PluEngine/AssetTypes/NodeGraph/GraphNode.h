@@ -6,7 +6,7 @@
 #define PLUENGINE_GRAPHNODE_H
 
 #include "PluEngine/Core.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
 #include "PluEngine/AssetTypes/NodeGraph/GraphEvalContext.h"
 #include "PluSTL/Array/Array.h"

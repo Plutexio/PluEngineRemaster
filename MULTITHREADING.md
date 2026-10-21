@@ -114,7 +114,7 @@ pushed it already stated what it needs. Off-thread wakes are collapsed by a flag
 
 ## Klocki
 
-### ThreadAffinity (`Threading/ThreadAffinity.h`)
+### ThreadAffinity (`PluBase/ThreadAffinity.h`)
 `RegisterMainThread()` (1. linia EngineInit) / `IsOnMainThread()` / `GetMainThreadId()`.
 `IsOnMainThread()` zwraca `true` przed rejestracją — pre-init i narzędzia standalone nie strzelają.
 Konwencja detekcji wątku w kodzie silnika: `if (!IsOnMainThread())` = „jestem na renderze".

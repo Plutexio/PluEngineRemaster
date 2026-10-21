@@ -8,7 +8,7 @@
 #include <glad/glad.h>
 #include <type_traits>
 #include "PluEngine/Core.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluSTL/Array/Array.h"
 
 // When glm is reachable, detect 3-component glm vectors so we can reject them as T:

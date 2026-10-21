@@ -11,7 +11,7 @@
 #include "PluEngine/Platforms/Windows/WindowsWindow.h"
 #include "PluEngine/Engine.h"
 #include "PluEngine/FrameDemand.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/Timer.h"
 #include "PluEngine/AssetCore/AssetReflectionHooks.h"
 #include "PluEngine/Scripting/PythonObjectFactory.h"
@@ -32,7 +32,7 @@
 #include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
 #include "PluEngine/Render/RenderThreading.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 #include "PluEngine/Core/Threading/TripleBuffer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 
