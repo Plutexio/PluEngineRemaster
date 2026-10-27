@@ -18,6 +18,7 @@
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Render/RenderingInterfaces.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Buttons.h"
 #include "Utils/AttachPointOverlay.h"
 #include "Utils/GizmoUtils.h"
 
@@ -301,22 +302,16 @@ void Plu::SkeletonViewportPanel::OnUpdate(float deltaTime)
 			// in this viewport is manipulable).
 			if (hierarchy && !hierarchy->SelectedAttachPointName.IsEmpty())
 			{
-				auto toolButton = [](const char* label, bool active) -> bool {
-					if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-					const bool clicked = ImGui::SmallButton(label);
-					if (active) ImGui::PopStyleColor();
-					return clicked;
-				};
 				ImGui::SameLine(0.0f, 16.0f);
-				if (toolButton(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, viewport->GizmoOp == GizmoOperation::TRANSLATE))
+				if (ImGuiWidgets::SmallToggleButton(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, viewport->GizmoOp == GizmoOperation::TRANSLATE, "Move"))
 					viewport->GizmoOp = GizmoOperation::TRANSLATE;
 				ImGui::SameLine();
-				if (toolButton(ICON_FA_ROTATE, viewport->GizmoOp == GizmoOperation::ROTATE))
+				if (ImGuiWidgets::SmallToggleButton(ICON_FA_ROTATE, viewport->GizmoOp == GizmoOperation::ROTATE, "Rotate"))
 					viewport->GizmoOp = GizmoOperation::ROTATE;
 				ImGui::SameLine();
 				const bool isWorld = viewport->GizmoSpace == GizmoOperationSpace::WORLD;
 				// Single toggle showing (and switching) the current space.
-				if (toolButton(isWorld ? ICON_FA_GLOBE " World" : ICON_FA_CUBE " Local", false))
+				if (ImGui::SmallButton(isWorld ? ICON_FA_GLOBE " World" : ICON_FA_CUBE " Local"))
 					viewport->GizmoSpace = isWorld ? GizmoOperationSpace::LOCAL : GizmoOperationSpace::WORLD;
 			}
 			ImGui::EndGroup();

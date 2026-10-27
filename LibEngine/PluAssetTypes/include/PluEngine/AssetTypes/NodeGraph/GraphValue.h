@@ -117,7 +117,7 @@ namespace Plu
 				case EGraphValueType::Float: return ImGui::DragFloat(name.CStr(), &graphValue.Float, 0.01f);
 				case EGraphValueType::Int:   return ImGui::DragInt(name.CStr(), &graphValue.Int);
 				case EGraphValueType::Bool:  return ImGui::Checkbox(name.CStr(), &graphValue.Bool);
-				case EGraphValueType::Vec3:  return ImGui::DragFloat3(name.CStr(), &graphValue.Vector.x, 0.01f);
+				case EGraphValueType::Vec3:  return ImGuiWidgets::DragVector(name.CStr(), &graphValue.Vector.x, 3, 0.01f);
 			}
 			return false;
 		}

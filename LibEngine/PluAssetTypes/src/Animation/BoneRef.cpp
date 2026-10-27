@@ -18,6 +18,7 @@ namespace Plu
 #ifdef PLU_ENGINE_EDITOR_BUILD
 
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 
 namespace Plu
 {
@@ -86,25 +87,19 @@ namespace Plu
         bool changed = false;
 
         if (ImGui::BeginCombo(name.CStr(), ref->Name.IsEmpty() ? "(none)" : ref->Name.CStr())) {
-            static char filterBuffer[128] = "";
-
+            static ImGuiTextFilter filter;
             if (ImGui::IsWindowAppearing()) {
-                filterBuffer[0] = '\0';
                 BuildBonePickerChildren(layout);
-                ImGui::SetKeyboardFocusHere();
             }
+            ImGuiWidgets::PopupSearchBar(&filter, "Search bones...");
 
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##BoneFilter", filterBuffer, sizeof(filterBuffer));
-            const String filter = String(filterBuffer).ToLower();
-
-            if (filter.IsEmpty()) {
+            if (!filter.IsActive()) {
                 for (Int32 i = 0; i < static_cast<Int32>(layout.NodeCount()); ++i) {
                     if (layout.ParentIndex[i] < 0 && DrawBonePickerNode(i, layout, ref)) changed = true;
                 }
             } else {
                 for (UInt64 i = 0; i < layout.NodeCount(); ++i) {
-                    if (!layout.NodeName[i].ToLower().Contains(filter.CStr())) continue;
+                    if (!filter.PassFilter(layout.NodeName[i].CStr())) continue;
                     const bool selected = (layout.NodeName[i] == ref->Name);
                     if (ImGui::Selectable(layout.NodeName[i].CStr(), selected)) {
                         ref->Name = layout.NodeName[i];

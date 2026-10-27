@@ -18,6 +18,9 @@
 #include "ClassPointer.h"
 #include "PluEngine/Core/IAssetData.h"
 #include "PluEngine/Core/CollisionChannels.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
+#include "UI/IconsFontAwesome7.h"
 
 namespace Plu
 {
@@ -504,19 +507,14 @@ namespace Plu
 			if (ImGui::BeginCombo(name.CStr(), preview.CStr(), 0))
             {
                 // Refresh lives inside the dropdown to keep the row uncluttered.
-                if (ImGui::SmallButton("Refresh")) {
+                static ImGuiTextFilter filter;
+                const float refreshSize = ImGui::GetFrameHeight();
+                ImGuiWidgets::PopupSearchBar(&filter, "Search...", -(refreshSize + ImGui::GetStyle().ItemSpacing.x));
+                ImGui::SameLine();
+                if (ImGui::Button(ICON_FA_ROTATE "##Refresh", ImVec2(refreshSize, refreshSize))) {
                     candidates = objectManager->GetAllObjectsOfClass(T::GetStaticClass());
                 }
-                ImGui::SameLine();
-
-                static ImGuiTextFilter filter;
-                if (ImGui::IsWindowAppearing())
-                {
-                    ImGui::SetKeyboardFocusHere();
-                    filter.Clear();
-                }
-                ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-                filter.Draw("##Filter", -FLT_MIN);
+                ImGui::SetItemTooltip("Refresh the list");
 
                 for (int n = 0; n < candidates.Size(); n++)
                 {
@@ -713,7 +711,7 @@ namespace Plu
 
 		static bool EditorControl(void* value, const String& name)
 		{
-			return ImGui::DragFloat2(name.CStr(), &static_cast<glm::vec2*>(value)->x, 0.1f);
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::vec2*>(value)->x, 2, 0.1f);
 		}
 	};
 
@@ -739,7 +737,7 @@ namespace Plu
 			if (name.Contains("color") || name.Contains("colour") || name.Contains("Color") || name.Contains("Colour")) {
 				return ImGui::ColorEdit3(name.CStr(), &static_cast<glm::vec3*>(value)->x);
 			} else {
-				return ImGui::DragFloat3(name.CStr(), &static_cast<glm::vec3*>(value)->x, 0.1f);
+				return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::vec3*>(value)->x, 3, 0.1f);
 			}
 		}
 	};
@@ -767,7 +765,7 @@ namespace Plu
 			if (name.Contains("color") || name.Contains("colour") || name.Contains("Color") || name.Contains("Colour")) {
 				return ImGui::ColorEdit4(name.CStr(), &static_cast<glm::vec4*>(value)->x);
 			} else {
-				return ImGui::DragFloat4(name.CStr(), &static_cast<glm::vec4*>(value)->x, 0.1f);
+				return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::vec4*>(value)->x, 4, 0.1f);
 			}
 		}
 	};
@@ -795,7 +793,7 @@ namespace Plu
 
 			glm::vec3 euler = glm::degrees(glm::eulerAngles(q));
 
-			if (ImGui::DragFloat3(name.CStr(), &euler.x, 0.5f))
+			if (ImGuiWidgets::DragVector(name.CStr(), &euler.x, 3, 0.5f))
 			{
 				q = glm::quat(glm::radians(euler));
 				q = glm::normalize(q);

@@ -143,7 +143,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./Managers/Shaders/EditorShaderManager.h
         ./Panels/EditorPanel.h
         ./Panels/EditorPanelManager.h
-        ./Utils/RGBTransformDragger.h
         DefinedPanels/TextureViewerPanel.h
         DefinedPanels/TextureViewerPanel.cpp
         Managers/Assets/EditorAssetCreator.cpp

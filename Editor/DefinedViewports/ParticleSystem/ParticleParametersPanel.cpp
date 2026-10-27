@@ -10,6 +10,8 @@
 #include "EditorAppContext.h"
 #include "PluEngine/Core/Widgets/Combo.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 
@@ -43,7 +45,7 @@ void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
 		TUsePointer<ParticleSystemViewport> viewport = DynamicCast<ParticleSystemViewport>(GetParentViewport());
 		TUsePointer<ParticleSystem> system = viewport ? viewport->GetSystem() : nullptr;
 		if (!system) {
-			ImGui::TextDisabled("No ParticleSystem asset loaded");
+			ImGuiWidgets::EmptyState("No ParticleSystem asset loaded", ICON_FA_WAND_MAGIC_SPARKLES);
 			EndPanel();
 			return;
 		}
@@ -93,11 +95,8 @@ void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
 			ImGui::PushID(parameter.GetRaw());
 
 			if (mRenamingParameter == parameter->Name) {
-				ImGui::SetNextItemWidth(-FLT_MIN);
-				const bool submitted = ImGui::InputText("##rename", mRenameBuffer, sizeof(mRenameBuffer),
-					ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-				if (submitted || ImGui::IsItemDeactivated()) {
-					const String newName(mRenameBuffer);
+				if (ImGuiWidgets::InlineRenameField(&mRename)) {
+					const String newName(mRename.Buffer);
 					// Names are identity (parameter nodes reference them): unique, non-empty, changed.
 					if (!newName.IsEmpty() && newName != parameter->Name && !system->FindParameter(newName).IsValid()) {
 						parameter->Name = newName;
@@ -123,8 +122,7 @@ void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
 				viewport->SelectParameter(parameter);
 				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					mRenamingParameter = parameter->Name;
-					snprintf(mRenameBuffer, sizeof(mRenameBuffer), "%s", parameter->Name.CStr());
-					ImGui::SetKeyboardFocusHere();
+					mRename.Begin(parameter->Name.CStr());
 				}
 			}
 
@@ -139,7 +137,7 @@ void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
 				viewport->SelectParameter(parameter);
 				if (ImGui::MenuItem("Rename")) {
 					mRenamingParameter = parameter->Name;
-					snprintf(mRenameBuffer, sizeof(mRenameBuffer), "%s", parameter->Name.CStr());
+					mRename.Begin(parameter->Name.CStr());
 				}
 				if (ImGui::MenuItem("Delete")) toRemove = index;
 				ImGui::EndPopup();

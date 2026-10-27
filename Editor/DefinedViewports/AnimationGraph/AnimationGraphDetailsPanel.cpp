@@ -13,6 +13,8 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetTypes/NodeGraph/GraphNode.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 
@@ -95,7 +97,7 @@ void Plu::AnimationGraphDetailsPanel::OnUpdate(float deltaTime)
 		TUsePointer<AnimationGraphViewport> viewport = DynamicCast<AnimationGraphViewport>(GetParentViewport());
 
 		if (!animationGraph || !viewport) {
-			ImGui::TextDisabled("No AnimationGraph asset loaded");
+			ImGuiWidgets::EmptyState("No AnimationGraph asset loaded", ICON_FA_DIAGRAM_PROJECT);
 			EndPanel();
 			return;
 		}

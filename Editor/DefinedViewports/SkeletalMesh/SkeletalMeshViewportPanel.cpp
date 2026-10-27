@@ -31,6 +31,7 @@
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Buttons.h"
 #include "Utils/AttachPointOverlay.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
@@ -516,26 +517,20 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 
 			// Overlay controls pinned top-left over the image (like the Skeleton/Animation viewports):
 			// gizmo operation (move/rotate/scale) and space (world/local).
-			auto toolButton = [](const char* label, bool active) -> bool {
-				if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-				const bool clicked = ImGui::Button(label);
-				if (active) ImGui::PopStyleColor();
-				return clicked;
-			};
 			ImGui::SetCursorScreenPos(ImVec2(pos.x + 8.0f, pos.y + 8.0f));
 			ImGui::BeginGroup();
-			if (toolButton(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, parentViewport->GizmoOp == GizmoOperation::TRANSLATE))
+			if (ImGuiWidgets::ToggleButton(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, parentViewport->GizmoOp == GizmoOperation::TRANSLATE, ImVec2(0, 0), "Move"))
 				parentViewport->GizmoOp = GizmoOperation::TRANSLATE;
 			ImGui::SameLine();
-			if (toolButton(ICON_FA_ROTATE, parentViewport->GizmoOp == GizmoOperation::ROTATE))
+			if (ImGuiWidgets::ToggleButton(ICON_FA_ROTATE, parentViewport->GizmoOp == GizmoOperation::ROTATE, ImVec2(0, 0), "Rotate"))
 				parentViewport->GizmoOp = GizmoOperation::ROTATE;
 			ImGui::SameLine();
-			if (toolButton(ICON_FA_MAXIMIZE, parentViewport->GizmoOp == GizmoOperation::SCALE))
+			if (ImGuiWidgets::ToggleButton(ICON_FA_MAXIMIZE, parentViewport->GizmoOp == GizmoOperation::SCALE, ImVec2(0, 0), "Scale"))
 				parentViewport->GizmoOp = GizmoOperation::SCALE;
 			ImGui::SameLine(0.0f, 16.0f);
 			const bool isWorld = parentViewport->GizmoSpace == GizmoOperationSpace::WORLD;
 			// Single toggle showing (and switching) the current space.
-			if (toolButton(isWorld ? ICON_FA_GLOBE " World" : ICON_FA_CUBE " Local", false))
+			if (ImGui::Button(isWorld ? ICON_FA_GLOBE " World" : ICON_FA_CUBE " Local"))
 				parentViewport->GizmoSpace = isWorld ? GizmoOperationSpace::LOCAL : GizmoOperationSpace::WORLD;
 
 			// Reset just the selected bone — only shown once it's actually been posed.

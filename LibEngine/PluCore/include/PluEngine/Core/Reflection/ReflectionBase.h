@@ -8,18 +8,14 @@
 #include <functional>
 
 #include "imgui.h"
-#include "json.hpp"
-#include "json_fwd.hpp"
 #include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"
 #include "PluBase/Log.h"
-#pragma warning(push, 0)
-#include "pybind11/pybind11.h"
-#pragma warning(pop)
 
 #include "ReflectionBase.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Events/EventDispatcher.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 
 namespace Plu
 {
@@ -357,13 +353,7 @@ namespace Plu
 					if (ImGui::BeginCombo(name.CStr(), previewLabel, ImGuiComboFlags_WidthFitPreview))
 					{
 						static ImGuiTextFilter filter;
-						if (ImGui::IsWindowAppearing())
-						{
-							ImGui::SetKeyboardFocusHere();
-							filter.Clear();
-						}
-						ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-						filter.Draw("##Filter", -FLT_MIN);
+						ImGuiWidgets::PopupSearchBar(&filter);
 
 						bool changed = false;
 

@@ -20,7 +20,7 @@
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
-#include "Utils/RGBTransformDragger.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -134,8 +134,7 @@ void Plu::SkeletalMeshDetailsPanel::OnUpdate(float deltaTime)
 
 				if (preview.Mesh)
 				{
-					RGBTransformDrag3("Scale", glm::value_ptr(preview.Scale), 3, 0.01f,
-					                  nullptr, nullptr, "%.3f", 0);
+					ImGuiWidgets::DragVector("Scale", glm::value_ptr(preview.Scale), 3, 0.01f);
 					if (ImGui::SmallButton(ICON_FA_ROTATE_LEFT " Reset Scale"))
 						preview.Scale = Vec3(1.0f);
 					ImGui::SameLine();

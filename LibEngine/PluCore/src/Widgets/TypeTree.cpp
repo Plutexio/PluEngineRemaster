@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include "PluEngine/Timer.h"
 #include "UI/IconsFontAwesome7.h"
 
@@ -190,10 +191,7 @@ bool Plu::ImGuiWidgets::TypeTree(TypeInfo* root, TypeInfo** output, const char* 
     // Search box + refresh button.
     static ImGuiTextFilter filter;
     const float buttonSize = ImGui::GetFrameHeight();
-    ImGui::SetNextItemWidth(width - buttonSize - style.ItemSpacing.x);
-    if (ImGui::InputTextWithHint("##Search", ICON_FA_MAGNIFYING_GLASS "  Search types...", filter.InputBuf, IM_ARRAYSIZE(filter.InputBuf))) {
-        filter.Build();
-    }
+    SearchBar("##Search", &filter, "Search types...", width - buttonSize - style.ItemSpacing.x);
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ROTATE, ImVec2(buttonSize, buttonSize))) {
         BuildTypeTree();

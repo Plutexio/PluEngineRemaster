@@ -7,6 +7,7 @@
 #include "EditorViewports/IEditorPanel.h"
 #include "ParticleParametersPanel.generated.h"
 #include "PluEngine/Core.h"
+#include "PluEngine/Core/Widgets/InlineRename.h"
 
 namespace Plu
 {
@@ -17,7 +18,7 @@ namespace Plu
 		REFLECTION_BODY_PARTICLEPARAMETERSPANEL()
 	private:
 		String mRenamingParameter;
-		char mRenameBuffer[128] = {};
+		ImGuiWidgets::InlineRenameState mRename;
 	public:
 		ParticleParametersPanel() = default;
 		~ParticleParametersPanel() override = default;

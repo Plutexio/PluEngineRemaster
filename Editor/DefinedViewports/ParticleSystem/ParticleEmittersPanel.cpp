@@ -7,6 +7,8 @@
 #include "ParticleSystemViewport.h"
 #include "PluEngine/Effects/Particles/ParticleSystem.h"
 #include "PluEngine/Effects/Particles/Nodes/ParticleEmitterOutputNode.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 Plu::String Plu::ParticleEmittersPanel::GetPanelName() { return "Emitters"; }
 void Plu::ParticleEmittersPanel::OnClosed() {}
@@ -19,7 +21,7 @@ void Plu::ParticleEmittersPanel::OnUpdate(float deltaTime)
 		TUsePointer<ParticleSystemViewport> viewport = DynamicCast<ParticleSystemViewport>(GetParentViewport());
 		TUsePointer<ParticleSystem> system = viewport ? viewport->GetSystem() : nullptr;
 		if (!system) {
-			ImGui::TextDisabled("No ParticleSystem asset loaded");
+			ImGuiWidgets::EmptyState("No ParticleSystem asset loaded", ICON_FA_WAND_MAGIC_SPARKLES);
 			EndPanel();
 			return;
 		}
@@ -49,13 +51,10 @@ void Plu::ParticleEmittersPanel::OnUpdate(float deltaTime)
 			ImGui::PushID(emitter);
 
 			if (mRenamingEmitter == emitter->Uuid) {
-				ImGui::SetNextItemWidth(-FLT_MIN);
-				const bool submitted = ImGui::InputText("##rename", mRenameBuffer, sizeof(mRenameBuffer),
-					ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-				if (submitted || ImGui::IsItemDeactivated()) {
+				if (ImGuiWidgets::InlineRenameField(&mRename)) {
 					// Empty / unchanged names revert silently, so Esc never dirties the asset.
-					if (mRenameBuffer[0] != '\0' && emitter->EmitterName != mRenameBuffer) {
-						emitter->EmitterName = mRenameBuffer;
+					if (mRename.Buffer[0] != '\0' && emitter->EmitterName != mRename.Buffer) {
+						emitter->EmitterName = mRename.Buffer;
 						PanelChangedAsset();
 					}
 					mRenamingEmitter = PluUUID(0);
@@ -71,8 +70,7 @@ void Plu::ParticleEmittersPanel::OnUpdate(float deltaTime)
 				viewport->SelectEmitter(emitter->Uuid);
 				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					mRenamingEmitter = emitter->Uuid;
-					snprintf(mRenameBuffer, sizeof(mRenameBuffer), "%s", emitter->EmitterName.CStr());
-					ImGui::SetKeyboardFocusHere();
+					mRename.Begin(emitter->EmitterName.CStr());
 				}
 			}
 
@@ -80,7 +78,7 @@ void Plu::ParticleEmittersPanel::OnUpdate(float deltaTime)
 				viewport->SelectEmitter(emitter->Uuid);
 				if (ImGui::MenuItem("Rename")) {
 					mRenamingEmitter = emitter->Uuid;
-					snprintf(mRenameBuffer, sizeof(mRenameBuffer), "%s", emitter->EmitterName.CStr());
+					mRename.Begin(emitter->EmitterName.CStr());
 				}
 				if (ImGui::MenuItem("Move Up", nullptr, false, index > 0)) { moveFrom = index; moveTo = index - 1; }
 				if (ImGui::MenuItem("Move Down", nullptr, false, index + 1 < static_cast<Int32>(system->Emitters.Size()))) {

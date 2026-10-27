@@ -6,12 +6,12 @@
 #include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
-#include "imgui_stdlib.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/Core/IAssetData.h"
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include "UI/IconsFontAwesome7.h"
 
 namespace
@@ -53,8 +53,8 @@ void Plu::LoadedAssetsPanel::OnUpdate(float deltaTime)
 			}
 		}
 
-		static std::string filter;
-		ImGui::InputTextWithHint("##filter", ICON_FA_MAGNIFYING_GLASS " Filter by name/path", &filter);
+		static ImGuiTextFilter filter;
+		ImGuiWidgets::SearchBar("##filter", &filter, "Filter by name/path");
 		ImGui::Separator();
 
 		for (TypeInfo* type : assetTypes) {
@@ -86,8 +86,7 @@ void Plu::LoadedAssetsPanel::OnUpdate(float deltaTime)
 					}
 
 					String path = desc->AssetPath.ToString();
-					if (!filter.empty() &&
-					    !desc->AssetName.Contains(filter.c_str()) && !path.Contains(filter.c_str())) {
+					if (!filter.PassFilter(desc->AssetName.CStr()) && !filter.PassFilter(path.CStr())) {
 						continue;
 					}
 

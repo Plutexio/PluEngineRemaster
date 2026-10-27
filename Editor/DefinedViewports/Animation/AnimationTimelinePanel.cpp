@@ -14,6 +14,7 @@
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Text.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 
@@ -155,7 +156,7 @@ void Plu::AnimationTimelinePanel::OnUpdate(float deltaTime)
 
 	if (!viewport || !animation)
 	{
-		ImGui::TextDisabled("No animation data.");
+		ImGuiWidgets::EmptyState("No animation data", ICON_FA_FILM);
 		EndPanel();
 		return;
 	}

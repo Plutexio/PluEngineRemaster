@@ -20,6 +20,7 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "Managers/Assets/EditorAssetManager.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Text.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 
@@ -122,7 +123,7 @@ void Plu::ParticlesDebugPanel::OnUpdate(float deltaTime)
 		                              ? gEditorAppContext->EditorScenesManager->GetCurrentWorld()
 		                              : TUsePointer<SceneWorld>();
 		if (!world) {
-			ImGui::TextDisabled("No scene open.");
+			ImGuiWidgets::EmptyState("No scene open", ICON_FA_MOUNTAIN_SUN);
 		} else {
 			DrawSummary(world, stats);
 			DrawSpawnerTable(world, stats);

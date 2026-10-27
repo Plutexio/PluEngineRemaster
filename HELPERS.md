@@ -1663,7 +1663,10 @@ pozostałe moduły projektu są już wyrzucone z `sys.modules` i jeszcze nie zai
 
 ## ImGui widgets — `PluEngine/Core/Widgets/`
 
-Header-only, usable from every engine module and the editor (not gated on `PLU_ENGINE_EDITOR_BUILD`).
+In `PluCore` (namespace `Plu::ImGuiWidgets`), usable from every engine module and the editor (not gated
+on `PLU_ENGINE_EDITOR_BUILD`, unlike `TypeTree`). Reach for these before hand-rolling the same thing
+with raw ImGui — they exist because the pattern was copy-pasted across panels. Widgets that draw icons
+need the editor font (Font Awesome merged in); in the runtime the glyphs fall back to `?`.
 
 | Function | File | Description |
 |---|---|---|
@@ -1676,18 +1679,28 @@ ImGuiWidgets::Combo("Attach to", &index, components,
                     [](const TUsePointer<WorldComponent>& c) { return c->GetComponentName(); });
 ```
 
+| Function | File | Description |
+|---|---|---|
+| `bool SearchBar(const char* id, ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | Search field over an `ImGuiTextFilter` (case-insensitive, `a,b` = either, `-a` = exclude): magnifier on the left, clear button on the right while there is text, Ctrl+F focuses it while its window has focus. Rebuilds the filter itself; `width` as in `SetNextItemWidth`. Returns `true` when the text changes. Filter rows with `filter.PassFilter(name)`. |
+| `bool PopupSearchBar(ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | `SearchBar` for the top of a popup / combo dropdown: clears the filter and takes keyboard focus when the popup appears. Used by every searchable reflection combo (enums, asset/object pickers, `BoneRef`) and the node palette. |
+| `bool DragVector(const char* label, float* values, int components, float speed = 0.1f, float min = 0, float max = 0, const char* format = "%.3f", ImGuiSliderFlags flags = 0)` | `DragVector.h` | 1–4 `DragFloat`s on one line, each marked with its axis colour (bar on the left edge: X red, Y green, Z blue, W grey). `min == max` = unclamped. What every reflected `Vec2/Vec3/Vec4` (non-colour) and `Quaternion` (as Euler degrees) draws, plus the transform rows of the details panels. Wrappers `DragVec2/3/4(label, Vec*, ...)`. |
+| `bool IconButton(const char* label, const ImVec2& size = {}, const char* tooltip = nullptr, EIconButtonTone tone = Neutral)` | `Buttons.h` | Frameless button: transparent until hovered. `EIconButtonTone::Danger` hovers red (close/delete). For toolbar / title-bar icon clusters and controls over a viewport image. Text colour is the caller's (`PushStyleColor(ImGuiCol_Text, ...)`). |
+| `bool ToggleButton(const char* label, bool active, const ImVec2& size = {}, const char* tooltip = nullptr)` / `SmallToggleButton(label, active, tooltip)` | `Buttons.h` | Button filled with the theme accent while `active` — tool pickers (gizmo move/rotate/scale). Returns `true` on click; flipping the state is the caller's job. The small variant matches `SmallButton`. |
+| `bool PrimaryButton(const char* label, const ImVec2& size = {})` | `Buttons.h` | Accent-filled button for the main action of a dialog (Save All, Open, Create). |
+| `ImVec4 GetAccentColor()` / `GetAccentColorHovered()` / `GetAccentColorActive()` | `Buttons.h` | The theme accent (`ImGuiCol_CheckMark`) and its hover/press variants, for custom widgets that fill with it. |
+| `struct InlineRenameState { char Buffer[128]; bool FocusPending; void Begin(const char* currentName); }` + `bool InlineRenameField(InlineRenameState*, const char* id = "##rename")` | `InlineRename.h` | Rename in place of a list row. The panel keeps one state plus "which row is being renamed"; `Begin` copies the name and focuses the field on its next draw. Draw `InlineRenameField` instead of the row while renaming; it returns `true` when editing ends (Enter / click outside / Esc — Esc restores the old text, so a commit that ignores unchanged names writes nothing). Used by Structure, Animation Graph Variables, Particle Emitters/Parameters. |
+| `void TextCentered(const char* text)` / `void TextCenteredBoth(const char* text)` | `Text.h` | Text centred horizontally (both: and vertically) in the content region left from the cursor. |
+| `void EmptyState(const char* text, const char* icon = nullptr)` | `Text.h` | Placeholder for a panel with nothing to show ("No ParticleSystem asset loaded"): dimmed, wrapped text centred in the remaining region with an optional large icon above. Draw it instead of the panel's content. |
+
 ## Editor — `Editor/Utils/`
 
 | Funkcja | Plik | Opis |
 |---|---|---|
-| `bool RGBTransformDrag3(label, p_data, components, v_speed, p_min, p_max, format, flags)` | `RGBTransformDragger.h` | Wieloskładnikowy `DragScalar` z kolorowaniem osi R/G/B (transform widget w ImGui). |
 | `void DrawMoveToWindowMenu(currentWindowID, kindFilter, newWindowTitle, onMove)` | `EditorWindows/EditorWindowMoveMenu.h` | Podmenu „Move To Window" — „Move to New Window" + lista istniejących okien (bez bieżącego i bez `SinglePanel`, które są jednomiejscowe). Wołaj zaraz po `ImGui::Begin()` w `BeginPopupContextItem()` — ImGui ustawia wtedy „last item" na tab docka, czyli to jest dokładnie PPM na tabie. `onMove` dostaje docelowy `windowID`, już utworzony przy wyborze nowego okna. |
 | `String StripImGuiIDFromName(const String& imguiName)` | `EditorWindows/EditorWindowsManager.h` | Ucina id ImGui z nazwy okna (`"Details##SceneViewport"` → `"Details"`, `"###Id"` → `"Id"`). Używaj wszędzie, gdzie nazwa okna ImGui trafia do paska tytułu okna systemowego. |
 | `void DrawWindowControls(const TUsePointer<IWindow>& window, ImVec2 buttonDimensions)` | `EditorInterface.h` | Klaster minimalizuj/maksymalizuj/zamknij paska tytułu. Zamknięcie okna 0 idzie przez `OnRequestedWindowClose` (potwierdzenie niezapisanych assetów), okna wtórnego przez `EditorWindowsManager::CloseEditorWindow`. |
 | `float DrawAttachPointMarker(ImDrawList*, const Matrix4& world, float axisLength, bool selected, const std::function<bool(const Vec3&, ImVec2&)>& project, ImVec2 mouse)` | `AttachPointOverlay.h` | Rysuje marker attach pointa szkieletu (romb + kikuty osi RGB pokazujące rotację) w podglądzie 3D. `project` mapuje świat→piksele (`false` = za kamerą). Zwraca kwadrat odległości kursora od markera (`FLT_MAX` poza ekranem) do klikania. |
 | `void MarkSkeletonAssetDirty(TUsePointer<EngineAssetManager>, const Skeleton*)` | `AttachPointOverlay.h` | Brudzi asset Skeleton (po jego `Uuid`). **Do każdej edycji attach pointa zamiast `PanelChangedAsset()`** — SkeletalMesh trzyma szkielet tylko przez UUID, więc zabrudzenie assetu viewportu oznaczyłoby mesh i zmiana nigdy nie trafiłaby na dysk. |
-| `void TextCentered(const char* text)` | `CenteredText.h` | `ImGui::Text` wyśrodkowany w poziomie względem szerokości bieżącego okna. |
-| `void TextCenteredBoth(const char* text)` | `CenteredText.h` | `ImGui::Text` wyśrodkowany w poziomie i pionie względem rozmiaru bieżącego okna. |
 | `void GenerateRandomLocations(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe lokacje w prostopadłościanie `[min, max]`. |
 | `void GenerateRandomRotations(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe rotacje w **stopniach** (pitch=X, yaw=Y, roll=Z), per-oś z `[min, max]`. |
 | `void GenerateRandomScales(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe skale niejednorodne, per-oś z `[min, max]`. |

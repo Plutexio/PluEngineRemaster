@@ -19,7 +19,7 @@
 #include "UI/IconsFontAwesome7.h"
 #include "SceneStructurePanel.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
-#include "Utils/RGBTransformDragger.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/Widgets/TypeTree.h"
 #include "PluEngine/Core/Widgets/Combo.h"
@@ -306,7 +306,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 				obj = gEngineObjectManager->GetObjectAsUser<EngineObject>(gEditorAppContext->EditorState.SelectedGameObjectComponent).GetRaw();
 				if (obj->GetClass()->IsDerivedOfOrSame(WorldComponent::GetStaticClass())) {
 					Vec3 location = dynamic_cast<WorldComponent*>(obj)->GetRelativeLocation();
-					if (RGBTransformDrag3("R Location", glm::value_ptr(location), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Location", glm::value_ptr(location), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeLocation(location);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -314,7 +314,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 						}
 					}
 					Vec3 rotation = dynamic_cast<WorldComponent*>(obj)->GetRelativeRotation();
-					if (RGBTransformDrag3("R Rotation", glm::value_ptr(rotation), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Rotation", glm::value_ptr(rotation), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeRotation(rotation);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -322,7 +322,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 						}
 					}
 					Vec3 scale = dynamic_cast<WorldComponent*>(obj)->GetRelativeScale();
-					if (RGBTransformDrag3("R Scale", glm::value_ptr(scale), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Scale", glm::value_ptr(scale), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeScale(scale);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -348,7 +348,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 			} else {
 				obj = gEngineObjectManager->GetObjectAsUser<EngineObject>(gEditorAppContext->EditorState.SelectedGameObject).GetRaw();
 				Vec3 location = dynamic_cast<GameObject*>(obj)->GetObjectLocation();
-				if (RGBTransformDrag3("Location", glm::value_ptr(location), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Location", glm::value_ptr(location), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectLocation(location);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -356,7 +356,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 					}
 				}
 				Vec3 rotation = dynamic_cast<GameObject*>(obj)->GetObjectRotation();
-				if (RGBTransformDrag3("Rotation", glm::value_ptr(rotation), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Rotation", glm::value_ptr(rotation), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectRotation(rotation);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -364,7 +364,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 					}
 				}
 				Vec3 scale = dynamic_cast<GameObject*>(obj)->GetObjectScale();
-				if (RGBTransformDrag3("Scale", glm::value_ptr(scale), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Scale", glm::value_ptr(scale), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectScale(scale);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {

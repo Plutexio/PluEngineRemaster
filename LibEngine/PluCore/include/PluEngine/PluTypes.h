@@ -7,7 +7,6 @@
 
 // Vec2/3/4, IVec2/3/4, Matrix4 and Quaternion (with their DefaultHash) live in PluBase.
 #include "PluBase/Types.h"
-#include "nlohmann/json.hpp"
 
 typedef nlohmann::json JSON;
 

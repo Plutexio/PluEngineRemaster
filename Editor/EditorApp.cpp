@@ -49,7 +49,8 @@
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
-#include "Utils/CenteredText.h"
+#include "PluEngine/Core/Widgets/Buttons.h"
+#include "PluEngine/Core/Widgets/Text.h"
 
 extern void InitEditorReflection();
 
@@ -303,9 +304,9 @@ void Plu::PluEditor::OnImGuiRender()
             mEditorProjectManager->IsAnyProjectOpen() ? IM_COL32(0, 0, 150, 80) : IM_COL32(90, 0, 0, 80)
         );
         if (mEditorProjectManager->IsAnyProjectOpen()) {
-            TextCenteredBoth("Drop Assets to import them!");
+            ImGuiWidgets::TextCenteredBoth("Drop Assets to import them!");
         } else {
-            TextCenteredBoth("Before importing Assets, Open a project!");
+            ImGuiWidgets::TextCenteredBoth("Before importing Assets, Open a project!");
         }
         ImGui::End();
     }
@@ -425,14 +426,10 @@ void Plu::PluEditor::DrawNewProjectPopup()
     ImVec2 closeButtonSize = ImVec2(fs * 1.85f, fs * 1.85f);
     float closeButtonMargin = headerVPad > sideMargin * 0.6f ? headerVPad : sideMargin * 0.6f;
     ImGui::SetCursorScreenPos(ImVec2(headerMax.x - closeButtonSize.x - closeButtonMargin, winPos.y + (headerHeight - closeButtonSize.y) * 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.15f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.25f));
-    if (ImGui::Button(ICON_FA_XMARK "##CloseNewProjectPopup", closeButtonSize)) {
+    if (ImGuiWidgets::IconButton(ICON_FA_XMARK "##CloseNewProjectPopup", closeButtonSize)) {
         projectName.Clear();
         ImGui::CloseCurrentPopup();
     }
-    ImGui::PopStyleColor(3);
 
     ImGui::Unindent(sideMargin);
     ImGui::SetCursorScreenPos(ImVec2(winPos.x, headerMax.y + 2));

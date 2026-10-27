@@ -9,6 +9,8 @@
 #include "PluEngine/Effects/Particles/ParticleSystemInstance.h"
 #include "PluEngine/Effects/Particles/Nodes/ParticleParameterNode.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 namespace
 {
@@ -45,7 +47,7 @@ void Plu::ParticleDetailsPanel::OnUpdate(float deltaTime)
 		TUsePointer<ParticleSystemViewport> viewport = DynamicCast<ParticleSystemViewport>(GetParentViewport());
 		TUsePointer<ParticleSystem> system = viewport ? viewport->GetSystem() : nullptr;
 		if (!system) {
-			ImGui::TextDisabled("No ParticleSystem asset loaded");
+			ImGuiWidgets::EmptyState("No ParticleSystem asset loaded", ICON_FA_WAND_MAGIC_SPARKLES);
 			EndPanel();
 			return;
 		}

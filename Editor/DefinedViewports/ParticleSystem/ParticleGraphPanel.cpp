@@ -8,6 +8,8 @@
 #include "PluEngine/Effects/Particles/ParticleSystem.h"
 #include "PluEngine/Effects/Particles/Nodes/ParticleParameterNode.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 Plu::String Plu::ParticleGraphPanel::GetPanelName() { return "Graph"; }
 void Plu::ParticleGraphPanel::OnClosed() {}
@@ -22,9 +24,9 @@ void Plu::ParticleGraphPanel::OnUpdate(float deltaTime)
 		ParticleEmitter* emitter = viewport ? viewport->GetSelectedEmitter() : nullptr;
 
 		if (!system || !viewport) {
-			ImGui::TextDisabled("No ParticleSystem asset loaded");
+			ImGuiWidgets::EmptyState("No ParticleSystem asset loaded", ICON_FA_WAND_MAGIC_SPARKLES);
 		} else if (!emitter) {
-			ImGui::TextDisabled("Select or add an emitter");
+			ImGuiWidgets::EmptyState("Select or add an emitter", ICON_FA_DIAGRAM_PROJECT);
 		} else {
 			NodeGraphEditor& editor = viewport->GetNodeGraphEditor();
 			ParticleSystem* systemRaw = system.GetRaw();

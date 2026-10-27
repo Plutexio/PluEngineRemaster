@@ -8,6 +8,7 @@
 #include "ParticleEmittersPanel.generated.h"
 #include "PluEngine/Core.h"
 #include "PluBase/PluUUID.h"
+#include "PluEngine/Core/Widgets/InlineRename.h"
 
 namespace Plu
 {
@@ -18,7 +19,7 @@ namespace Plu
 		REFLECTION_BODY_PARTICLEEMITTERSPANEL()
 	private:
 		PluUUID mRenamingEmitter = PluUUID(0);
-		char mRenameBuffer[128] = {};
+		ImGuiWidgets::InlineRenameState mRename;
 	public:
 		ParticleEmittersPanel() = default;
 		~ParticleEmittersPanel() override = default;

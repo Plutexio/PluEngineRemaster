@@ -7,6 +7,7 @@
 #include "PluEngine/Core/ApplicationInfo.h"
 #include "PluEngine/Core/InputInfo.h"
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include "PluEngine/Gameplay/GameObject.h"
 #include "PluEngine/Gameplay/InputHandler.h"
 #include "PluEngine/Gameplay/InputManager.h"
@@ -152,7 +153,7 @@ void Plu::InputViewerPanel::OnUpdate(float deltaTime) {
 
     // --- Full keyboard list + filter ---
     ImGui::SeparatorText("Keyboard");
-    mKeyFilter.Draw(ICON_FA_MAGNIFYING_GLASS " Filter");
+    ImGuiWidgets::SearchBar("##KeyFilter", &mKeyFilter, "Filter keys...");
 
     if (EnumInfo *keyEnum = KeyEnumInfo()) {
       for (EnumValue *ev : keyEnum->EnumValues) {

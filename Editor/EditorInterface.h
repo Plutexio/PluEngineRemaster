@@ -23,6 +23,7 @@
 #include "PluEngine/PluPaths.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Buttons.h"
 #include "Managers/Python/EditorPythonManager.h"
 #include "Panels/EditorPanelManager.h"
 #include "PluEngine/Gameplay/GameClient.h"
@@ -61,23 +62,17 @@ namespace Plu
     inline void DrawWindowControls(const TUsePointer<IWindow>& window, ImVec2 buttonDimensions)
     {
         if (!window) return;
+        // Square corners: the cluster sits flush against the window's edge.
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.3));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.8));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1,0,0,0));
-        if (ImGui::Button(ICON_FA_MINUS "", buttonDimensions))
+        if (ImGuiWidgets::IconButton(ICON_FA_MINUS "##Minimize", buttonDimensions))
         {
             window->Minimize();
         }
-        if (ImGui::Button(ICON_FA_EXPAND "", buttonDimensions))
+        if (ImGuiWidgets::IconButton(ICON_FA_EXPAND "##Maximize", buttonDimensions))
         {
             window->Maximize();
         }
-        ImGui::PopStyleColor(3);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5,0,0,1));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,0,0,1));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1,0,0,0));
-        if (ImGui::Button(ICON_FA_XMARK "", buttonDimensions))
+        if (ImGuiWidgets::IconButton(ICON_FA_XMARK "##Close", buttonDimensions, nullptr, ImGuiWidgets::EIconButtonTone::Danger))
         {
             // Closing window 0 means quitting, which has to run the unsaved-assets confirmation;
             // a secondary window just goes away and gives its contents back to window 0.
@@ -87,7 +82,6 @@ namespace Plu
                 gEditorAppContext->EditorWindowsManager->CloseEditorWindow(window->GetWindowID());
             }
         }
-        ImGui::PopStyleColor(3);
         ImGui::PopStyleVar();
     }
 
@@ -332,44 +326,44 @@ namespace Plu
         ImVec2 const buttonDimensions = ImVec2(toolbarHeight,toolbarHeight);
         if (gEditorAppContext->EditorProjectManager->IsAnyProjectOpen() && gEditorAppContext->EditorScenesManager->IsAnySceneOpen() && windowID == 0) {
             ImGui::SetCursorPosX((sizeForPlayButton.x / 2) - (toolbarHeight / 2));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.3));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.8));
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1,0,0,0));
+            const ImVec4 playColor = ImVec4(0.38f, 0.86f, 0.50f, 1.0f);
+            const ImVec4 stopColor = ImVec4(0.95f, 0.38f, 0.38f, 1.0f);
             if (gEditorAppContext->EditorScenesManager->IsInPIE()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-                if (ImGui::Button(ICON_FA_X "", buttonDimensions)) {
+                ImGui::PushStyleColor(ImGuiCol_Text, stopColor);
+                const bool stopClicked = ImGuiWidgets::IconButton(ICON_FA_STOP "##StopPIE", buttonDimensions, "Stop");
+                ImGui::PopStyleColor();
+                if (stopClicked) {
                     gEditorAppContext->EditorScenesManager->ExitPIE();
                     gPluEditor->EndGame();
                     gApplicationInfo->AppWindow->SetCursorVisibility(true);
                     gApplicationInfo->AppInputManager->GetInputBackend()->NotifyGameAboutInput = true;
                 }
-                ImGui::PopStyleColor();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.0f, 1.0f));
                 if (!gApplicationInfo->AppInputManager->GetInputBackend()->NotifyGameAboutInput) {
-                    if (ImGui::Button(ICON_FA_GAMEPAD "")) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, playColor);
+                    const bool possessClicked = ImGuiWidgets::IconButton(ICON_FA_GAMEPAD "##PossessPIE", buttonDimensions, "Give input back to the game");
+                    ImGui::PopStyleColor();
+                    if (possessClicked) {
                         gApplicationInfo->AppInputManager->GetInputBackend()->NotifyGameAboutInput = true;
                         gApplicationInfo->AppWindow->SetCursorVisibility(false);
                         gApplicationInfo->AppWindow->UpdateImGui = false;
                     }
-                    ImGui::PopStyleColor();
                     if (gApplicationInfo->AppScenesManager->GetEditorRenderCamera()) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                        if (ImGui::Button(ICON_FA_BACKWARD ""))
+                        if (ImGuiWidgets::IconButton(ICON_FA_BACKWARD "##GameCamera", buttonDimensions, "Back to the game camera"))
                         {
                             gApplicationInfo->AppScenesManager->SetEditorRenderCamera(nullptr);
                         }
                     } else {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.3f, 1.0f, 1.0f));
-                        if (ImGui::Button(ICON_FA_CAMERA ""))
+                        if (ImGuiWidgets::IconButton(ICON_FA_CAMERA "##EditorCamera", buttonDimensions, "Fly the editor camera"))
                         {
                             gApplicationInfo->AppScenesManager->SetEditorRenderCamera(gEditorAppContext->EditorSceneCamera.GetRaw());
                         }
                     }
                 }
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
-                if (ImGui::Button(ICON_FA_PLAY "", buttonDimensions)) {
+                ImGui::PushStyleColor(ImGuiCol_Text, playColor);
+                const bool playClicked = ImGuiWidgets::IconButton(ICON_FA_PLAY "##PlayPIE", buttonDimensions, "Play (right-click for more)");
+                ImGui::PopStyleColor();
+                if (playClicked) {
                     gPluEditor->StartGame();
                     if (gEditorAppContext->EditorScenesManager->EnterPIE()) {
                         gApplicationInfo->Client->JoinGameLocally();
@@ -380,7 +374,7 @@ namespace Plu
                 }
                 if (ImGui::BeginPopupContextItem())
                 {
-                    if (ImGui::Button(ICON_FA_CIRCLE_PLAY " Play In FullScreen")) {
+                    if (ImGui::MenuItem(ICON_FA_CIRCLE_PLAY " Play In FullScreen")) {
                         gPluEditor->StartGame();
                         if (gEditorAppContext->EditorScenesManager->EnterPIE()) {
                             gApplicationInfo->Client->JoinGameLocally();
@@ -391,14 +385,9 @@ namespace Plu
                             gPluEditor->EndGame();
                         }
                     }
-                    ImGui::Separator();
-                    if (ImGui::Button("Close"))
-                        ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
             }
-            ImGui::PopStyleColor(4);
-            ImGui::PopStyleVar();
         }
         const float textWidth = 400.0f * ImGui::GetStyle().FontScaleDpi;
         float availableWidth = ImGui::GetContentRegionAvail().x;
@@ -515,10 +504,7 @@ namespace Plu
 
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6,0.6,1,1));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4,0.4,1,1));
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2,0.2,1,1));
-            if (ImGui::Button("Save All")) {
+            if (ImGuiWidgets::PrimaryButton(ICON_FA_FLOPPY_DISK " Save All")) {
                 for (auto asset : assetsToSave) {
                     gApplicationInfo->AppAssetManager->SaveAsset(asset);
                 }
@@ -526,7 +512,6 @@ namespace Plu
                 *assetSaveConfirm = true;
                 ImGui::CloseCurrentPopup();
             }
-            ImGui::PopStyleColor(3);
             ImGui::SameLine();
             if (ImGui::Button("Don't Save")) {
                 cleanup();

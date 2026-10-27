@@ -9,6 +9,7 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
 #include "PluEngine/Core/DiskManager.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include <imgui_internal.h> // BeginDragDropTargetCustom / GetCurrentWindow for the canvas drop target
 #include <cfloat>
 #include <algorithm>
@@ -424,11 +425,7 @@ namespace Plu
 		ImGui::Separator();
 
 		static ImGuiTextFilter filter;
-		if (ImGui::IsWindowAppearing()) {
-			filter.Clear();
-			ImGui::SetKeyboardFocusHere();
-		}
-		filter.Draw("##palette-filter", 180.0f);
+		ImGuiWidgets::PopupSearchBar(&filter, "Search nodes...", ImGui::GetFontSize() * 14.0f);
 		ImGui::Separator();
 
 		// Collected and sorted every time the popup draws: the type map iterates in hash order, and an
