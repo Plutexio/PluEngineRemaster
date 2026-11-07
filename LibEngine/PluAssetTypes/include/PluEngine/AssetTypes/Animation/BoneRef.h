@@ -6,7 +6,7 @@
 #define PLUENGINE_BONEREF_H
 
 #include "PluEngine/Core.h"
-#include "String/String.h"
+#include "PluSTL/String/String.h"
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
 
 namespace Plu

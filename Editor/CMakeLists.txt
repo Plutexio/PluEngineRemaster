@@ -25,6 +25,7 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedPanels/LoadedAssetsPanel.cpp
         ./DefinedPanels/LoadedObjectsPanel.cpp
         ./DefinedPanels/RenderGpuStatsPanel.cpp
+        ./DefinedPanels/ParticlesDebugPanel.cpp
         ./DefinedPanels/Project/AssetBrowserPanel/AssetBrowserPanel.cpp
         ./DefinedPanels/ProfilerPanel.cpp
         ./DefinedPanels/ProjectLauncherPanel.cpp
@@ -36,7 +37,17 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/AnimationGraph/AnimationGraphVariablesPanel.cpp
         ./DefinedViewports/AnimationGraph/AnimationGraphViewport.cpp
         ./DefinedViewports/AnimationGraph/AnimationGraphViewportPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceCanvasPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceDetailsPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.cpp
+        ./DefinedViewports/BlendSpace/BlendSpaceViewport.cpp
         ./NodeGraph/NodeGraphEditor.cpp
+        ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.cpp
+        ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.cpp
+        ./DefinedViewports/ParticleSystem/ParticleGraphPanel.cpp
+        ./DefinedViewports/ParticleSystem/ParticleParametersPanel.cpp
+        ./DefinedViewports/ParticleSystem/ParticlePreviewPanel.cpp
+        ./DefinedViewports/ParticleSystem/ParticleSystemViewport.cpp
         ./DefinedViewports/Material/MaterialDetailsPanel.cpp
         ./DefinedViewports/Material/MaterialViewport.cpp
         ./DefinedViewports/Scene/SceneObjectDetailsPanel.cpp
@@ -99,6 +110,20 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/AnimationGraph/AnimationGraphDetailsPanel.h
         ./DefinedViewports/AnimationGraph/AnimationGraphViewport.h
         ./DefinedViewports/AnimationGraph/AnimationGraphViewportPanel.h
+        ./DefinedViewports/AnimationGraph/AnimBlendSpaceNodeView.h
+        ./DefinedViewports/BlendSpace/BlendSpaceCanvasPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceDetailsPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceDrawing.h
+        ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.h
+        ./DefinedViewports/BlendSpace/BlendSpaceViewport.h
+        ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.h
+        ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.h
+        ./DefinedViewports/ParticleSystem/ParticleGraphPanel.h
+        ./DefinedViewports/ParticleSystem/ParticleParametersPanel.h
+        ./DefinedViewports/ParticleSystem/ParticlePreviewPanel.h
+        ./DefinedViewports/ParticleSystem/ParticleSystemViewport.h
+        ./DefinedViewports/ParticleSystem/ParticleModuleNodeView.h
+        ./DefinedViewports/ParticleSystem/ParticleCurveParamNodeView.h
         ./EditorApp.h
         ./EditorAppContext.h
         ./EditorInterface.h
@@ -118,7 +143,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./Managers/Shaders/EditorShaderManager.h
         ./Panels/EditorPanel.h
         ./Panels/EditorPanelManager.h
-        ./Utils/RGBTransformDragger.h
         DefinedPanels/TextureViewerPanel.h
         DefinedPanels/TextureViewerPanel.cpp
         Managers/Assets/EditorAssetCreator.cpp
@@ -157,14 +181,16 @@ find_package(Jolt CONFIG REQUIRED)
 target_link_libraries(PluEditor PRIVATE Jolt::Jolt)
 target_compile_definitions(PluEditor PRIVATE JPH_DEBUG_RENDERER)
 
-target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluSTL/PluSTL_FWD.h")
+target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluSTL/include/PluSTL/PluSTL_FWD.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Core.h")
-target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Log.h")
+target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/PluBase/include/PluBase/Log.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/PluEngine/Timer.h")
 target_precompile_headers(PluEditor PUBLIC "${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h")
+target_precompile_headers(PluEditor PUBLIC ${PLU_THIRDPARTY_PCH_HEADERS})
 
+# No `-include stdpch.h` here: cmake_pch.hxx already includes it, and GCC only uses the .gch when
+# it is the first include — a forced include in front of it silently disables the PCH.
 target_compile_options(PluEditor PRIVATE
-        $<$<CXX_COMPILER_ID:GNU,Clang>:-include ${CMAKE_SOURCE_DIR}/LibEngine/PluCore/include/stdpch.h>
         # Generated reflection/binding translation units can exceed the COFF
         # per-object section limit (65279) on MSVC → need /bigobj.
         $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
@@ -197,20 +223,15 @@ set_target_properties(PluEditor PROPERTIES
 
 # Engine is an INTERFACE target now, so there is no single $<TARGET_FILE:Engine> to copy: every
 # module is its own shared library and all of them have to sit next to the executable, which is
-# what the $ORIGIN RPATH expects to find. glad is shared for the same reason (one function-pointer
-# table for the whole process) and travels with them.
-foreach (PLU_MODULE IN LISTS PLU_MODULES)
+# what the $ORIGIN RPATH expects to find. glad and spdlog are shared for the same reason (one
+# function-pointer table / logger registry for the whole process) and travel with them.
+foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
     add_custom_command(TARGET PluEditor POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:${PLU_MODULE}>
             $<TARGET_FILE_DIR:PluEditor>
     )
 endforeach ()
-add_custom_command(TARGET PluEditor POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:glad>
-        $<TARGET_FILE_DIR:PluEditor>
-)
 
 add_custom_command(TARGET PluEditor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -223,40 +244,30 @@ add_custom_command(TARGET PluEditor POST_BUILD
 #  Editor distribution (target: DistributeEditor)
 #
 #  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Editor presets).
-#  Assembles a self-contained editor into ${CMAKE_SOURCE_DIR}/EditorDist:
-#    - PluEditor(.exe) + libEngine.so / Engine.dll (+ runtime DLLs on Windows)
+#  Assembles a self-contained editor into PLU_DIST_DIR (default ${CMAKE_SOURCE_DIR}/EditorDist):
+#    - PluEditor(.exe) + every engine module library, glad and spdlog (+ vcpkg runtime libraries)
 #    - EngineAssets/, ThirdParty/UI/ (fonts + icons), PluEngine.pyi
 #    - obfuscated (PyArmor) ShaderCodeParser.py in PythonTools/ — the only Python
 #      tool run at editor runtime (via the embedded interpreter).
+#    - Linux -> Windows cross build only: the embeddable Python (python3xx.dll + stdlib).
+#  The packaging itself is cmake/PluDistribute.cmake, shared with DistributeRuntime.
 #
 #  Runtime resource paths come from GetEngineResourcesDir() == the directory next to the
 #  exe, because in this configuration Engine is built without PLU_PROJECT_ROOT.
 # =====================================================================================
 if(PLU_DISTRIBUTION)
-    set(PLU_EDITOR_DIST_DIR "${CMAKE_SOURCE_DIR}/EditorDist")
+    set(PLU_DIST_DIR "${CMAKE_SOURCE_DIR}/EditorDist" CACHE PATH "Where DistributeEditor assembles the editor")
 
-    if(WIN32)
+    # Runs on the host, so it is the host venv's.
+    if(CMAKE_HOST_WIN32)
         set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor.exe")
     else()
         set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor")
     endif()
 
-    add_custom_target(DistributeEditor
-            COMMAND ${CMAKE_COMMAND}
-            -DDIST_DIR=${PLU_EDITOR_DIST_DIR}
-            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-            -DEDITOR_EXE=$<TARGET_FILE:PluEditor>
-            # Every engine module, semicolon-separated. It was one $<TARGET_FILE:Engine> while the
-            # engine was a single library; Engine is an INTERFACE target now and has no file.
-            "-DENGINE_LIBS=$<JOIN:$<TARGET_FILE:PluCore>;$<TARGET_FILE:PluPlatform>;$<TARGET_FILE:PluAssetCore>;$<TARGET_FILE:PluAssetTypes>;$<TARGET_FILE:PluRender>;$<TARGET_FILE:PluPhysics>;$<TARGET_FILE:PluScripting>;$<TARGET_FILE:PluAssetPipeline>;$<TARGET_FILE:PluGameplay>;$<TARGET_FILE:PluApp>;$<TARGET_FILE:glad>,;>"
-            -DVCPKG_LIB_DIR=${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib
+    plu_add_distribute_target(DistributeEditor PluEditor "${PLU_DIST_DIR}"
             -DPYARMOR_EXE=${PLU_PYARMOR_EXE}
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/DistributeEditor.cmake"
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            VERBATIM
-            COMMENT "Packaging standalone editor into ${PLU_EDITOR_DIST_DIR}"
     )
-    add_dependencies(DistributeEditor PluEditor)
 endif()
 
 #set(CPACK_PACKAGE_NAME "PluEditor")

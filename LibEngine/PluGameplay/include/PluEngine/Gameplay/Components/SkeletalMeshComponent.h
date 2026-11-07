@@ -14,8 +14,8 @@
 // the complete type — a forward declaration only compiles while some other translation unit in
 // the same unity batch happens to supply the definition.
 #include "PluEngine/AssetTypes/Animation/SkeletalAnimation.h"
-#include "HashMap/HashMapV2.h"
-#include "Pointers/Casts.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/Pointers/Casts.h"
 #include <utility>
 
 namespace Plu
@@ -24,6 +24,16 @@ namespace Plu
 	struct Animation;
 	struct SkeletalMesh;
 	struct AnimationGraph;
+
+	// Space a posed node transform is reported in (SkeletalMeshComponent::GetNodeLocation/Rotation).
+	PLU_ENUM(PyNamespace=Plu, PyExport)
+	enum class NodeSpace
+	{
+		WORLD,     // world space: the component's live world matrix * the node's posed global
+		LOCAL,     // relative to the parent node — the node's posed local transform
+		COMPONENT  // skeleton space (root-relative): unaffected by where the component is
+	};
+
 	PLU_CLASS(PyExport, PyDerive)
 	class PLUGAMEPLAY_API SkeletalMeshComponent : public WorldComponent
 	{
@@ -35,7 +45,7 @@ namespace Plu
 
 		// Attach point name -> node index in the skeleton's SkeletonPoseLayout, resolved on first
 		// use so repeated attach point queries cost no name lookup. Cleared with the mesh.
-		GameHashMap<String, Int32> mAttachPointNodeCache;
+		HashMap<String, Int32> mAttachPointNodeCache;
 
 		// Per-component live AnimGraph values — this component's own "user" of AnimGraph, never
 		// shared with any other component even when they point at the same graph asset. Not a
@@ -88,7 +98,7 @@ namespace Plu
 		// can translate, rotate and scale a bone and drag its subtree. Applied identically by
 		// RenderSnapshotBuilder and the editor bone overlay. Deliberately NOT a PLU_PROPERTY: this
 		// is a live posing scratchpad that is never serialized. Empty in normal play (zero overhead).
-		GameHashMap<String, Matrix4> BoneLocalOverrides;
+		HashMap<String, Matrix4> BoneLocalOverrides;
 
 		// Cache palety kości (pary OffsetMatrix / global transform) z ostatniego builda snapshotu.
 		// Poza jest funkcją (mesh, animacja, tick, overrides, world matrix — patrz CachedPoseWorldMatrix
@@ -186,10 +196,27 @@ namespace Plu
 		// pair below when the whole frame is wanted — it keeps the bone's basis exactly.
 		bool TryGetAttachPointWorldMatrix(const String& attachPointName, Matrix4& outMatrix);
 
+		DynamicArray<String> GetAttachPoints() override;
+		bool HasAttachPoints() override;
+		bool GetWorldMatrixForAttachPoint(String attachPoint, Matrix4 *outMatrix) override;
+
 		PLU_FUNCTION(PyExport)
 		Vec3 GetAttachPointLocationInWorld(String attachPointName);
 		PLU_FUNCTION(PyExport)
 		Vec3 GetAttachPointRotationInWorld(String attachPointName);
+
+		// Posed transform of skeleton node `boneName` (any node, not just bones; not an attach point)
+		// in `space`. Read from the LAST pose build (PosedGlobalTransforms), so inside OnUpdate it is
+		// one frame old — consistent with attach points. Zero when the mesh, the node or a pose is
+		// missing (before the first snapshot build). Rotation in euler degrees.
+		PLU_FUNCTION(PyExport)
+		Vec3 GetNodeLocation(String boneName, NodeSpace space);
+		PLU_FUNCTION(PyExport)
+		Vec3 GetNodeRotation(String boneName, NodeSpace space);
+
+		// Shared resolve for GetNodeLocation/Rotation. False when the mesh, the node or a posed
+		// transform for it is missing.
+		bool TryGetNodeTransform(const String& nodeName, NodeSpace space, BoneTransform& outTransform);
 
 		// Re-expresses a world-space location in the posed frame of skeleton node `nodeName`.
 		// Deliberately built on the component's world matrix FROM THE LAST POSE BUILD

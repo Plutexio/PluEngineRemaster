@@ -8,9 +8,9 @@
 #include <chrono>
 #include <string>
 #include <unordered_map>
-#include "Log.h"
+#include "PluBase/Log.h"
 #include "Profiler.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu {
 
@@ -74,8 +74,8 @@ namespace Plu {
         }
 
     private:
-        static GameHashMap<String, TOwningPointer<Timer>>& GetTimers() {
-            static GameHashMap<String, TOwningPointer<Timer>> s_Timers;
+        static HashMap<String, TOwningPointer<Timer>>& GetTimers() {
+            static HashMap<String, TOwningPointer<Timer>> s_Timers;
             return s_Timers;
         }
     };

@@ -27,16 +27,14 @@
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/Platform/Window.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
-#include "PluEngine/Gameplay/PhysicsWireframeRenderer.h"
-#include "PluEngine/Gameplay/PhysicsPointRenderer.h"
-#include <Jolt/Physics/Body/BodyLock.h>
 
 #include "PluEngine/AssetTypes/Animation/SkeletalAnimation.h"
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
+#include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
+#include <glm/gtc/quaternion.hpp>
 
 namespace
 {
@@ -375,6 +373,16 @@ void Plu::RenderSnapshotBuilder::EvaluateSkeletalPose(SkeletalMeshComponent* com
     }
 }
 
+void Plu::RenderSnapshotBuilder::DiscardFrame()
+{
+    if (!mAppInfo) return;
+    TUsePointer<SceneWorld> sceneWorld = mAppInfo->AppScenesManager->GetCurrentWorld();
+    if (!sceneWorld) return;
+    // Only this frame's draws go; persistent ones live in the adapter and are re-emitted next frame.
+    sceneWorld->mDebugLineVerts.Clear();
+    sceneWorld->mDebugPointVerts.Clear();
+}
+
 void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 {
     if (!mTripleBuffer || !mAppInfo) return;
@@ -577,8 +585,9 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
         // IsAssetLoaded bierze shared_lock, a przy tysiącach komponentów współdzielących kilka
         // assetów wynik jest identyczny dla każdego użycia tego samego UUID.
         auto EnsureAssetDataLoaded = [&](PluUUID uuid) {
-            if (uuid.getUUID() == 0) return;
-            if (!mEnsuredAssets.Insert(uuid.getUUID())) return; // już sprawdzony w tej klatce
+            const UInt64 rawUuid = uuid.getUUID();
+            if (rawUuid == 0) return;
+            if (!mEnsuredAssets.Insert(rawUuid)) return; // już sprawdzony w tej klatce
             if (!mAppInfo->AppAssetManager->IsAssetLoaded(uuid)) {
                 mAppInfo->AppAssetManager->LoadAssetData(mAppInfo->AppAssetManager->GetAssetDescriptor(uuid));
             }
@@ -587,7 +596,7 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 #ifdef PLU_ENGINE_EDITOR_BUILD
         // Akumulacja liczników "hottest" per unikalny UUID; flush do RenderUsageStats raz,
         // po pętlach batchowania (patrz blok za BatchInstancedStaticMeshes).
-        auto BumpFrameUse = [](GameHashMap<UInt64, UInt32>& uses, UInt64 uuid) {
+        auto BumpFrameUse = [](HashMap<UInt64, UInt32>& uses, UInt64 uuid) {
             if (uuid == 0) return;
             if (UInt32* count = uses.Find(uuid)) {
                 (*count)++;
@@ -601,31 +610,50 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
         // StaticMeshComponent poniżej, jak i przez InstancedStaticMeshComponent (faza 3): ISMC
         // o 500 instancjach i 500 luźnych komponentów na tym samym meshu+materiale trafiają do
         // tego samego batcha, bo klucz (MeshUUID, MaterialUUID, CastsShadow) nie rozróżnia źródła.
+        //
+        // Ostatnio rozwiązany klucz jest zapamiętany: kolejne instancje niemal zawsze trafiają do
+        // tego samego batcha (całe ISMC naraz albo ciąg propów z tego samego mesha i materiału),
+        // więc typowy przypadek to trzy porównania zamiast hasha i przejścia po kubełku. Memo trzyma
+        // pełny klucz, nie jego hash — kolizja hasha nie może przez nie skleić dwóch batchy.
+        PluUUID lastBatchMeshUuid     = PluUUID(0);
+        PluUUID lastBatchMaterialUuid = PluUUID(0);
+        bool    lastBatchCastsShadow  = false;
+        UInt32  lastBatchIndex        = UINT32_MAX;
         auto AddInstanceToBatch = [&](PluUUID meshUuid, PluUUID materialUuid, bool castsShadow,
                                        const Matrix4& modelMatrix, const Matrix4& normalMatrix,
                                        const Vec3& boundsCenter, float boundsRadius) {
-            const UInt64 keyHash = HashBatchKey(meshUuid.getUUID(), materialUuid.getUUID(), castsShadow);
-            DynamicArray<UInt32>* bucket = mBatchLookup.Find(keyHash);
-            if (!bucket) {
-                mBatchLookup.Insert(keyHash, DynamicArray<UInt32>());
-                bucket = mBatchLookup.Find(keyHash);
-            }
-            UInt32 batchIndex = UINT32_MAX;
-            for (UInt32 candidate : *bucket) {
-                const StaticMeshBatch& existing = snapshot->StaticMeshBatches[candidate];
-                if (existing.MeshUUID == meshUuid && existing.MaterialUUID == materialUuid && existing.CastsShadow == castsShadow) {
-                    batchIndex = candidate;
-                    break;
+            UInt32 batchIndex = lastBatchIndex;
+            const bool sameKeyAsLast = batchIndex != UINT32_MAX && meshUuid == lastBatchMeshUuid &&
+                materialUuid == lastBatchMaterialUuid && castsShadow == lastBatchCastsShadow;
+            if (!sameKeyAsLast) {
+                const UInt64 keyHash = HashBatchKey(meshUuid.getUUID(), materialUuid.getUUID(), castsShadow);
+                DynamicArray<UInt32>* bucket = mBatchLookup.Find(keyHash);
+                if (!bucket) {
+                    mBatchLookup.Insert(keyHash, DynamicArray<UInt32>());
+                    bucket = mBatchLookup.Find(keyHash);
                 }
-            }
-            if (batchIndex == UINT32_MAX) {
-                batchIndex = snapshot->StaticMeshBatches.Size();
-                StaticMeshBatch newBatch;
-                newBatch.MeshUUID = meshUuid;
-                newBatch.MaterialUUID = materialUuid;
-                newBatch.CastsShadow = castsShadow;
-                snapshot->StaticMeshBatches.PushBack(newBatch);
-                bucket->PushBack(batchIndex);
+                batchIndex = UINT32_MAX;
+                for (UInt32 candidate : *bucket) {
+                    const StaticMeshBatch& existing = snapshot->StaticMeshBatches[candidate];
+                    if (existing.MeshUUID == meshUuid && existing.MaterialUUID == materialUuid && existing.CastsShadow == castsShadow) {
+                        batchIndex = candidate;
+                        break;
+                    }
+                }
+                if (batchIndex == UINT32_MAX) {
+                    batchIndex = snapshot->StaticMeshBatches.Size();
+                    StaticMeshBatch newBatch;
+                    newBatch.MeshUUID = meshUuid;
+                    newBatch.MaterialUUID = materialUuid;
+                    newBatch.CastsShadow = castsShadow;
+                    snapshot->StaticMeshBatches.PushBack(newBatch);
+                    bucket->PushBack(batchIndex);
+                }
+
+                lastBatchMeshUuid     = meshUuid;
+                lastBatchMaterialUuid = materialUuid;
+                lastBatchCastsShadow  = castsShadow;
+                lastBatchIndex        = batchIndex;
             }
 
             StaticMeshBatch& batch = snapshot->StaticMeshBatches[batchIndex];
@@ -636,32 +664,35 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
             scratch.BatchIndex = batchIndex;
             scratch.Instance.ModelMatrix = modelMatrix;
             // Nie licz transpose(inverse()) tutaj — caller podaje macierz normalnych z cache'u
-            // (WorldComponent::GetNormalMatrix / ISMC::GetInstanceNormalMatrices), inverse 4x4
+            // (WorldComponent::GetNormalMatrixRef / ISMC::GetInstanceNormalMatrices), inverse
             // per instancja per klatka było widoczne w profilu przy tysiącach instancji.
             scratch.Instance.NormalMatrix = normalMatrix;
             scratch.Bounds.BoundsCenter = boundsCenter;
             scratch.Bounds.BoundsRadius = boundsRadius;
         };
 
-        for (auto gameObject : sceneWorld->mStaticMeshRenderables) {
-            for (auto worldComponent : gameObject.second) {
-                // Hoist: każde GetStaticMesh()/GetMaterial() kopiuje TUsePointer — raz per komponent.
-                TUsePointer<StaticMesh> staticMesh = worldComponent->GetStaticMesh();
-                TUsePointer<MaterialInfo> material = worldComponent->GetMaterial();
-                const PluUUID meshUuid = staticMesh.IsValid() ? staticMesh->Uuid : PluUUID(0);
-                const PluUUID materialUuid = material.IsValid() ? material->Uuid : PluUUID(0);
+        for (const auto& renderableEntry : sceneWorld->mStaticMeshRenderables) {
+            for (const TOwningPointer<StaticMeshComponent>& componentOwner : renderableEntry.second) {
+                StaticMeshComponent* worldComponent = componentOwner.GetRaw();
+                if (!worldComponent) continue;
+                // Raw reads of the component's own fields rather than GetStaticMesh()/GetMaterial():
+                // each getter hands back a TUsePointer by value, i.e. an atomic increment plus an
+                // atomic decrement, twice per component per frame.
+                StaticMesh* staticMesh = worldComponent->StaticMeshToDisplay.IsValid()
+                    ? worldComponent->StaticMeshToDisplay.GetRaw() : nullptr;
+                const MaterialInfo* material = worldComponent->Material.IsValid()
+                    ? worldComponent->Material.GetRaw() : nullptr;
+                const PluUUID meshUuid = staticMesh ? staticMesh->Uuid : PluUUID(0);
+                const PluUUID materialUuid = material ? material->Uuid : PluUUID(0);
                 const bool castsShadow = worldComponent->CastsShadow;
 
                 EnsureAssetDataLoaded(materialUuid);
                 EnsureAssetDataLoaded(meshUuid);
-                if (staticMesh.IsValid()) {
-                    // Mesh dojeżdża asynchronicznie (EnsureAssetDataLoaded powyżej); jeśli SetStaticMesh
-                    // nie zdążył policzyć MeshBoundingBox (mesh był jeszcze niezaładowany), dogoń to tutaj —
-                    // raz, gdy mesh jest już gotowy (guard: MeshBoundingBoxComputed).
-                    if (!worldComponent->MeshBoundingBoxComputed && staticMesh->IsLoaded) {
-                        worldComponent->MeshBoundingBox = Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw());
-                        worldComponent->MeshBoundingBoxComputed = true;
-                    }
+                // Mesh dojeżdża asynchronicznie (EnsureAssetDataLoaded powyżej); jeśli SetStaticMesh
+                // nie zdążył policzyć MeshBoundingBox (mesh był jeszcze niezaładowany), dogoń to tutaj —
+                // raz, gdy mesh jest już gotowy (guard: MeshBoundingBoxComputed).
+                if (staticMesh && !worldComponent->MeshBoundingBoxComputed && staticMesh->IsLoaded) {
+                    worldComponent->SetMeshBoundingBox(Plu::CreateBoundingBoxForStaticMesh(staticMesh));
                 }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -670,11 +701,15 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 #endif
 
                 // --- Batching instancingu: klucz = (MeshUUID, MaterialUUID, CastsShadow) ---
-                const Matrix4 modelMatrix = worldComponent->GetWorldMatrix();
-                const Vec3 boundsCenter = Vec3(modelMatrix * Vec4(worldComponent->MeshBoundingBox.GetCenter(), 1.0f));
-                const float boundsRadius = glm::length(worldComponent->MeshBoundingBox.GetExtent() * glm::abs(worldComponent->GetWorldScale()));
+                const Matrix4& modelMatrix = worldComponent->GetWorldMatrixRef();
+                // Cached on the component against its transform version: a prop that did not move
+                // since the last frame answers this without touching glm at all.
+                Vec3 boundsCenter = Vec3(0.0f);
+                float boundsRadius = 0.0f;
+                worldComponent->GetWorldBoundingSphere(boundsCenter, boundsRadius);
+                const Matrix4& normalMatrix = worldComponent->GetNormalMatrixRef();
                 AddInstanceToBatch(meshUuid, materialUuid, castsShadow, modelMatrix,
-                                   worldComponent->GetNormalMatrix(), boundsCenter, boundsRadius);
+                                   normalMatrix, boundsCenter, boundsRadius);
             }
         }
 
@@ -685,23 +720,26 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
             // pozycją w tym samym batchu co auto-batching powyżej. Klucz identyczny (MeshUUID,
             // MaterialUUID, CastsShadow), więc ISMC i luźne StaticMeshComponent na tym samym
             // meshu+materiale scalają się w jeden draw call.
-            for (auto gameObject : sceneWorld->mInstancedMeshRenderables) {
-                for (auto ismc : gameObject.second) {
-                    TUsePointer<StaticMesh> staticMesh = ismc->GetStaticMesh();
-                    TUsePointer<MaterialInfo> material = ismc->GetMaterial();
-                    const PluUUID meshUuid = staticMesh.IsValid() ? staticMesh->Uuid : PluUUID(0);
-                    const PluUUID materialUuid = material.IsValid() ? material->Uuid : PluUUID(0);
+            for (const auto& renderableEntry : sceneWorld->mInstancedMeshRenderables) {
+                for (const TOwningPointer<InstancedStaticMeshComponent>& componentOwner : renderableEntry.second) {
+                    InstancedStaticMeshComponent* ismc = componentOwner.GetRaw();
+                    if (!ismc) continue;
+                    // Fields read raw, as in the static-mesh loop above — the getters cost a
+                    // TUsePointer copy (two atomics) each.
+                    StaticMesh* staticMesh = ismc->StaticMeshToDisplay.IsValid()
+                        ? ismc->StaticMeshToDisplay.GetRaw() : nullptr;
+                    const MaterialInfo* material = ismc->Material.IsValid()
+                        ? ismc->Material.GetRaw() : nullptr;
+                    const PluUUID meshUuid = staticMesh ? staticMesh->Uuid : PluUUID(0);
+                    const PluUUID materialUuid = material ? material->Uuid : PluUUID(0);
                     const bool castsShadow = ismc->CastsShadow;
 
                     EnsureAssetDataLoaded(materialUuid);
                     EnsureAssetDataLoaded(meshUuid);
-                    if (staticMesh.IsValid()) {
-                        // Patrz komentarz analogiczny przy StaticMeshComponent powyżej: mesh dojeżdża
-                        // asynchronicznie, dogoń MeshBoundingBox raz, gdy jest już załadowany.
-                        if (!ismc->MeshBoundingBoxComputed && staticMesh->IsLoaded) {
-                            ismc->MeshBoundingBox = Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw());
-                            ismc->MeshBoundingBoxComputed = true;
-                        }
+                    // Patrz komentarz analogiczny przy StaticMeshComponent powyżej: mesh dojeżdża
+                    // asynchronicznie, dogoń MeshBoundingBox raz, gdy jest już załadowany.
+                    if (staticMesh && !ismc->MeshBoundingBoxComputed && staticMesh->IsLoaded) {
+                        ismc->SetMeshBoundingBox(Plu::CreateBoundingBoxForStaticMesh(staticMesh));
                     }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -710,23 +748,17 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
                     BumpFrameUse(mFrameMaterialUses, materialUuid.getUUID());
 #endif
 
+                    // All three arrays come out of the same cache rebuild and are indexed in
+                    // lockstep; nothing per instance is derived here any more.
                     const DynamicArray<Matrix4>* instanceMatrices = ismc->GetInstanceWorldMatrices();
                     const DynamicArray<Matrix4>* instanceNormalMatrices = ismc->GetInstanceNormalMatrices();
-                    const Vec3 localCenter = ismc->MeshBoundingBox.GetCenter();
-                    const Vec3 localExtent = ismc->MeshBoundingBox.GetExtent();
+                    const DynamicArray<InstancedStaticMeshComponent::InstanceBoundingSphere>* instanceBounds =
+                        ismc->GetInstanceWorldBounds();
                     const UInt64 instanceCount = instanceMatrices->Size();
                     for (UInt64 i = 0; i < instanceCount; i++) {
-                        const Matrix4& instanceMatrix = (*instanceMatrices)[i];
-                        // Skala per-instancja nie jest przechowywana osobno (tylko finalna macierz),
-                        // więc odtwarzamy ją z długości kolumn bazowych — odpowiednik GetWorldScale()
-                        // dla zwykłych komponentów, poprawne dopóki nie ma shearu (translate*rotate*scale).
-                        const Vec3 approxScale = Vec3(glm::length(Vec3(instanceMatrix[0])),
-                                                       glm::length(Vec3(instanceMatrix[1])),
-                                                       glm::length(Vec3(instanceMatrix[2])));
-                        const Vec3 boundsCenter = Vec3(instanceMatrix * Vec4(localCenter, 1.0f));
-                        const float boundsRadius = glm::length(localExtent * approxScale);
-                        AddInstanceToBatch(meshUuid, materialUuid, castsShadow, instanceMatrix,
-                                           (*instanceNormalMatrices)[i], boundsCenter, boundsRadius);
+                        const InstancedStaticMeshComponent::InstanceBoundingSphere& sphere = (*instanceBounds)[i];
+                        AddInstanceToBatch(meshUuid, materialUuid, castsShadow, (*instanceMatrices)[i],
+                                           (*instanceNormalMatrices)[i], sphere.Center, sphere.Radius);
                     }
                 }
             }
@@ -761,7 +793,7 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 #endif
 
         // Prefix-sum InstanceOffset + sortowanie (małej) tablicy StaticMeshBatches po (MeshUUID,
-        // MaterialUUID) — mStaticMeshRenderables to GameHashMap, kolejność iteracji niestabilna
+        // MaterialUUID) — mStaticMeshRenderables to HashMap, kolejność iteracji niestabilna
         // między klatkami, bez tego batche skaczą w kolejności i profilowanie jest nieczytelne.
         // Batchy jest dziesiątki, więc słabość QuickSorta na identycznych kluczach tu nie gryzie.
         const UInt32 batchCount = snapshot->StaticMeshBatches.Size();
@@ -884,35 +916,72 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
 
     //Particles
     {
-        PLU_PROFILE_SCOPE("Particle Dispatches Packing");
-        for (auto componentToInitialize : sceneWorld->mParticleSpawnersToInitialize) {
-            ParticleSpawnerInitializeRequest request;
-            TUsePointer<ParticleSpawnerComponent> spawnerComponent = sceneWorld->mParticleSpawnerComponents[componentToInitialize];
-            request.Location = spawnerComponent->GetWorldLocation();
-            request.Rotation = spawnerComponent->GetWorldRotation();
-            request.UUID = spawnerComponent->Uuid;
-            request.ParticleClassData = spawnerComponent->SpawnerParticleClass;
-            snapshot->ParticleSpawnerInitializeRequests.PushBack(request);
-        }
-        sceneWorld->mParticleSpawnersToInitialize.Clear();
+        PLU_PROFILE_SCOPE("Particle Spawners Packing");
+        // Render -> main feedback first (latch "seen", alive mirror, AutoDestroyWhenFinished): one read
+        // for the whole world, before this frame's state is packed.
+        sceneWorld->UpdateParticleLiveness();
 
-        for (auto componentToSpawn : sceneWorld->mParticleSpawnersToSpawnParticles) {
-            ParticleSpawnerSpawnParticlesRequest request;
-            TUsePointer<ParticleSpawnerComponent> spawnerComponent = sceneWorld->mParticleSpawnerComponents[componentToSpawn.first];
-            request.UUID = spawnerComponent->Uuid;
-            request.NumberOfParticles = componentToSpawn.second;
-            snapshot->ParticleSpawnerSpawnParticlesRequests.PushBack(request);
-        }
-        sceneWorld->mParticleSpawnersToSpawnParticles.Clear();
+        // Full state of every spawner, every snapshot — the render thread reconciles against it
+        // (see ParticleSpawnerRenderObject), so nothing here is one-shot.
+        snapshot->ParticleSpawners.Reserve(static_cast<UInt32>(sceneWorld->mParticleSpawnerComponents.Size()));
+        HashSet<UInt64> usedSystems;
+        for (const auto& entry : sceneWorld->mParticleSpawnerComponents) {
+            const TOwningPointer<ParticleSpawnerComponent>& spawnerComponent = entry.second;
+            if (!spawnerComponent) continue;
+            ParticleSpawnerRenderObject renderObject;
+            renderObject.UUID = spawnerComponent->Uuid;
+            renderObject.ParticleClassData = spawnerComponent->SpawnerParticleClass;
+            renderObject.Location = spawnerComponent->GetWorldLocation();
+            renderObject.Rotation = Quaternion(glm::radians(spawnerComponent->GetWorldRotation()));
+            renderObject.LaunchDirection = spawnerComponent->GetLaunchDirection();
+            renderObject.RequestedParticles = spawnerComponent->GetRequestedParticles();
+            renderObject.LastBurstSize = spawnerComponent->GetLastBurstSize();
+            renderObject.EmissionState = spawnerComponent->GetEmissionState();
+            renderObject.ActivationVersion = spawnerComponent->GetActivationVersion();
+            renderObject.ClearVersion = spawnerComponent->GetClearVersion();
 
-        for (auto componentToDestroy : sceneWorld->mParticleSpawnersToDestroy) {
-            ParticleSpawnerDestroyRequest request;
-            TUsePointer<ParticleSpawnerComponent> spawnerComponent = sceneWorld->mParticleSpawnerComponents[componentToDestroy];
-            request.Force = false;
-            request.UUID = spawnerComponent->Uuid;
-            snapshot->ParticleSpawnerDestroyRequests.PushBack(request);
+            if (ParticleSystem* system = spawnerComponent->ParticleSystemAsset.GetRaw()) {
+                // Binds the live parameter values to the asset (a no-op unless the parameter layout changed).
+                ParticleSystemInstance* instance = spawnerComponent->EnsureSystemInstance();
+
+                const CompiledParticleSystem& compiled = ParticleSystemCompiler::GetCompiled(*system);
+                const UInt64 systemUuid = system->Uuid.getUUID();
+                usedSystems.Insert(systemUuid);
+
+                // Resident cache in this slot: write the program only when it is new or its revision moved.
+                UInt32 slotIndex = snapshot->ParticleSystems.Size();
+                for (UInt32 i = 0; i < snapshot->ParticleSystems.Size(); ++i) {
+                    if (snapshot->ParticleSystems[i].SystemUuid.getUUID() == systemUuid) { slotIndex = i; break; }
+                }
+                if (slotIndex == snapshot->ParticleSystems.Size()) {
+                    snapshot->ParticleSystems.PushBack(compiled);
+                } else if (snapshot->ParticleSystems[slotIndex].Revision != compiled.Revision) {
+                    snapshot->ParticleSystems[slotIndex] = compiled;
+                }
+
+                renderObject.SystemUuid = system->Uuid;
+                renderObject.SystemRevision = compiled.Revision;
+
+                // Parameter values: one flat block per spawner, in ParameterLayout order.
+                const UInt32 floatCount = compiled.ParameterFloatCount;
+                renderObject.ParameterValueOffset = snapshot->ParticleParameterValues.Size();
+                renderObject.ParameterValueCount = floatCount;
+                if (floatCount > 0) {
+                    const UInt32 offset = renderObject.ParameterValueOffset;
+                    snapshot->ParticleParameterValues.Resize(offset + floatCount);
+                    float* block = snapshot->ParticleParameterValues.Data() + offset;
+                    for (UInt32 i = 0; i < floatCount; ++i) block[i] = compiled.ParameterDefaults[i];
+                    if (instance) instance->GetParameters().WriteValueBlock(block, floatCount);
+                }
+            }
+            snapshot->ParticleSpawners.PushBack(renderObject);
         }
-        sceneWorld->mParticleSpawnersToDestroy.Clear();
+
+        // Drop cached programs no spawner used this frame.
+        for (UInt32 i = snapshot->ParticleSystems.Size(); i > 0; --i) {
+            if (!usedSystems.Contains(snapshot->ParticleSystems[i - 1].SystemUuid.getUUID()))
+                snapshot->ParticleSystems.RemoveAt(i - 1);
+        }
     }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -922,71 +991,18 @@ void Plu::RenderSnapshotBuilder::BuildSnapshotAndPublish(float deltaTime)
     // scene-editing aid, not part of the game view.
     snapshot->ShowEditorGrid = sceneWorld->ShowEditorGrid && !mAppInfo->AppScenesManager->IsInPIE();
     snapshot->ShowShadowCascades = sceneWorld->ShowShadowCascades;
-
-    // --- Editor debug lines ---
-    // Whatever the editor tick appended this frame (spot light cones today) joins the physics
-    // debug buffer, so it rides the existing debug-line pass. Drained, not copied: the source is
-    // per-frame state and leaving it filled would accumulate a cone per frame forever.
-    if (!sceneWorld->EditorDebugLineVerts.IsEmpty()) {
-        snapshot->DebugLineVerts.Append(sceneWorld->EditorDebugLineVerts);
-        sceneWorld->EditorDebugLineVerts.Clear();
-    }
 #endif
 
-    // --- Debugowa wizualizacja fizyki ---
-    // Ekstrakcja geometrii Jolta i obchodzenie GameObjectów odbywa się TUTAJ, na MAIN
-    // (oba są main-only pod thread confinement). Wynik ląduje jako płaskie bufory POD
-    // w snapshotcie; wątek renderu tylko je uploaduje do VBO i rysuje (Renderer::RenderDebugGeometry).
-    PhysicsWorld* physicsWorld = sceneWorld->GetPhysicsWorld();
-    if (physicsWorld)
-    {
-        PLU_PROFILE_SCOPE("Physics Debug Building");
-        const PhysicsDebugRender mode = physicsWorld->PhysicsDebugRenderMode;
-        if (mode != PhysicsDebugRender::NONE)
-        {
-            const Vec3 wireColor  = physicsWorld->PhysicsDebugRenderColorWireframe;
-            const Vec3 pointColor = physicsWorld->PhysicsDebugRenderColorPoints;
+    // --- Debug draws ---
+    // Everything drawn through SceneWorld::GetDebugDraw this frame — gameplay, scripts, physics
+    // debug, editor gizmos — plus the draws still waiting out their duration. Drained, not
+    // copied: the buffers are per-frame state and leaving them filled would accumulate forever.
+    sceneWorld->mDebugDraw.EmitPersistentDraws(deltaTime);
+    snapshot->DebugLineVerts.Append(sceneWorld->mDebugLineVerts);
+    snapshot->DebugPointVerts.Append(sceneWorld->mDebugPointVerts);
 
-            JoltWireframeRenderer wire;
-            JoltPointRenderer     pts;
-            wire.BeginFrame();
-            pts.BeginFrame();
-
-            JoltWireframeRenderer* wirePtr = (mode == PhysicsDebugRender::WIREFRAME || mode == PhysicsDebugRender::BOTH) ? &wire : nullptr;
-            JoltPointRenderer*     ptsPtr  = (mode == PhysicsDebugRender::POINTS    || mode == PhysicsDebugRender::BOTH) ? &pts  : nullptr;
-
-            // Edytor poza PIE: rysuj kształty kolizji z komponentów (ciała mogą nie istnieć).
-            // W PIE / runtime: ekstrahuj aktywne ciała Jolta. Locki ciał są bezpieczne — to main.
-            bool playing = true;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-            playing = mAppInfo->AppScenesManager->IsInPIE();
-            if (!playing)
-            {
-                physicsWorld->DrawEditModeShapes(wirePtr, ptsPtr, wireColor, pointColor);
-            }
-#endif
-            if (playing)
-            {
-                JPH::BodyIDVector bodies;
-                JPH::PhysicsSystem& physicsSystem = physicsWorld->GetSystem();
-                physicsSystem.GetBodies(bodies);
-                for (JPH::BodyID body : bodies)
-                {
-                    JPH::BodyLockRead lock(physicsSystem.GetBodyLockInterface(), body);
-                    if (!lock.Succeeded()) continue;
-                    if (wirePtr) wirePtr->AddBody(lock.GetBody(), wireColor);
-                    if (ptsPtr)  ptsPtr->AddBody(lock.GetBody(), pointColor);
-                }
-            }
-
-            wire.PackInto(snapshot->DebugLineVerts);
-            pts.PackInto(snapshot->DebugPointVerts);
-        }
-
-        // Raycasty debugowe są niezależne od trybu wizualizacji (włączane flagą DrawDebug
-        // w samym Raycast). Decay timerów + pakowanie segmentów do wspólnego bufora linii.
-        physicsWorld->CollectDebugRaycasts(deltaTime, snapshot->DebugLineVerts);
-    }
+    sceneWorld->mDebugLineVerts.Clear();
+    sceneWorld->mDebugPointVerts.Clear();
 
     snapshot->SceneHandle = sceneWorld->GetObjectHandle();
     snapshot->IsSnapshotValid = true;

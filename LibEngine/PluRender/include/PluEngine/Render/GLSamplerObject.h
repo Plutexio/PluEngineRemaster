@@ -7,7 +7,7 @@
 
 #include <glad/glad.h>
 #include "PluEngine/Core.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 namespace Plu
 {

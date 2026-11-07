@@ -12,7 +12,7 @@
 
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 
@@ -72,7 +72,7 @@ bool Plu::StaticMeshAssetHandler::CanImportAsset(Path assetPath, TUsePointer<Eng
 		return false;
 	}
 
-	for (UInt4 i = 0; i < scene->mNumMeshes; i++) {
+	for (UInt32 i = 0; i < scene->mNumMeshes; i++) {
 		aiMesh* mesh = scene->mMeshes[i];
 		if (mesh->HasBones()) return false;
 	}

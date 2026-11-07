@@ -1,4 +1,8 @@
-vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+# Windows builds imgui as a DLL (see the GImGui patch below for why); everywhere else it stays a
+# static archive, as upstream ships it.
+if (NOT VCPKG_TARGET_IS_WINDOWS)
+    vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+endif()
 
 if ("docking-experimental" IN_LIST FEATURES)
     vcpkg_from_github(
@@ -32,8 +36,24 @@ file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}
 #
 # Patching the source (not just the installed header) matters: imgui's own translation units have
 # to see the same definition of GImGui as the engine does.
-vcpkg_replace_string("${SOURCE_PATH}/imconfig.h" "#pragma once"
-    "#pragma once\n\n// PluEngine: per-thread current ImGui context (see the overlay portfile).\nstruct ImGuiContext;\nextern thread_local ImGuiContext* PluImGuiTLS;\n#define GImGui PluImGuiTLS")
+#
+# Windows needs a different shape. The engine is several DLLs, and a static imgui linked into each
+# of them gives every DLL its own private copy of imgui (PE has no symbol interposition to merge
+# them, unlike ELF), so the copies would not even agree on the current context. imgui is therefore
+# one shared DLL there, exporting IMGUI_API. A thread_local variable cannot be dllimport-ed, so the
+# per-thread context lives inside the imgui DLL behind an exported accessor, and GImGui expands to
+# a call to it. PLU_IMGUI_TLS_IN_DLL tells the engine not to define PluImGuiTLS itself.
+if (VCPKG_TARGET_IS_WINDOWS AND VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
+    vcpkg_replace_string("${SOURCE_PATH}/imconfig.h" "#pragma once"
+        "#pragma once\n\n// PluEngine: imgui is a DLL, with a per-thread current context (see the overlay portfile).\n#ifdef PLU_IMGUI_EXPORTS\n#define IMGUI_API __declspec(dllexport)\n#else\n#define IMGUI_API __declspec(dllimport)\n#endif\nstruct ImGuiContext;\nIMGUI_API ImGuiContext*& PluImGuiCurrentContext();\n#define GImGui PluImGuiCurrentContext()\n#define PLU_IMGUI_TLS_IN_DLL 1")
+    file(APPEND "${SOURCE_PATH}/imgui.cpp"
+        "\n// PluEngine: storage for the per-thread current context (see imconfig.h).\nImGuiContext*& PluImGuiCurrentContext()\n{\n    static thread_local ImGuiContext* context = NULL;\n    return context;\n}\n")
+    vcpkg_replace_string("${SOURCE_PATH}/CMakeLists.txt" "target_compile_features(\${PROJECT_NAME} PUBLIC cxx_std_11)"
+        "target_compile_features(\${PROJECT_NAME} PUBLIC cxx_std_11)\ntarget_compile_definitions(\${PROJECT_NAME} PRIVATE PLU_IMGUI_EXPORTS)")
+else()
+    vcpkg_replace_string("${SOURCE_PATH}/imconfig.h" "#pragma once"
+        "#pragma once\n\n// PluEngine: per-thread current ImGui context (see the overlay portfile).\nstruct ImGuiContext;\nextern thread_local ImGuiContext* PluImGuiTLS;\n#define GImGui PluImGuiTLS")
+endif()
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES 

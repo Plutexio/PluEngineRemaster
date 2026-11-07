@@ -7,6 +7,7 @@
 
 #include "PluEngine/AssetTypes/NodeGraph/NodeGraph.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimGraphNode.h"
+#include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "AnimationGraph.generated.h"
 
 namespace Plu
@@ -18,6 +19,10 @@ namespace Plu
     struct PLUASSETTYPES_API IAnimationGraphVariable
     {
         REFLECTION_BODY_IANIMATIONGRAPHVARIABLE()
+
+        // Variables are owned and deleted through TOwningPointer<IAnimationGraphVariable>; without
+        // this the concrete AnimationGraphVariable<T> destructor (and T's, e.g. String) never ran.
+        virtual ~IAnimationGraphVariable() = default;
 
         virtual void* GetData() = 0;
         [[nodiscard]] virtual JSON Serialize() = 0;
@@ -50,7 +55,7 @@ namespace Plu
     };
 
     template <typename T>
-    struct PLUASSETTYPES_API AnimationGraphVariable : public IAnimationGraphVariable
+    struct AnimationGraphVariable : public IAnimationGraphVariable
     {
     private:
         T mValue;
@@ -105,7 +110,7 @@ namespace Plu
             Vec3 Color;
             String PinTypeName; // reflected pin type this variable exposes (see IAnimationGraphVariable::PinTypeId)
         };
-        static GameHashMap<String, VariableTypeInfo>& GetFactoryMap();
+        static HashMap<String, VariableTypeInfo>& GetFactoryMap();
 
         // Registers the engine's built-in variable types (Integer/Float/Boolean/String/Vec3). Called
         // once from Application::EngineInit() so Editor and Runtime builds share the same factory —

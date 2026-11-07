@@ -6,7 +6,7 @@
 #define PLUENGINE_SHADERPROGRAMINFO_H
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/IAssetData.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "ShaderProgramInfo.generated.h"
 
 namespace Plu

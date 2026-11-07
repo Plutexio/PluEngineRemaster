@@ -4,7 +4,7 @@
 
 #ifndef PLUENGINE_EDITORPANELMANAGER_H
 #define PLUENGINE_EDITORPANELMANAGER_H
-#include <PluSTL_FWD.h>
+#include "PluSTL/PluSTL_FWD.h"
 
 #include "EditorPanel.h"
 #include "PluEngine/Application.h"

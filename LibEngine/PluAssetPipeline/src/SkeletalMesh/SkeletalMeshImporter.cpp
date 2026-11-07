@@ -44,7 +44,7 @@ namespace Plu
     //         Skeleton skeleton;
     //         skeleton.SkeletonName = skeletonAssimp->mName.C_Str();
     //
-    //         GameHashMap<int, DynamicArray<unsigned int>> childrenMap;
+    //         HashMap<int, DynamicArray<unsigned int>> childrenMap;
     //
     //         std::function<void(int, SkeletonBone*)> makeBoneHierarchy = [&](int boneIndex, SkeletonBone* parent) {
     //             SkeletonBone bone = makeBoneFromAssimp(skeletonAssimp->mBones[boneIndex]);
@@ -135,7 +135,7 @@ namespace Plu
         // matrices the mesh is skinned with? For a healthy file the two are inverses of each other
         // for every bone, so any real disagreement means the hierarchy cannot be trusted as a bind
         // pose. Tolerance scales with the rig's own size — these are model units, not metres.
-        bool BindPoseAgreesWithSkinning(const GameHashMap<String, aiBone*>& bones, float* outWorstDelta)
+        bool BindPoseAgreesWithSkinning(const HashMap<String, aiBone*>& bones, float* outWorstDelta)
         {
             float rigExtent = 0.0f;
             float worst = 0.0f;
@@ -170,7 +170,7 @@ namespace Plu
         //
         // `axisConversion` puts the result back into the space the rest of the scene (and its
         // animations) live in — the offsets are in the file's pre-conversion space.
-        void RebuildBindPose(SkeletonNode* node, const GameHashMap<String, aiBone*>& bones,
+        void RebuildBindPose(SkeletonNode* node, const HashMap<String, aiBone*>& bones,
                              const Matrix4& axisConversion, const Matrix4& parentGlobal)
         {
             if (!node) return;
@@ -202,7 +202,7 @@ namespace Plu
                     findRoot(bone->mParent);
                 }
             };
-            GameHashMap<String, aiBone*> bones;
+            HashMap<String, aiBone*> bones;
             findRoot(mesh->mBones[0]->mNode);
             for (int j = 0; j < mesh->mNumBones; ++j) {
                 aiBone* bone = mesh->mBones[j];
@@ -268,7 +268,7 @@ namespace Plu
         // Assigns each SkeletonBone a palette index in DFS pre-order over the skeleton tree.
         // Vertex skinning references bones by this index; the ordering is deterministic and
         // matches a DFS over the (order-preserving) serialized tree, so it is stable on load.
-        void BuildBonePalette(const SkeletonNode* node, GameHashMap<String, UInt32>& outMap)
+        void BuildBonePalette(const SkeletonNode* node, HashMap<String, UInt32>& outMap)
         {
             if (!node) return;
             if (dynamic_cast<const SkeletonBone*>(node) != nullptr)
@@ -329,13 +329,13 @@ namespace Plu
         // to. Returns nullptr if no candidate covers the mesh. On success fills outPalette.
         TUsePointer<Skeleton> FindSkeletonForMesh(aiMesh* mesh,
                                                   const DynamicArray<TUsePointer<Skeleton>>& skeletons,
-                                                  GameHashMap<String, UInt32>& outPalette)
+                                                  HashMap<String, UInt32>& outPalette)
         {
             for (const TUsePointer<Skeleton>& skeleton : skeletons)
             {
                 if (!skeleton) continue;
 
-                GameHashMap<String, UInt32> palette;
+                HashMap<String, UInt32> palette;
                 BuildBonePalette(skeleton->RootNode.GetRaw(), palette);
 
                 bool coversAll = true;
@@ -680,7 +680,7 @@ namespace Plu
         // mapping bone names through the skeleton palette. aiVertexWeight vertex ids are
         // mesh-local, so baseVertex is where this mesh's vertices start inside the
         // (possibly merged) vertex buffer.
-        void ScatterBoneWeights(aiMesh* mesh, GameHashMap<String, UInt32>& palette,
+        void ScatterBoneWeights(aiMesh* mesh, HashMap<String, UInt32>& palette,
                                 DynamicArray<SkeletalVertex>& vertices, UInt32 baseVertex)
         {
             for (UInt32 b = 0; b < mesh->mNumBones; ++b)
@@ -748,7 +748,7 @@ namespace Plu
         struct MergeGroup
         {
             TUsePointer<Skeleton> GroupSkeleton;
-            GameHashMap<String, UInt32> Palette;
+            HashMap<String, UInt32> Palette;
             SkeletalMesh Mesh;
         };
         DynamicArray<MergeGroup> mergeGroups;
@@ -759,7 +759,7 @@ namespace Plu
             if (!mesh->HasBones()) continue;
 
             // Resolve the skeleton this mesh skins to (an explicit override wins).
-            GameHashMap<String, UInt32> palette;
+            HashMap<String, UInt32> palette;
             TUsePointer<Skeleton> skeleton;
             if (options.SkeletonToUse)
             {

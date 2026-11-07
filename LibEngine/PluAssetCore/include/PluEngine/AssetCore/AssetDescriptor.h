@@ -7,7 +7,7 @@
 
 #include "PluEngine/Core.h"
 #include "AssetDescriptor.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 
 
 namespace Plu

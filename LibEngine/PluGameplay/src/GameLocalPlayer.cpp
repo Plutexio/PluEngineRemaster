@@ -9,6 +9,11 @@
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 
+void Plu::GameLocalPlayer::JoinPlayerToWorld()
+{
+	mScenesManager->GetCurrentWorld()->JoinPlayerLocally(mLocalPlayerIndex);
+}
+
 void Plu::GameLocalPlayer::Init(const TUsePointer<SceneManager> &sceneManager, UInt16 id)
 {
 	mScenesManager = sceneManager;

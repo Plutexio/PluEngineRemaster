@@ -11,10 +11,12 @@
 #include "StaticMeshViewportPanel.h"
 #include "PluEngine/AssetTypes/Material/Material.h"
 #include "Managers/Assets/EditorAssetManager.h"
+#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
 
 void Plu::EditorMeshObject::OnSetupComponents()
 {
 	MeshComponent = AddComponent(StaticMeshComponent::GetStaticClass(), "EditorMeshComponent");
+	BodyComponent = AddComponent(PhysicsBodyComponent::GetStaticClass(), "BodyComponent");
 }
 
 void Plu::StaticMeshViewport::OnInit()

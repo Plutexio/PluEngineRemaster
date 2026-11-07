@@ -6,7 +6,7 @@
 #define PLUENGINE_ANIMATIONVIEWPORT_H
 #include "EditorViewports/IEditorViewport.h"
 #include "AnimationViewport.generated.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu
 {

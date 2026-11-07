@@ -23,6 +23,13 @@ namespace Plu
         // handoff must stay in lockstep with the render thread. See OnTick() and
         // RenderingManager::BeginImGuiLockstep().
         bool mImGuiAtlasSettling = false;
+        // Seconds since the shader/script watchers were last polled. Time based, not a frame
+        // counter: under power saving frames stop coming, the watchers must not.
+        // Hash of the ImGui draw data last handed to the render thread. A probe frame (power
+        // saving, pointer moved) is published only if its hash differs.
+        UInt64 mPublishedImGuiHash = 0;
+        float mFileWatchTimer = 0.0f;
+        void PollFileWatchers(float deltaTime);
         //This for passa on GH
         friend inline float DrawToolbarWindow(float toolbarHeight, int windowID);
 
@@ -43,6 +50,8 @@ namespace Plu
         void OnPostInit() override;
         void OnShutdown() override;
         void OnTick(float deltaTime) override;
+        void OnIdleTick(float deltaTime) override;
+        bool WantsContinuousFrames() override;
 
         void OnRequestedGameExit() override;
 

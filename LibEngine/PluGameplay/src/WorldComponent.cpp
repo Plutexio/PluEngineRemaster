@@ -4,6 +4,8 @@
 
 #include "PluEngine/Gameplay/WorldComponent.h"
 
+#include <glm/gtc/matrix_inverse.hpp>
+
 #include "PluEngine/Gameplay/GameObject.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
@@ -29,6 +31,9 @@ void Plu::WorldComponent::MarkWorldMatrixForRegeneration()
 {
 	mRegenerateWorldMatrix = true;
 	mRegenerateNormalMatrix = true;
+	// 0 stays reserved for "never computed" on the caches keyed by this counter, so it is skipped
+	// on the (theoretical) wrap.
+	if (++mTransformVersion == 0) mTransformVersion = 1;
 	for (auto child : mWorldComponents) {
 		child->MarkWorldMatrixForRegeneration();
 	}
@@ -44,13 +49,6 @@ void Plu::WorldComponent::MarkWorldMatrixForRegeneration()
 DynamicArray<Plu::TUsePointer<Plu::GameObject>> Plu::WorldComponent::GetAttachedObjects() const
 {
 	return mAttachedObjects;
-}
-
-void Plu::WorldComponent::MarkOwnerCollisionDirty()
-{
-	TUsePointer<SceneWorld> world = GetWorld();
-	if (!world) return;
-	world->OnComponentTransformChanged(GetParentGameObject().GetRaw());
 }
 
 Plu::TUsePointer<Plu::WorldComponent> Plu::WorldComponent::GetParentComponent() const
@@ -78,7 +76,7 @@ bool Plu::WorldComponent::IsAttachedTo(WorldComponent *component) const
 	return false;
 }
 
-void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRule rule)
+void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, String attachPointName, EAttachmentRule rule)
 {
 	TUsePointer<GameObject> owner = GetParentGameObject();
 	if (!owner) {
@@ -100,7 +98,7 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 			GetComponentName().CStr(), newAttachPoint->GetComponentName().CStr());
 		return;
 	}
-	if (mParentComponent.GetRaw() == newAttachPoint) return;
+	if (mParentComponent.GetRaw() == newAttachPoint && mAttachPointName == attachPointName) return;
 
 	// Snapshot before the reparent: GetWorldMatrix() answers against the OLD chain here.
 	const Matrix4 previousWorldMatrix = (rule == EAttachmentRule::KeepWorld) ? GetWorldMatrix() : Matrix4(1.0f);
@@ -108,6 +106,7 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 	// Owning reference held across the whole swap — the old list drops its owning pointer below, and
 	// without this the component would be destroyed mid-call.
 	TOwningPointer<WorldComponent> self = GetObjectManagerFromParent()->GetObjectAsOwner<WorldComponent>(*GetEngineObjectHandle());
+	mAttachPointName = attachPointName;
 
 	owner->OnDetachComponent(self, mParentComponent);
 	mParentComponent = newAttachPoint
@@ -122,12 +121,11 @@ void Plu::WorldComponent::AttachTo(WorldComponent *newAttachPoint, EAttachmentRu
 	// The component's transform relative to the game object changed even under KeepWorld (the chain
 	// it is baked from is different), and sub-shape offsets are baked at body build time.
 	OnRelativeTransformChanged();
-	MarkOwnerCollisionDirty();
 }
 
 void Plu::WorldComponent::Detach(EAttachmentRule rule)
 {
-	AttachTo(nullptr, rule);
+	AttachTo(nullptr,"", rule);
 }
 
 void Plu::WorldComponent::SnapToAttachParent(bool keepScale)
@@ -164,7 +162,7 @@ Matrix4 Plu::WorldComponent::BuildLocalMatrix()
 		  glm::scale(glm::mat4(1.0f), GetRelativeScale());
 }
 
-Matrix4 Plu::WorldComponent::GetWorldMatrix()
+const Matrix4& Plu::WorldComponent::GetWorldMatrixRef()
 {
 	if (mRegenerateWorldMatrix) {
 		mRegenerateWorldMatrix = false;
@@ -172,12 +170,29 @@ Matrix4 Plu::WorldComponent::GetWorldMatrix()
 		// parent * local in both branches — the local transform is expressed in the parent's space,
 		// so it has to be applied first (glm is column-vector, rightmost factor applies first).
 		if (mParentComponent) {
-			mWorldMatrix = mParentComponent->GetWorldMatrix() * localMatrix;
+			if (mAttachPointName != "") {
+				mWorldMatrix = Matrix4(1.0f);
+				mParentComponent->GetWorldMatrixForAttachPoint(mAttachPointName, &mWorldMatrix);
+				mWorldMatrix *= localMatrix;
+			} else {
+				mWorldMatrix = mParentComponent->GetWorldMatrixRef() * localMatrix;
+			}
 		} else {
 			mWorldMatrix = GetParentGameObject()->GetObjectWorldMatrix() * localMatrix;
 		}
+		// Falls out of the same pass rather than being derived again on every GetWorldScale() call.
+		mWorldScale = Vec3(
+			glm::length(Vec3(mWorldMatrix[0])),
+			glm::length(Vec3(mWorldMatrix[1])),
+			glm::length(Vec3(mWorldMatrix[2]))
+		);
 	}
 	return mWorldMatrix;
+}
+
+Matrix4 Plu::WorldComponent::GetWorldMatrix()
+{
+	return GetWorldMatrixRef();
 }
 
 Matrix4 Plu::WorldComponent::GetMatrixRelativeToGameObject()
@@ -189,13 +204,21 @@ Matrix4 Plu::WorldComponent::GetMatrixRelativeToGameObject()
 	return localMatrix;
 }
 
-Matrix4 Plu::WorldComponent::GetNormalMatrix()
+const Matrix4& Plu::WorldComponent::GetNormalMatrixRef()
 {
 	if (mRegenerateNormalMatrix) {
 		mRegenerateNormalMatrix = false;
-		mNormalMatrix = glm::transpose(glm::inverse(GetWorldMatrix()));
+		// Every consumer reads mat3(normalMatrix) — the instanced and the plain vertex shader alike
+		// — and for an affine world matrix that 3x3 block is exactly the inverse-transpose of the
+		// matrix's own 3x3 block. Inverting the 3x3 gives the same result for a fraction of the work.
+		mNormalMatrix = Matrix4(glm::inverseTranspose(glm::mat3(GetWorldMatrixRef())));
 	}
 	return mNormalMatrix;
+}
+
+Matrix4 Plu::WorldComponent::GetNormalMatrix()
+{
+	return GetNormalMatrixRef();
 }
 
 Vec3 Plu::WorldComponent::GetRelativeLocation()
@@ -218,6 +241,7 @@ void Plu::WorldComponent::SetRelativeLocation(Vec3 newLoc)
 	mRelativeLocation = newLoc;
 	MarkWorldMatrixForRegeneration();
 	OnRelativeTransformChanged();
+	DispatchEvent("RelativeLocationChanged", nullptr);
 }
 
 void Plu::WorldComponent::SetRelativeRotation(Vec3 newRot)
@@ -225,6 +249,7 @@ void Plu::WorldComponent::SetRelativeRotation(Vec3 newRot)
 	mRelativeRotation = newRot;
 	MarkWorldMatrixForRegeneration();
 	OnRelativeTransformChanged();
+	DispatchEvent("RelativeRotationChanged", nullptr);
 }
 
 void Plu::WorldComponent::SetRelativeScale(Vec3 newScale)
@@ -232,33 +257,39 @@ void Plu::WorldComponent::SetRelativeScale(Vec3 newScale)
 	mRelativeScale = newScale;
 	MarkWorldMatrixForRegeneration();
 	OnRelativeTransformChanged();
+	DispatchEvent("RelativeScaleChanged", nullptr);
 }
 
 Vec3 Plu::WorldComponent::GetWorldLocation()
 {
-	return Vec3(GetWorldMatrix()[3]);
+	return GetLocationFromMatrix(GetWorldMatrix());
 }
 
 Vec3 Plu::WorldComponent::GetWorldScale()
 {
-	Matrix4 m = GetWorldMatrix();
-	return Vec3(
-		glm::length(Vec3(m[0])),
-		glm::length(Vec3(m[1])),
-		glm::length(Vec3(m[2]))
-	);
+	// Derived by the world-matrix refresh; this call only makes sure that pass has run.
+	GetWorldMatrixRef();
+	return mWorldScale;
 }
 
 Vec3 Plu::WorldComponent::GetWorldRotation()
 {
-	Matrix4 m = GetWorldMatrix();
-	Vec3 scale = GetWorldScale();
-	glm::mat3 rotMat = glm::mat3(
-		Vec3(m[0]) / scale.x,
-		Vec3(m[1]) / scale.y,
-		Vec3(m[2]) / scale.z
-	);
-	return glm::degrees(glm::eulerAngles(glm::quat_cast(rotMat)));
+	return GetRotationFromMatrix(GetWorldMatrix());
+}
+
+Vec3 Plu::WorldComponent::GetWorldForwardVector()
+{
+	return glm::normalize(-Vec3(GetWorldMatrixRef()[2]));
+}
+
+Vec3 Plu::WorldComponent::GetWorldRightVector()
+{
+	return glm::normalize(Vec3(GetWorldMatrixRef()[0]));
+}
+
+Vec3 Plu::WorldComponent::GetWorldUpVector()
+{
+	return glm::normalize(Vec3(GetWorldMatrixRef()[1]));
 }
 
 void Plu::WorldComponent::SetWorldLocation(Vec3 newLoc)

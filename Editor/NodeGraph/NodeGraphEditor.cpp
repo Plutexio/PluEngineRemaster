@@ -9,6 +9,7 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
 #include "PluEngine/Core/DiskManager.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include <imgui_internal.h> // BeginDragDropTargetCustom / GetCurrentWindow for the canvas drop target
 #include <cfloat>
 #include <algorithm>
@@ -48,13 +49,13 @@ namespace Plu
 	static float PinRowWidth(const NodePin& pin)
 	{
 		return kPinDotRadius * 2.0f + ImGui::GetStyle().ItemSpacing.x
-			+ ImGui::CalcTextSize(pin.Name.CStr()).x;
+			+ ImGui::CalcTextSize(pin.GetLabel().CStr()).x;
 	}
 
 	// ---- NodeViewRegistry ---------------------------------------------------------------------
 	void NodeViewRegistry::Register(const String& typeName, INodeView* view)
 	{
-		if (view) mViews.Insert(typeName, view);
+		if (view) mViews.InsertOrAssign(typeName, view);
 	}
 
 	INodeView* NodeViewRegistry::For(GraphNode* node)
@@ -151,7 +152,7 @@ namespace Plu
 			ed::BeginPin(editor.PinId(node->Uuid, pin.Name, EPinDirection::Input), ed::PinKind::Input);
 			DrawPinDot(editor.GetPinColor(pin));
 			ImGui::SameLine();
-			ImGui::TextUnformatted(pin.Name.CStr());
+			ImGui::TextUnformatted(pin.GetLabel().CStr());
 			ed::EndPin();
 		}
 		// Zero-size groups confuse the SameLine below; a dummy keeps the column real when a node
@@ -167,7 +168,7 @@ namespace Plu
 				// Right-align each row inside the column so every dot lands on the same edge.
 				ImGui::SetCursorPosX(columnX + (outputsWidth - PinRowWidth(pin)));
 				ed::BeginPin(editor.PinId(node->Uuid, pin.Name, EPinDirection::Output), ed::PinKind::Output);
-				ImGui::TextUnformatted(pin.Name.CStr());
+				ImGui::TextUnformatted(pin.GetLabel().CStr());
 				ImGui::SameLine();
 				DrawPinDot(editor.GetPinColor(pin));
 				ed::EndPin();
@@ -382,6 +383,7 @@ namespace Plu
 		{ "LogicGraphNode",   "Logic",     "Logic"   },
 		{ "ConvertGraphNode", "Convert",   "Convert" },
 		{ "AnimGraphNode",    "Animation", "Anim"    },
+		{ "ParticleModuleNode", "Particle",  "Particle" },
 	};
 
 	static const PaletteCategory* PaletteCategoryFor(TypeInfo* type)
@@ -423,11 +425,7 @@ namespace Plu
 		ImGui::Separator();
 
 		static ImGuiTextFilter filter;
-		if (ImGui::IsWindowAppearing()) {
-			filter.Clear();
-			ImGui::SetKeyboardFocusHere();
-		}
-		filter.Draw("##palette-filter", 180.0f);
+		ImGuiWidgets::PopupSearchBar(&filter, "Search nodes...", ImGui::GetFontSize() * 14.0f);
 		ImGui::Separator();
 
 		// Collected and sorted every time the popup draws: the type map iterates in hash order, and an

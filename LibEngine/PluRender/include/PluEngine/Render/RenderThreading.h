@@ -7,8 +7,10 @@
 
 #include "glm/detail/type_quat.hpp"
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Effects/Particles/Particle.h"
+#include "PluEngine/Effects/Particles/ParticleAttributes.h"
+#include "PluEngine/Effects/Particles/CompiledParticleSystem.h"
 
 namespace Plu
 {
@@ -73,8 +75,8 @@ namespace Plu
         float SplitLambda    = 0.9f;
         Int32 Resolution     = 2048;   // nearest cascade; the rest follow ResolutionFalloff
         Int32 ResolutionFalloff = 2;   // halve the resolution every N cascades (0 = uniform)
-        float NormalBias     = 1.0f;   // texels
-        float DepthBias      = 0.005f; // metres
+        float NormalBias     = 1.2f;   // texels
+        float DepthBias      = 0.0f;   // metres
         float PcfRadius      = 1.5f;   // texels
         bool  PcfAutoTaps    = true;   // derive the tap count from PcfRadius (ignores PcfTapCount)
         Int32 PcfTapCount    = 8;      // samples in the PCF disk, when PcfAutoTaps is off
@@ -156,25 +158,44 @@ namespace Plu
         bool    CastsShadow    = false;
     };
 
-    struct ParticleSpawnerInitializeRequest
+    // Full state of one ParticleSpawnerComponent, re-sent in every snapshot. The render thread
+    // reconciles its spawners against the list (create missing, update, destroy absent) instead of
+    // executing one-shot requests: the TripleBuffer drops snapshots when render falls behind and
+    // re-renders a stale one after a resize, and state survives both — an event would be lost or
+    // executed twice.
+    struct ParticleSpawnerRenderObject
     {
         PluUUID UUID;
+        // Legacy path: used only while SystemUuid == 0 (the component has no ParticleSystem asset).
         ParticleClass ParticleClassData;
 
-        Vec3 Location;
-        Vec3 Rotation;
-    };
+        // The ParticleSystem asset driving this spawner; 0 = legacy points. SystemRevision is the
+        // CompileRevision of the program in RenderSnapshot::ParticleSystems.
+        PluUUID SystemUuid = PluUUID(0);
+        UInt32 SystemRevision = 0;
 
-    struct ParticleSpawnerSpawnParticlesRequest
-    {
-        PluUUID UUID;
-        int NumberOfParticles;
-    };
+        // Lifecycle as STATE. ActivationVersion/ClearVersion only ever grow: Play() bumps the first
+        // (restart), Stop() the second (clear now); Deactivate/Pause/Resume bump neither. The render
+        // thread compares them with what it last synced, so a dropped or replayed snapshot changes nothing.
+        EParticleEmissionState EmissionState = EParticleEmissionState::Stopped;
+        UInt32 ActivationVersion = 0;
+        UInt32 ClearVersion = 0;
 
-    struct ParticleSpawnerDestroyRequest
-    {
-        PluUUID UUID;
-        bool Force;
+        Vec3 Location = Vec3(0.0f);
+        // World rotation: spawn shapes and directions follow the bone / socket the spawner is attached to.
+        Quaternion Rotation = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);
+        // Unit axis of the launch cone (the component's world forward vector).
+        Vec3 LaunchDirection = Vec3(0.0f, 0.0f, -1.0f);
+
+        // Monotonic count of particles requested by gameplay since the component was created. The
+        // spawner spawns the difference to what it has already seen, so bursts are exactly-once.
+        UInt64 RequestedParticles = 0;
+        // Size of the latest burst — what Loop repeats.
+        int LastBurstSize = 0;
+
+        // This spawner's block of parameter values inside RenderSnapshot::ParticleParameterValues.
+        UInt32 ParameterValueOffset = 0;
+        UInt32 ParameterValueCount = 0;
     };
 
     //RenderSnapshot
@@ -232,9 +253,22 @@ namespace Plu
         UInt32 StatInstancesDrawn = 0;
         UInt32 StatCulledCount = 0;
 
-        DynamicArray<ParticleSpawnerInitializeRequest> ParticleSpawnerInitializeRequests;
-        DynamicArray<ParticleSpawnerSpawnParticlesRequest> ParticleSpawnerSpawnParticlesRequests;
-        DynamicArray<ParticleSpawnerDestroyRequest> ParticleSpawnerDestroyRequests;
+        // Every live particle spawner of SceneHandle's world (see ParticleSpawnerRenderObject).
+        DynamicArray<ParticleSpawnerRenderObject> ParticleSpawners;
+        // Flat parameter values of every system spawner (ParticleSpawnerRenderObject::ParameterValue*).
+        // Cleared every frame, like ParticleSpawners.
+        DynamicArray<float> ParticleParameterValues;
+        // Compiled programs of the systems the spawners use. Deliberately NOT cleared by Clear(): it is
+        // a resident cache in this snapshot slot. RenderSnapshotBuilder rewrites an entry only when its
+        // revision changed and drops entries no spawner used this frame, so in steady state a frame
+        // copies nothing.
+        //
+        // INVARIANT: every published snapshot's ParticleSystems holds a superset of the systems its
+        // ParticleSpawners refer to, at the revisions they name. It holds because each of the three
+        // TripleBuffer slots is written only by main and read by render only after Publish(): a dropped
+        // snapshot loses nothing (the data stays in its slot) and a replayed old one is self-sufficient.
+        // Render must not keep a pointer into this array across frames: main overwrites the slot.
+        DynamicArray<CompiledParticleSystem> ParticleSystems;
 
         bool IsSnapshotValid = false;
 
@@ -259,9 +293,9 @@ namespace Plu
             StatDrawCalls = 0;
             StatInstancesDrawn = 0;
             StatCulledCount = 0;
-            ParticleSpawnerInitializeRequests.Clear();
-            ParticleSpawnerSpawnParticlesRequests.Clear();
-            ParticleSpawnerDestroyRequests.Clear();
+            ParticleSpawners.Clear();
+            ParticleParameterValues.Clear();
+            // ParticleSystems is intentionally kept — see its comment. Do not "fix" this.
             IsSnapshotValid = false;
         }
     };

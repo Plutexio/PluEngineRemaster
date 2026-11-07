@@ -41,7 +41,7 @@ namespace Plu
         IRendererCamera* mEditorCamera = nullptr;
 #endif
 
-        GameHashMap<String, TUsePointer<SceneInfo>> mRegisteredScenesByURL;
+        HashMap<String, TUsePointer<SceneInfo>> mRegisteredScenesByURL;
 
         //Helpers
         void UnloadScene(TUsePointer<SceneWorld> sceneWorld);
@@ -161,6 +161,9 @@ namespace Plu
 
     PLU_FUNCTION()
     PLUGAMEPLAY_API TUsePointer<SceneWorld> GetCurrentWorld();
+
+    PLU_FUNCTION()
+    PLUGAMEPLAY_API void ConnectToWorld(const String &URL);
 }
 
 #endif //PLUENGINE_SCENEMANAGER_H

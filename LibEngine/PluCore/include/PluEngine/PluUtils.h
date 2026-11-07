@@ -6,47 +6,15 @@
 #define PLUENGINE_PLUUTILS_H
 
 #include "Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluTypes.h"
 #include <cmath>
-
-#ifdef PLU_PLATFORM_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-	#include <windows.h>
-#endif
 
 namespace Plu
 {
 	PLUCORE_API PathW GetEngineResourcesDir();
 
-	inline PathW GetExePath()
-	{
-#if defined(PLU_PLATFORM_WINDOWS)
-
-		wchar_t buffer[MAX_PATH];
-		DWORD size = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-
-		if (size == 0) {
-			throw std::runtime_error("GetModuleFileNameW failed");
-		}
-
-		return buffer;
-
-#elif defined(PLU_PLATFORM_LINUX)
-
-		char buffer[PATH_MAX];
-		ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
-
-		if (len == -1) {
-			throw std::runtime_error("readlink(/proc/self/exe) failed");
-		}
-
-		buffer[len] = '\0';
-		return PathW(StringW::FromNarrow(buffer));
-
-#endif
-	}
-
+	PLUCORE_API PathW GetExePath();
 
 	PLUCORE_API Path GetSystemUserPath();
 
@@ -154,6 +122,8 @@ namespace Plu
 	PLUCORE_API Vec3 GetLocationFromMatrix(const Matrix4& matrix);
 	PLUCORE_API Vec3 GetScaleFromMatrix(const Matrix4& matrix);
 	PLUCORE_API Vec3 GetRotationFromMatrix(const Matrix4& matrix);
+
+	PLUCORE_API Quaternion GetQuaternionFromEuler(Vec3 angles);
 
 	// --- Picking: UInt32 ID <-> color ------------------------------------------------------
 	// Pack a 32-bit id (e.g. a truncated UUID / per-frame object index) into an RGBA color so it

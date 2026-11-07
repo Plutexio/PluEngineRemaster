@@ -89,7 +89,7 @@ bool Plu::SkeletalMeshAssetLoader::CanImportAsset(Path assetPath, TUsePointer<En
         return true;
     }
 
-    for (UInt4 i = 0; i < scene->mNumMeshes; i++) {
+    for (UInt32 i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
         if (mesh->HasBones()) {
             return true;

@@ -33,7 +33,7 @@ namespace Plu
         // indeksy w RenderSnapshot::StaticMeshBatches. Member (nie lokalna per klatka) — Clear()
         // na starcie każdego builda, reużywany bufor zamiast realokacji co klatkę. Kolizje: małe
         // kubełki porównywane po pełnym kluczu w BuildSnapshotAndPublish.
-        GameHashMap<UInt64, DynamicArray<UInt32>> mBatchLookup;
+        HashMap<UInt64, DynamicArray<UInt32>> mBatchLookup;
 
         // Scratch dla dwuprzebiegowej emisji batchy (bucketing -> prefix-sum + sort batchy ->
         // scatter). Member, reużywany między klatkami — unika alokacji DynamicArray per batch.
@@ -55,8 +55,8 @@ namespace Plu
         // Akumulatory liczników "hottest" assetów (RenderUsageStats) per klatka: UUID -> liczba
         // użyć. Flush raz po pętlach batchowania — per-komponentowe chodzenie po uniformach
         // materiału (porównania stringów "sampler2D") było O(komponenty x uniformy) na klatkę.
-        GameHashMap<UInt64, UInt32> mFrameMeshUses;
-        GameHashMap<UInt64, UInt32> mFrameMaterialUses;
+        HashMap<UInt64, UInt32> mFrameMeshUses;
+        HashMap<UInt64, UInt32> mFrameMaterialUses;
 #endif
 
         [[nodiscard]] Matrix4 GetProjectionMatrix(IRendererCamera* camera) const;
@@ -76,6 +76,10 @@ namespace Plu
         static Matrix4 GetLastFrameViewMatrix();
 
         void BuildSnapshotAndPublish(float deltaTime = 0.0f);
+        // For a frame that ticked but publishes no snapshot (power saving probe frame). Drops
+        // the per-frame debug geometry the tick queued for BuildSnapshotAndPublish to drain —
+        // left alone it would pile up, one frame's worth per skipped frame.
+        void DiscardFrame();
     };
 }
 

@@ -52,8 +52,22 @@ namespace Plu
 		// w RenderSnapshotBuilderze przy dużej liczbie instancji.
 		DynamicArray<Matrix4> mCachedNormalMatrices;
 		DynamicArray<MeshInstanceTransform> mCachedInstances;
-		Matrix4 mCachedComponentWorldMatrix = Matrix4(0.0f);
+		// Transform version of the component at the last cache rebuild (0 = never built). Replaces
+		// comparing the whole world matrix byte by byte on every access.
+		UInt32 mCachedTransformVersion = 0;
 		bool mInstanceCacheDirty = true;
+	public:
+		// World-space bounding sphere of one instance. Cached alongside the matrices because the
+		// render snapshot builder needs one per instance per frame, and deriving it there cost three
+		// glm::length plus a matrix-vector product per instance — for a spawner with a million
+		// instances that is the whole frame.
+		struct InstanceBoundingSphere
+		{
+			Vec3  Center = Vec3(0.0f);
+			float Radius = 0.0f;
+		};
+	private:
+		DynamicArray<InstanceBoundingSphere> mCachedInstanceBounds;
 	public:
 		InstancedStaticMeshComponent() = default;
 		~InstancedStaticMeshComponent() override = default;
@@ -67,6 +81,8 @@ namespace Plu
 		PLU_PROPERTY(PyExport)
 		bool CastsShadow = true;
 
+		// Model-space bounds of the displayed mesh. Assign through SetMeshBoundingBox, never
+		// directly — the cached per-instance spheres are derived from it.
 		BoundingBox MeshBoundingBox;
 		// Twardy guard, ten sam kontrakt co StaticMeshComponent::MeshBoundingBoxComputed:
 		// CreateBoundingBoxForStaticMesh chodzi po każdym wierzchołku, więc liczymy raz.
@@ -111,6 +127,13 @@ namespace Plu
 		// Macierze normalnych per instancja, równoległe (ten sam indeks) do GetInstanceWorldMatrices().
 		// Wewnętrznie odświeża cache przez GetInstanceWorldMatrices().
 		const DynamicArray<Matrix4>* GetInstanceNormalMatrices();
+		// World bounding spheres per instance, parallel (same index) to GetInstanceWorldMatrices().
+		// Built in the same rebuild pass, from MeshBoundingBox and the instance's world matrix.
+		const DynamicArray<InstanceBoundingSphere>* GetInstanceWorldBounds();
+
+		// Sets the model-space box and invalidates the instance cache (the bounding spheres above are
+		// derived from it). The only supported way to change MeshBoundingBox.
+		void SetMeshBoundingBox(const BoundingBox& boundingBox);
 	};
 }
 

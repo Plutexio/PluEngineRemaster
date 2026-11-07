@@ -11,14 +11,15 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
 #include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "HashSet/HashSet.h"
+#include "PluSTL/HashSet/HashSet.h"
+#include "PluEngine/AssetCore/AssetDescriptor.h"
 
 void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
 {
 	if (!sceneWorld) return;
+	EngineObjectHandle oldWorldHandle = sceneWorld->GetObjectHandle();
 #ifdef PLU_ENGINE_EDITOR_BUILD
     if (sceneWorld == mOverlayScene || (sceneWorld->Info && sceneWorld->Info->URL == "Overlay")) {
         UnloadOverlayScene();
@@ -28,7 +29,7 @@ void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
 		mEditorCamera = nullptr;
 		mObjectManager->DestroyObject(*mActivePIEScene->GetEngineObjectHandle());
 		mActivePIEScene = nullptr;
-		if (mActiveScene) {
+		if (mActiveScene && !mIsInPIE) {
 			IRendererCamera* cameraToViewInEditor = nullptr;
 			DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 			mEditorCamera = cameraToViewInEditor;
@@ -40,6 +41,7 @@ void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
         mObjectManager->DestroyObject(*mActiveScene->GetEngineObjectHandle());
         mActiveScene = nullptr;
     }
+	DispatchEvent("UnloadWorld", &oldWorldHandle);
 }
 
 void Plu::SceneManager::LoadScene(String url, TOwningPointer<SceneWorld>* field, bool play, TUsePointer<SceneWorld> cloneSource)
@@ -55,6 +57,8 @@ void Plu::SceneManager::LoadScene(String url, TOwningPointer<SceneWorld>* field,
     TOwningPointer<SceneWorld> newWorld = mObjectManager->GetObjectAsOwner<SceneWorld>(hdl);
     newWorld->Init(mObjectManager, mClient);
     newWorld->Info = sceneInfo;
+	EngineObjectHandle newWorldHandle = newWorld->GetObjectHandle();
+	GetObjectEventDispatcher()->Dispatch("NewWorldBeforeLoad", &newWorldHandle);
     if (cloneSource) {
         CloneSceneInto(newWorld, cloneSource);
     } else {
@@ -71,7 +75,8 @@ void Plu::SceneManager::LoadScene(String url, TOwningPointer<SceneWorld>* field,
 		mEditorCamera = cameraToViewInEditor;
 #endif
 	}
-	GetObjectEventDispatcher()->Dispatch("NewWorld", nullptr);
+	newWorldHandle = newWorld->GetObjectHandle();
+	GetObjectEventDispatcher()->Dispatch("NewWorld", &newWorldHandle);
 	PLU_CORE_INFO("New Scene Loaded! URL {}", url.CStr());
 }
 
@@ -82,10 +87,14 @@ void Plu::SceneManager::CreateOverlayScene()
 	mOverlayScene = mObjectManager->GetObjectAsOwner<SceneWorld>(hdl);
 	mOverlayScene->Init(mObjectManager, mClient);
 	mOverlayScene->Info = nullptr;
+	EngineObjectHandle newOverlayHandle = hdl;
+	GetObjectEventDispatcher()->Dispatch("NewWorldBeforeLoad", &newOverlayHandle);
 	mOverlayScene->LoadGameObjects();
 	IRendererCamera* cameraToViewInEditor = nullptr;
 	DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 	mEditorCamera = cameraToViewInEditor;
+	newOverlayHandle = hdl;
+	GetObjectEventDispatcher()->Dispatch("NewWorld", &newOverlayHandle);
 
 	TUsePointer<DirectionalLight> dirLight = mOverlayScene->SpawnGameObject(DirectionalLight::GetStaticClass());
 	dirLight->SetObjectRotation({250,40,0});
@@ -94,6 +103,7 @@ void Plu::SceneManager::CreateOverlayScene()
 void Plu::SceneManager::UnloadOverlayScene()
 {
 	if (mOverlayScene) {
+		EngineObjectHandle hdl = mOverlayScene->GetObjectHandle();
 		mOverlayScene->UnloadGameObjects();
 		mEditorCamera = nullptr;
 		mObjectManager->DestroyObject(*mOverlayScene->GetEngineObjectHandle());
@@ -103,6 +113,7 @@ void Plu::SceneManager::UnloadOverlayScene()
 			DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 			mEditorCamera = cameraToViewInEditor;
 		}
+		DispatchEvent("UnloadWorld", &hdl);
 	}
 }
 #endif
@@ -130,6 +141,16 @@ void Plu::SceneManager::Initialize(ApplicationInfo *appInfo)
     mAssetManager = appInfo->AppAssetManager;
     mRegisteredScenesByURL["Overlay"] = nullptr;
     gSceneManager = mObjectManager->GetObjectAsUser<SceneManager>(*this->GetEngineObjectHandle());
+
+	mAssetManager->SubscribeToEvent("LoadAssetDescriptor", [&](void* data) {
+		UInt64* uuid = static_cast<UInt64*>(data);
+		TUsePointer<AssetDescriptor> assetDescriptor = mAssetManager->GetAssetDescriptor(*uuid);
+		if (!assetDescriptor) return;
+		if (assetDescriptor->AssetType != SceneInfo::GetStaticClass()) return;
+
+		TUsePointer<SceneInfo> sceneInfo = mAssetManager->GetAssetData(assetDescriptor);
+		RegisterSceneInfo(sceneInfo);
+	});
 }
 
 void Plu::SceneManager::OnUpdate(float deltaTime)
@@ -178,8 +199,16 @@ bool Plu::SceneManager::ConnectToWorld(String URL, bool startPlayOnLoad)
         CreateOverlayScene();
         return true;
     }
-    if (IsInPIE()) return false;
-    if (GetCurrentWorldName() == URL) return false;
+	if (GetCurrentWorldName() == URL) return false;
+    if (IsInPIE()) {
+    	if (!mRegisteredScenesByURL.Contains(URL)) {
+    		PLU_CORE_ERROR("No scene with URL {}", URL.CStr());
+    		return false;
+    	}
+    	UnloadScene(mActivePIEScene);
+    	LoadScene(URL, &mActivePIEScene, true);
+    	return true;
+    }
     UnloadScene(GetCurrentWorld());
     LoadScene(URL, &mActiveScene, startPlayOnLoad);
     return true;
@@ -203,6 +232,7 @@ void Plu::SceneManager::RegisterSceneInfo(TUsePointer<SceneInfo> sceneInfo)
         return;
     }
     mRegisteredScenesByURL[sceneInfo->URL] = sceneInfo;
+	PLU_CORE_TRACE("New Scene info registere! {}", sceneInfo->URL.CStr());
 }
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -218,7 +248,7 @@ bool Plu::SceneManager::EnterPIE()
 	// saving is only what the user explicitly asks for (SaveActiveScene).
 	LoadScene(GetCurrentWorldName(), &mActivePIEScene, true, mActiveScene);
 	mEditorCamera = nullptr;
-	mActivePIEScene->GetPhysicsWorld()->PhysicsDebugRenderMode = mActiveScene->GetPhysicsWorld()->PhysicsDebugRenderMode;
+	//mActivePIEScene->GetPhysicsWorld()->PhysicsDebugRenderMode = mActiveScene->GetPhysicsWorld()->PhysicsDebugRenderMode; TODO
 	return true;
 }
 
@@ -259,6 +289,11 @@ Plu::TUsePointer<Plu::SceneWorld> Plu::GetCurrentWorld()
     return gSceneManager ? gSceneManager->GetCurrentWorld() : nullptr;
 }
 
+void Plu::ConnectToWorld(const String &URL) {
+	if (!gSceneManager) return;
+	gSceneManager->ConnectToWorld(URL);
+}
+
 // Reflected properties land in the flat "fields" array written by TypeSerializer<TypeInfo*>, so a
 // single string field can be read straight out of the JSON — no need to construct an object and run
 // a full deserialization just to inspect one value. outFound (optional) distinguishes "field absent"
@@ -283,6 +318,7 @@ void Plu::SceneManager::DeserializeWorldComponent(DeserializationContext* dc, co
 	PLU_PROFILE_SCOPE("DeserializeWorldComponent");
 	if (!j.contains("typeName")) return;
 	TypeInfo* componentClass = TypeRegistry::GetInstance()->GetTypeOfName(j["typeName"].get<std::string>().c_str());
+	if (!componentClass) return;
 	const String componentName = ReadStringFieldFromJson(j, "mComponentName");
 	DynamicArray<TUsePointer<WorldComponent>> componentsToSearchIn = parentComponent ? parentComponent->GetChildren() : parentObject->GetDirectlyAttachedWorldComponents();
 	TUsePointer<WorldComponent>* result = componentsToSearchIn.FindIf([&componentName](TUsePointer<WorldComponent> comp) -> bool {
@@ -325,7 +361,7 @@ void Plu::SceneManager::DeserializeWorldComponent(DeserializationContext* dc, co
 	// AddComponent hangs the component off the object; the JSON nesting is what says otherwise.
 	// KeepRelative — the relative transform read below is authored against the attach point.
 	if (parentComponent) {
-		newComponent->AttachTo(parentComponent.GetRaw(), EAttachmentRule::KeepRelative);
+		newComponent->AttachTo(parentComponent.GetRaw(), newComponent->GetAttachPointName(), EAttachmentRule::KeepRelative);
 	}
 
 	if (j.contains("relativeLocation")) {
@@ -429,7 +465,7 @@ void Plu::SceneManager::CloneSceneInto(TUsePointer<SceneWorld> target, TUsePoint
 	DynamicArray<TUsePointer<GameObject>> sourceObjects = source->GetAllGameObjects();
 	// Clones get fresh UUIDs, so attachments cannot be rebuilt by looking the parent up by UUID in
 	// the target world — the source object's UUID is the only stable key between the two worlds.
-	GameHashMap<UInt64, TUsePointer<GameObject>> clonesBySourceUuid;
+	HashMap<UInt64, TUsePointer<GameObject>> clonesBySourceUuid;
 	for (const auto& sourceObject : sourceObjects) {
 		TUsePointer<GameObject> clone = CloneGameObjectInto(target, sourceObject);
 		if (clone) clonesBySourceUuid.Insert(sourceObject->GetObjectUUID().getUUID(), clone);
@@ -527,7 +563,7 @@ void Plu::SceneManager::CloneWorldComponent(TUsePointer<WorldComponent> source, 
 		if (!target) return;
 		// Mirror the source's attachment — AddComponent puts every component directly on the object.
 		if (parentComponent) {
-			target->AttachTo(parentComponent.GetRaw(), EAttachmentRule::KeepRelative);
+			target->AttachTo(parentComponent.GetRaw(), source->GetAttachPointName(), EAttachmentRule::KeepRelative);
 		}
 		target->SetRelativeLocation(source->GetRelativeLocation());
 		target->SetRelativeRotation(source->GetRelativeRotation());

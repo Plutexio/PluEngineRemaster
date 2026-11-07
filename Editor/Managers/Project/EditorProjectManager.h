@@ -6,7 +6,7 @@
 #define PLUENGINE_EDITORPROJECTMANAGER_H
 #include "PluEngine/Core.h"
 #include "EditorProjectManager.generated.h"
-#include "Path/Path.h"
+#include "PluSTL/Path/Path.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 
@@ -58,6 +58,10 @@ namespace Plu
 		[[nodiscard]] PathW GetProjectScriptsDirectory() const;
 		[[nodiscard]] PathW GetProjectShadersDirectory() const;
 		[[nodiscard]] PathW GetProjectCacheDirectory() const;
+
+		// Config/PhysicsChannels.json of the open project.
+		[[nodiscard]] PathW GetPhysicsChannelsConfigPath() const;
+		void SavePhysicsChannels() const;
 
 	};
 }

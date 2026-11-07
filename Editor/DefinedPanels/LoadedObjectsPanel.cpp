@@ -3,9 +3,10 @@
 //
 
 #include "LoadedObjectsPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
-#include "imgui_stdlib.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 #include "EditorAppContext.h"
 #include "InputViewerPanel.h"
 #include "TextureViewerPanel.h"
@@ -29,6 +30,8 @@ Plu::String Plu::LoadedObjectsPanel::GetPanelName()
 void Plu::LoadedObjectsPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		EngineObjectManager* objectManager = mApplicationInfo->AppObjectManager.GetRaw();
 		if (!objectManager) {
 			ImGui::TextDisabled("No object manager available.");
@@ -41,14 +44,14 @@ void Plu::LoadedObjectsPanel::OnUpdate(float deltaTime)
 		static int numElements = 200;
 		ImGui::DragInt("Num elements to show", &numElements, 1, 0, objectManager->GetNumberOfObjects());
 
-		static std::string filter;
-		ImGui::InputTextWithHint("##filter", ICON_FA_MAGNIFYING_GLASS " Filter by name", &filter);
+		static ImGuiTextFilter filter;
+		ImGuiWidgets::SearchBar("##filter", &filter, "Filter by name");
 		ImGui::Separator();
 
 		DynamicArray<String> names = objectManager->GetObjectNames(numElements);
 		for (UInt32 i = 0; i < names.Size(); i++) {
 			String* name = &names[i];
-			if (!filter.empty() && !name->Contains(filter.c_str())) {
+			if (!filter.PassFilter(name->CStr())) {
 				continue;
 			}
 

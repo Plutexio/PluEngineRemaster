@@ -4,8 +4,6 @@
 
 #include "PluEngine/AssetTypes/AnimationGraph/Nodes/AnimSampleNode.h"
 
-#include <cmath>
-
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 
@@ -28,38 +26,13 @@ namespace Plu
 	{
 		if (!context.TargetSkeleton) return Pose();
 
-		const SkeletonPoseLayout& layout = context.TargetSkeleton->GetPoseLayout();
-		if (!layout.IsValid()) return Pose();
-
 		Pose pose;
-		layout.MakeBindPose(pose);
-		if (!AnimationAsset) return pose;
-
-		const double duration = static_cast<double>(AnimationAsset->FramesAmount);
-		double ticks = static_cast<double>(context.TimeSeconds) * AnimationAsset->FramesPerSecond;
-		if (duration > 0.0)
+		if (!AnimationAsset)
 		{
-			if (context.Loop)
-			{
-				ticks = std::fmod(ticks, duration);
-				if (ticks < 0.0) ticks += duration;
-			}
-			else
-			{
-				ticks = std::clamp(ticks, 0.0, duration);
-			}
+			context.TargetSkeleton->GetPoseLayout().MakeBindPose(pose);
+			return pose;
 		}
-
-		const DynamicArray<const AnimationTrack*>& binding = AnimationAsset->GetTrackBinding(*context.TargetSkeleton);
-		for (UInt64 i = 0; i < layout.NodeCount() && i < binding.Size(); ++i)
-		{
-			if (const AnimationTrack* track = binding[i])
-			{
-				pose[i].Location = track->GetLocationAtTime(ticks);
-				pose[i].Rotation = track->GetRotationAtTime(ticks);
-				pose[i].Scale    = track->GetScaleAtTime(ticks);
-			}
-		}
+		SampleAnimationPose(*AnimationAsset, *context.TargetSkeleton, context.TimeSeconds, context.Loop, pose);
 		return pose;
 	}
 }

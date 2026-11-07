@@ -1,0 +1,159 @@
+//
+// Created by Plutex on 9/26/26.
+//
+
+#include "ParticleParametersPanel.h"
+
+#include "ParticleSystemViewport.h"
+#include "PluEngine/Effects/Particles/ParticleSystem.h"
+#include "PluEngine/Effects/Particles/ParticleSystemInstance.h"
+#include "EditorAppContext.h"
+#include "PluEngine/Core/Widgets/Combo.h"
+#include "PluEngine/Gameplay/Scenes/SceneManager.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
+
+extern Plu::EditorAppContext* gEditorAppContext;
+
+namespace
+{
+	// Prefixed (the editor is a UNITY_BUILD, so file-local names share one translation unit).
+	Plu::String ParticleMakeUniqueParameterName(Plu::ParticleSystem& system, const Plu::String& base)
+	{
+		Plu::String candidate = base;
+		for (int suffix = 1; system.FindParameter(candidate).IsValid(); ++suffix)
+			candidate = base + Plu::String::FromInt(suffix);
+		return candidate;
+	}
+
+	ImVec4 ParticleParameterTypeColor(const Plu::String& typeName)
+	{
+		const auto* info = Plu::ParticleParameterFactory::GetParameterTypeInfo(typeName);
+		if (!info) return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+		return ImVec4(info->Color.x / 255.0f, info->Color.y / 255.0f, info->Color.z / 255.0f, 1.0f);
+	}
+}
+
+Plu::String Plu::ParticleParametersPanel::GetPanelName() { return "Parameters"; }
+void Plu::ParticleParametersPanel::OnClosed() {}
+void Plu::ParticleParametersPanel::OnOpened() {}
+
+void Plu::ParticleParametersPanel::OnUpdate(float deltaTime)
+{
+	if (BeginPanel())
+	{
+		TUsePointer<ParticleSystemViewport> viewport = DynamicCast<ParticleSystemViewport>(GetParentViewport());
+		TUsePointer<ParticleSystem> system = viewport ? viewport->GetSystem() : nullptr;
+		if (!system) {
+			ImGuiWidgets::EmptyState("No ParticleSystem asset loaded", ICON_FA_WAND_MAGIC_SPARKLES);
+			EndPanel();
+			return;
+		}
+
+		// Layout edits (add / remove / rename / retype) move operand offsets baked into compiled ops, so
+		// they bump both revisions. A VALUE edit (Details panel) bumps neither.
+		auto layoutChanged = [&] {
+			++system->ParametersRevision;
+			viewport->MarkGraphChanged(); // bumps CompileRevision + dirties
+		};
+
+		if (ImGui::Button("Add Parameter")) ImGui::OpenPopup("AddParameterPopup");
+		if (ImGui::BeginPopup("AddParameterPopup")) {
+			for (const auto& entry : ParticleParameterFactory::GetFactoryMap()) {
+				if (!ImGui::MenuItem(entry.first.CStr())) continue;
+				TOwningPointer<IParticleParameter> parameter = ParticleParameterFactory::CreateParameter(entry.first);
+				if (!parameter) continue;
+				parameter->Name = ParticleMakeUniqueParameterName(*system, String("New") + entry.first);
+				system->Parameters.PushBack(parameter);
+				viewport->SelectParameter(parameter);
+				layoutChanged();
+			}
+			ImGui::EndPopup();
+		}
+		ImGui::Separator();
+
+		// In PIE, with a live instance of this system: pick whether the list and the Details panel edit
+		// the asset's defaults or one component's live values.
+		if (gEditorAppContext->EditorScenesManager->IsInPIE()) {
+			DynamicArray<ParticleSystemInstance*>& liveInstances = ParticleSystemInstance::GetLiveInstances(system->Uuid.getUUID());
+			if (!liveInstances.IsEmpty()) {
+				ParticleSystemInstance* inspected = viewport->GetInspectedInstance();
+				ImGui::SetNextItemWidth(-FLT_MIN);
+				if (ImGuiWidgets::ComboValue("##InstancePicker", &inspected, liveInstances,
+						[](ParticleSystemInstance* instance) { return instance->DebugName.CStr(); }, "Defaults")) {
+					viewport->SetInspectedInstance(inspected);
+				}
+				ImGui::Separator();
+			}
+		}
+
+		Int32 toRemove = -1;
+		const String selectedName = viewport->GetSelectedParameterName();
+		for (Int32 index = 0; index < static_cast<Int32>(system->Parameters.Size()); ++index) {
+			TOwningPointer<IParticleParameter>& parameter = system->Parameters[index];
+			if (!parameter) continue;
+			ImGui::PushID(parameter.GetRaw());
+
+			if (mRenamingParameter == parameter->Name) {
+				if (ImGuiWidgets::InlineRenameField(&mRename)) {
+					const String newName(mRename.Buffer);
+					// Names are identity (parameter nodes reference them): unique, non-empty, changed.
+					if (!newName.IsEmpty() && newName != parameter->Name && !system->FindParameter(newName).IsValid()) {
+						parameter->Name = newName;
+						system->SyncParameterNodeNames();
+						viewport->SetSelectedParameterName(newName);
+						layoutChanged();
+					}
+					mRenamingParameter = String();
+				}
+				ImGui::PopID();
+				continue;
+			}
+
+			const float dotRadius = ImGui::GetFontSize() * 0.28f;
+			const ImVec2 dotOrigin = ImGui::GetCursorScreenPos();
+			ImGui::GetWindowDrawList()->AddCircleFilled(
+				ImVec2(dotOrigin.x + dotRadius, dotOrigin.y + ImGui::GetTextLineHeight() * 0.5f),
+				dotRadius, ImGui::GetColorU32(ParticleParameterTypeColor(parameter->TypeName)));
+			ImGui::Dummy(ImVec2(dotRadius * 2.0f, ImGui::GetTextLineHeight()));
+			ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+
+			if (ImGui::Selectable(parameter->Name.CStr(), selectedName == parameter->Name, ImGuiSelectableFlags_AllowDoubleClick)) {
+				viewport->SelectParameter(parameter);
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+					mRenamingParameter = parameter->Name;
+					mRename.Begin(parameter->Name.CStr());
+				}
+			}
+
+			// Payload is the name (a stable key; a raw pointer could dangle).
+			if (ImGui::BeginDragDropSource()) {
+				ImGui::SetDragDropPayload("PARTICLE_PARAMETER", parameter->Name.CStr(), parameter->Name.Length() + 1);
+				ImGui::TextUnformatted(parameter->Name.CStr());
+				ImGui::EndDragDropSource();
+			}
+
+			if (ImGui::BeginPopupContextItem()) {
+				viewport->SelectParameter(parameter);
+				if (ImGui::MenuItem("Rename")) {
+					mRenamingParameter = parameter->Name;
+					mRename.Begin(parameter->Name.CStr());
+				}
+				if (ImGui::MenuItem("Delete")) toRemove = index;
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
+		}
+
+		if (toRemove >= 0) {
+			if (selectedName == system->Parameters[toRemove]->Name) viewport->SelectParameter(nullptr);
+			system->Parameters.RemoveAt(toRemove);
+			// Parameter nodes that pointed at it now resolve to nothing; drop the links their retyped
+			// pins no longer satisfy.
+			system->ResolveParameterReferences();
+			for (auto& emitter : system->Emitters) if (emitter) emitter->PruneInvalidLinks();
+			layoutChanged();
+		}
+	}
+	EndPanel();
+}

@@ -13,7 +13,8 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "UI/IconsFontAwesome7.h"
 #include "Utils/AttachPointOverlay.h"
-#include "Utils/RGBTransformDragger.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
+#include "PluEngine/Core/Widgets/Text.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 
@@ -122,7 +123,7 @@ void Plu::SkeletonHierarchyPanel::DrawAttachPointsOf(SkeletonNode* node)
 // setting. Used to decide whether a tree node needs an expand arrow (Leaf otherwise).
 // Attach points count as visible children: they're always drawn, whatever ShowNodes says.
 static bool AnyVisibleDescendant(Plu::SkeletonNode* node, bool showNodes,
-                                 const Plu::GameHashMap<Plu::String, DynamicArray<Plu::String>>& attachPointsByNode)
+                                 const Plu::HashMap<Plu::String, DynamicArray<Plu::String>>& attachPointsByNode)
 {
 	if (attachPointsByNode.Contains(node->NodeName)) return true;
 	for (const auto& child : node->Children) {
@@ -218,11 +219,9 @@ void Plu::SkeletonHierarchyPanel::DrawAttachPointDetails(Skeleton* skeleton)
 	ImGui::TextDisabled("Parent: %s", attachPoint->ParentNodeName.CStr());
 
 	// Same transform widget as the scene details panel, on the parent-node-relative transform.
-	if (RGBTransformDrag3("Location", glm::value_ptr(attachPoint->RelativeLocation), 3, 0.1f,
-	                      nullptr, nullptr, "%.3f", 0))
+	if (ImGuiWidgets::DragVector("Location", glm::value_ptr(attachPoint->RelativeLocation), 3, 0.1f))
 		MarkSkeletonAssetDirty(gApplicationInfo->AppAssetManager, skeleton);
-	if (RGBTransformDrag3("Rotation", glm::value_ptr(attachPoint->RelativeRotation), 3, 0.1f,
-	                      nullptr, nullptr, "%.3f", 0))
+	if (ImGuiWidgets::DragVector("Rotation", glm::value_ptr(attachPoint->RelativeRotation), 3, 0.1f))
 		MarkSkeletonAssetDirty(gApplicationInfo->AppAssetManager, skeleton);
 
 	if (ImGui::Button(ICON_FA_TRASH " Delete"))
@@ -293,7 +292,7 @@ void Plu::SkeletonHierarchyPanel::OnUpdate(float deltaTime)
 		}
 		else
 		{
-			ImGui::TextDisabled("No skeleton data.");
+			ImGuiWidgets::EmptyState("No skeleton data", ICON_FA_BONE);
 		}
 	}
 	EndPanel();

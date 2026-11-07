@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 
-#include "PluEngine/Core/Threading/ThreadAffinity.h"
+#include "PluBase/ThreadAffinity.h"
 
 namespace Plu {
 
@@ -46,7 +46,7 @@ namespace Plu {
             float sum = 0.0f;
             float minMs = entry.History[0];
             float maxMs = entry.History[0];
-            for (Int4 i = 0; i < entry.SampleCount; i++) {
+            for (Int32 i = 0; i < entry.SampleCount; i++) {
                 const float v = entry.History[i];
                 sum += v;
                 if (v < minMs) minMs = v;
@@ -71,7 +71,7 @@ namespace Plu {
         mEntries.VisitOrInsert(key, applySample, fresh);
     }
 
-    GameHashMap<String, ProfilerEntry> Profiler::Snapshot()
+    HashMap<String, ProfilerEntry> Profiler::Snapshot()
     {
         return mEntries.Snapshot(); // głęboka kopia, stripe po stripie
     }
@@ -133,10 +133,10 @@ namespace Plu {
 
     String Profiler::BuildCsv(const String& threadFilter)
     {
-        GameHashMap<String, ProfilerEntry> snapshot = Snapshot(); // frozen copy, no lock held below
+        HashMap<String, ProfilerEntry> snapshot = Snapshot(); // frozen copy, no lock held below
 
         String csv = "Name,Thread,LastMs,AvgMs,MinMs,MaxMs,TotalCalls,SampleCount";
-        for (Int4 i = 0; i < ProfilerEntry::kHistorySize; i++) {
+        for (Int32 i = 0; i < ProfilerEntry::kHistorySize; i++) {
             csv += ",Sample";
             csv += String::FromInt(i);
         }
@@ -165,10 +165,10 @@ namespace Plu {
             // Unwrap the ring buffer oldest-to-newest. Once it has wrapped, the oldest sample sits
             // at WriteIndex; before that the buffer is still filling from index 0 upwards.
             const bool wrapped = entry.SampleCount == ProfilerEntry::kHistorySize;
-            for (Int4 i = 0; i < ProfilerEntry::kHistorySize; i++) {
+            for (Int32 i = 0; i < ProfilerEntry::kHistorySize; i++) {
                 csv += ",";
                 if (i >= entry.SampleCount) continue; // pad short rows to a constant width
-                const Int4 index = wrapped ? (entry.WriteIndex + i) % ProfilerEntry::kHistorySize : i;
+                const Int32 index = wrapped ? (entry.WriteIndex + i) % ProfilerEntry::kHistorySize : i;
                 csv += FormatMs(entry.History[index]);
             }
             csv += "\n";

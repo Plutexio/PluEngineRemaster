@@ -18,11 +18,19 @@ Plu::GameClient::GameClient(const TUsePointer<EngineObjectManager> &objectManage
 	mInputManager = inputManager;
 	mScenesManager = scenesManager;
 	mWindow = window;
+
+	mNewPlayerEvent = mScenesManager->SubscribeToEvent("NewWorld", [&](void*) {
+		if (mScenesManager->GetCurrentWorldName() == "Overlay") return;
+		for (const auto& localPlayer : mLocalPlayers) {
+			localPlayer->JoinPlayerToWorld();
+		}
+	});
 }
 
 Plu::GameClient::~GameClient()
 {
 	ExitGame();
+	mScenesManager->UnsubscribeFromEvent("NewWorld", mNewPlayerEvent);
 }
 
 void Plu::GameClient::ExitGame()
@@ -62,7 +70,7 @@ UInt16 Plu::GameClient::JoinGameLocally()
 	UInt16 idx = mLocalPlayers.Size();
 	newPlayer->Init(mScenesManager, idx);
 	mLocalPlayers.PushBack(newPlayer);
-	mScenesManager->GetCurrentWorld()->JoinPlayerLocally(idx);
+	newPlayer->JoinPlayerToWorld();
 	PLU_CORE_INFO("New player {}", idx);
 	return idx;
 }

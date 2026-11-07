@@ -7,6 +7,7 @@
 #include "EditorViewports/IEditorPanel.h"
 #include "AnimationGraphVariablesPanel.generated.h"
 #include "PluEngine/Core.h"
+#include "PluEngine/Core/Widgets/InlineRename.h"
 
 namespace Plu
 {
@@ -25,11 +26,10 @@ namespace Plu
 	private:
 		// Rename target as a use-pointer so it self-clears if the variable is deleted mid-rename.
 		TUsePointer<IAnimationGraphVariable> mRenamingVariable;
-		bool mRenameFocusPending = false;
-		char mRenameBuffer[128] = {};
+		ImGuiWidgets::InlineRenameState mRename;
 
 		void BeginRename(const TUsePointer<IAnimationGraphVariable>& variable);
-		// Applies mRenameBuffer to `variable` (ignoring empty / unchanged / duplicate names) and
+		// Applies mRename.Buffer to `variable` (ignoring empty / unchanged / duplicate names) and
 		// ends rename mode. Names are the variable's identity (a "Get Variable" node references one),
 		// so they must stay unique within the graph.
 		void CommitRename(const TUsePointer<class AnimationGraph>& graph,

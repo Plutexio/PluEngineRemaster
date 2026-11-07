@@ -19,9 +19,14 @@ uniform int instanceBaseIndex;
 
 layout (location = 0) in vec3 aPos;
 
-uniform mat4 lightSpaceMatrix;
+// Widok i projekcja OSOBNO, nie premnożone na CPU — dokładnie te same uniformy i ta sama
+// kolejność mnożeń co w BasicVertInstanced.vert. Dzięki temu głębia z tego shadera i głębia
+// z passa oświetlenia są tą samą liczbą, a nie dwiema różniącymi się o kilka ulp (to był powód,
+// dla którego depth prepass nie mógł karmić early-Z). Pass cieni podstawia tu macierze kaskady.
+uniform mat4 view;
+uniform mat4 projection;
 
 void main() {
     mat4 model = instances[visibleIndices[instanceBaseIndex + gl_InstanceID]].model;
-    gl_Position = lightSpaceMatrix * model * vec4(aPos, 1.0);
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 }

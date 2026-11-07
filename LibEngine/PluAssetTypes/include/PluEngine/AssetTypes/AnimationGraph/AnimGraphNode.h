@@ -24,6 +24,17 @@ namespace Plu
 		float TimeSeconds = 0.0f;
 		bool Loop = true;
 
+		// Graph-clock seconds since this instance's previous evaluation (0 when paused, on the
+		// first evaluation, or when the clock jumped backwards). Filled by AnimationGraph::Evaluate
+		// from AnimGraphInstance::LastEvalTimeSeconds; always 0 without an Instance. Nodes with
+		// per-instance state (AnimBlendSpaceNode) advance it by this instead of by TimeSeconds.
+		float DeltaSeconds = 0.0f;
+
+		// Identifies one AnimationGraph::Evaluate call on one instance (0 without an Instance).
+		// Lets stateful nodes advance only once even when evaluated several times — see
+		// AnimNodeRuntimeState::LastEvaluationId.
+		UInt64 EvaluationId = 0;
+
 		// Skeleton this evaluation is driving. Needed to bind animation tracks by node index and
 		// to fall back to the bind pose for unconnected inputs. Null is valid (e.g. previewing a
 		// graph with no skeleton assigned yet) — nodes then evaluate to an empty pose.

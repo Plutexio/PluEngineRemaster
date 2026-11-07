@@ -3,7 +3,6 @@
 //
 
 #include "PluEngine/Gameplay/GameObject.h"
-#include "PluEngine/Physics/PhysicsUtils.h"
 
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Gameplay/GameObjectComponent.h"
@@ -11,9 +10,6 @@
 #include "PluEngine/Gameplay/InputHandler.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Physics/PhysicsBody.h"
-#include "PluEngine/Gameplay/PhysicsCompoundShape.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 
 void Plu::GameObject::InitGameObject(const TUsePointer<class SceneWorld> &sceneWorld,
@@ -79,9 +75,6 @@ void Plu::GameObject::Cleanup()
 	mComponents.Clear();
 	mWorldComponents.Clear();
 	mObjectManager->DestroyObject(mPhysicsBodyHandle);
-	if (mCompoundShape) {
-		mObjectManager->DestroyObject(*mCompoundShape->GetEngineObjectHandle());
-	}
 	mCompoundShape = nullptr;
 }
 
@@ -111,6 +104,13 @@ void Plu::GameObject::TickObject(float deltaTime)
 	}
 	for (const auto& comp : mComponents) {
 		comp->OnUpdate(deltaTime);
+	}
+
+	if (mLifetime != 0) {
+		mElapsedLifetime += deltaTime;
+		if (mElapsedLifetime >= mLifetime) {
+			GetWorld()->DeleteGameObject(GetObjectHandle());
+		}
 	}
 }
 
@@ -204,6 +204,55 @@ Plu::TUsePointer<Plu::GameObjectComponent> Plu::GameObject::GetComponentByClass(
 	return nullptr;
 }
 
+Plu::TUsePointer<Plu::GameObjectComponent> Plu::GameObject::GetComponentByUUID(UInt64 uuid)
+{
+	if (uuid == 0) {
+		return nullptr;
+	}
+	for (const auto& comp : mComponents) {
+		if (comp->Uuid == uuid) {
+			return comp;
+		}
+	}
+	return nullptr;
+}
+
+Plu::TUsePointer<Plu::WorldComponent> Plu::GameObject::GetWorldComponentByUUID(UInt64 uuid)
+{
+	if (uuid == 0) {
+		return nullptr;
+	}
+	// Flattened: a component attached under another one is still a component of this object.
+	for (const auto& worldComp : *GetObjectWorldComponents()) {
+		if (worldComp->Uuid == uuid) {
+			return worldComp;
+		}
+	}
+	return nullptr;
+}
+
+DynamicArray<Plu::TUsePointer<Plu::GameObjectComponent>> Plu::GameObject::GetAllComponentsByClass(
+	const TClassPointer<GameObjectComponent>& componentClass)
+{
+	if (componentClass.GetRawType()->IsDerivedOfOrSame(WorldComponent::GetStaticClass())) {
+
+		DynamicArray<TUsePointer<GameObjectComponent>> components;
+		for (const auto& worldComp : *GetObjectWorldComponents()) {
+			if (worldComp->GetClass()->IsDerivedOfOrSame(componentClass)) {
+				components.PushBack(worldComp);
+			}
+		}
+		return components;
+	}
+	DynamicArray<TUsePointer<GameObjectComponent>> components;
+	for (const auto& comp : mComponents) {
+		if (comp->GetClass()->IsDerivedOfOrSame(componentClass)) {
+			components.PushBack(comp);
+		}
+	}
+	return components;
+}
+
 Vec3 Plu::GameObject::GetObjectLocation() const
 {
 	RefreshWorldTransform();
@@ -225,15 +274,10 @@ Vec3 Plu::GameObject::GetObjectScale() const
 Matrix4 Plu::GameObject::GetAttachParentWorldMatrix() const
 {
 	if (mAttachParentComponent) {
-		if (!mAttachSocketName.IsEmpty()) {
-			if (auto* skeletalMesh = dynamic_cast<SkeletalMeshComponent*>(mAttachParentComponent.GetRaw())) {
-				Matrix4 socketMatrix;
-				// False until the parent mesh has a pose (no snapshot built since the mesh was
-				// assigned). Falling back to the component frame keeps the object near its parent
-				// for those first frames instead of teleporting it to the world origin.
-				if (skeletalMesh->TryGetAttachPointWorldMatrix(mAttachSocketName, socketMatrix)) {
-					return socketMatrix;
-				}
+		if (!mAttachSocketName.IsEmpty() && mAttachParentComponent->HasAttachPoints()) {
+			Matrix4 attachMatrix;
+			if (mAttachParentComponent->GetWorldMatrixForAttachPoint(mAttachSocketName, &attachMatrix)) {
+				return attachMatrix;
 			}
 		}
 		return mAttachParentComponent->GetWorldMatrix();
@@ -324,58 +368,23 @@ void Plu::GameObject::SetObjectScale(const Vec3 &scale)
 void Plu::GameObject::SetRelativeLocation(const Vec3 &location)
 {
 	mLocation = location;
-	GetObjectEventDispatcher()->Dispatch("LocationChange");
 	MarkWorldMatrixForRegeneration();
-	if (mObjectManager->IsValid(mPhysicsBodyHandle)) {
-		// The body lives in world space, so it gets the resolved value, not the relative one.
-		mObjectManager->GetObjectAsUser<PhysicsBody>(mPhysicsBodyHandle)->SetPosition(ToJPH(GetObjectLocation()));
-	}
+	GetObjectEventDispatcher()->Dispatch("LocationChange");
 }
 
 void Plu::GameObject::SetRelativeRotation(const Vec3 &rotation)
 {
 	mRotation = rotation;
 	NormalizeVec3Rotation(&mRotation);
-	GetObjectEventDispatcher()->Dispatch("RotationChange");
 	MarkWorldMatrixForRegeneration();
-	if (mObjectManager->IsValid(mPhysicsBodyHandle)) {
-		const Vec3 worldRotation = GetObjectRotation();
-		mObjectManager->GetObjectAsUser<PhysicsBody>(mPhysicsBodyHandle)->SetRotation(JPH::Quat::sEulerAngles(
-			JPH::Vec3(
-				JPH::DegreesToRadians(worldRotation.x),
-				JPH::DegreesToRadians(worldRotation.y),
-				JPH::DegreesToRadians(worldRotation.z)
-			)
-		));
-	}
+	GetObjectEventDispatcher()->Dispatch("RotationChange");
 }
 
 void Plu::GameObject::SetRelativeScale(const Vec3 &scale)
 {
 	mScale = scale;
+	MarkWorldMatrixForRegeneration();
 	GetObjectEventDispatcher()->Dispatch("ScaleChange");
-	MarkWorldMatrixForRegeneration();
-	// Jolt collision shapes are baked at a fixed scale; rebuild the body so colliders match.
-	if (mWorld) {
-		mWorld->OnGameObjectScaleChanged(this);
-	}
-}
-
-void Plu::GameObject::SyncFromPhysicsBody(const Vec3& worldLocation, const Vec3& worldRotationDeg)
-{
-	if (IsAttached()) {
-		// A simulating body that is also attached is a contradiction (UE welds or detaches in this
-		// case); the body wins for this frame, folded back into the parent's space so the object does
-		// not fight its own attachment on the next resolve.
-		const Matrix4 inverseParent = glm::inverse(GetAttachParentWorldMatrix());
-		mLocation = Vec3(inverseParent * Vec4(worldLocation, 1.0f));
-		const Quaternion parentRotation = glm::normalize(glm::quat_cast(glm::mat3(GetAttachParentWorldMatrix())));
-		mRotation = glm::degrees(glm::eulerAngles(glm::inverse(parentRotation) * Quaternion(glm::radians(worldRotationDeg))));
-	} else {
-		mLocation = worldLocation;
-		mRotation = worldRotationDeg;
-	}
-	MarkWorldMatrixForRegeneration();
 }
 
 bool Plu::GameObject::DeleteGameObjectComponentImpl(TUsePointer<GameObjectComponent> component)
@@ -425,13 +434,6 @@ bool Plu::GameObject::DeleteWorldComponentImpl(TUsePointer<WorldComponent> compo
 	mObjectManager->DestroyObject(component->GetObjectHandle());
 
 	return true;
-}
-
-Plu::TUsePointer<Plu::PhysicsBody> Plu::GameObject::GetPhysicsBody()
-{
-	if (!mObjectManager->IsValid(mPhysicsBodyHandle))
-		return nullptr;
-	return mObjectManager->GetObjectAsUser<PhysicsBody>(mPhysicsBodyHandle);
 }
 
 bool Plu::GameObject::IsAttached() const
@@ -528,16 +530,6 @@ bool Plu::GameObject::ChangeAttachment(const TUsePointer<WorldComponent>& parent
 	}
 	MarkWorldMatrixForRegeneration();
 
-	// The body is placed in world space, so a reparent has to push the resolved transform into it.
-	if (mObjectManager->IsValid(mPhysicsBodyHandle)) {
-		TUsePointer<PhysicsBody> body = mObjectManager->GetObjectAsUser<PhysicsBody>(mPhysicsBodyHandle);
-		const Vec3 worldRotation = GetObjectRotation();
-		body->SetPosition(ToJPH(GetObjectLocation()));
-		body->SetRotation(JPH::Quat::sEulerAngles(JPH::Vec3(
-			JPH::DegreesToRadians(worldRotation.x),
-			JPH::DegreesToRadians(worldRotation.y),
-			JPH::DegreesToRadians(worldRotation.z))));
-	}
 	return true;
 }
 
@@ -598,6 +590,22 @@ Plu::TUsePointer<Plu::SkeletalMeshComponent> Plu::GameObject::GetSkeletalAttachm
 	if (!mAttachParentComponent || mAttachSocketName.IsEmpty()) return nullptr;
 	if (!mAttachParentComponent->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) return nullptr;
 	return mObjectManager->GetObjectAsUser<SkeletalMeshComponent>(*mAttachParentComponent->GetEngineObjectHandle());
+}
+
+float Plu::GameObject::GetElapsedTimeSinceSpawn() const
+{
+	return mElapsedLifetime;
+}
+
+void Plu::GameObject::SetLifetime(float lifetime)
+{
+	if (lifetime < 0.0f) {
+		PLU_CORE_ERROR("Invalid Lifetime at Setter! Must be greater than 0!");
+	}
+	mLifetime = lifetime;
+	if (mLifetime <= mElapsedLifetime) {
+		GetWorld()->DeleteGameObject(GetObjectHandle());
+	}
 }
 
 Vec3 Plu::GameObject::GetObjectForwardVector() const

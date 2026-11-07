@@ -13,6 +13,7 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Platform/Window.h"
 #include "UI/IconsFontAwesome7.h"
+#include "PluEngine/Core/Widgets/Buttons.h"
 
 Plu::String Plu::ProjectLauncherPanel::GetPanelName()
 {
@@ -30,11 +31,8 @@ void Plu::ProjectLauncherPanel::OnUpdate(float deltaTime)
 		if (ImGui::Button("New", buttonSize)) {
 			mEditorAppContext->NewProjectPopup = true;
 		}
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3,0.3,1,1));
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,1));
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0.8,1));
 		ImGui::SameLine();
-		if (ImGui::Button("Open", buttonSize)) {
+		if (ImGuiWidgets::PrimaryButton("Open", buttonSize)) {
 			nfdu8char_t* outPath = nullptr;
 			const nfdu8filteritem_t filters[1] = { { "Plu Project", "pluproject" } };
 			if (NFD_OpenDialogU8(&outPath, filters, 1, nullptr) == NFD_OKAY) {
@@ -42,7 +40,6 @@ void Plu::ProjectLauncherPanel::OnUpdate(float deltaTime)
 				NFD_FreePathU8(outPath);
 			}
 		}
-		ImGui::PopStyleColor(3);
 		ImGui::SameLine();
 		ImGui::SetCursorPos(ImVec2(cursorStart.x + buttonSize.x * 2 + ImGui::GetStyle().ItemSpacing.x * 2, cursorStart.y));
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + buttonSize.y / 2 - avail.y / 4);

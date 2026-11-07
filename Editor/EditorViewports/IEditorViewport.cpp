@@ -192,7 +192,7 @@ bool Plu::IEditorViewport::BeginWindow()
     if (mEditorAppContext->EditorAssetManager->IsAssetDirty(mAsset)) {
         flags |= ImGuiWindowFlags_UnsavedDocument;
     }
-    static GameHashMap<String, bool> lastWindowState;
+    static HashMap<String, bool> lastWindowState;
 
     if (mBringToFront)
     {

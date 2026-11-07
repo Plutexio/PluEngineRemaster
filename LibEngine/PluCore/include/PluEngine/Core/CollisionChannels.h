@@ -14,7 +14,7 @@
 
 #include "CollisionChannels.generated.h"
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/PluTypes.h"
 
 namespace Plu

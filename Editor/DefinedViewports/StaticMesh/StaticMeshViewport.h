@@ -11,6 +11,7 @@
 
 namespace Plu
 {
+	class PhysicsBodyComponent;
 	PLU_CLASS()
 	class EditorMeshObject : public GameObject
 	{
@@ -22,6 +23,7 @@ namespace Plu
 		void OnSetupComponents() override;
 
 		TUsePointer<StaticMeshComponent> MeshComponent;
+		TUsePointer<PhysicsBodyComponent> BodyComponent;
 	};
 
 	struct MaterialInfo;

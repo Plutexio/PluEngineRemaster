@@ -6,7 +6,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 
 namespace Plu
 {

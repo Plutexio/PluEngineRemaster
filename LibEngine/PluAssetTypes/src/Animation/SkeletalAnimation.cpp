@@ -9,6 +9,9 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 namespace
 {
     // Index of the last key with Timestamp <= time, or -1 when time precedes all keys.
@@ -124,4 +127,50 @@ void Plu::Animation::InvalidateTrackBinding() const
     mTrackBindingBuilt = false;
     mTrackBindingSkeletonUuid = 0;
     mTrackBindingTrackCount = 0;
+}
+
+double Plu::Animation::GetDurationSeconds() const
+{
+    if (FramesAmount <= 0 || FramesPerSecond <= 0.0f) return 0.0;
+    return static_cast<double>(FramesAmount) / static_cast<double>(FramesPerSecond);
+}
+
+bool Plu::SampleAnimationPose(const Animation& animation, const Skeleton& skeleton,
+                              double timeSeconds, bool loop, Pose& outPose)
+{
+    const SkeletonPoseLayout& layout = skeleton.GetPoseLayout();
+    if (!layout.IsValid())
+    {
+        outPose.Clear();
+        return false;
+    }
+
+    layout.MakeBindPose(outPose);
+
+    const double duration = static_cast<double>(animation.FramesAmount);
+    double ticks = timeSeconds * animation.FramesPerSecond;
+    if (duration > 0.0)
+    {
+        if (loop)
+        {
+            ticks = std::fmod(ticks, duration);
+            if (ticks < 0.0) ticks += duration;
+        }
+        else
+        {
+            ticks = std::clamp(ticks, 0.0, duration);
+        }
+    }
+
+    const DynamicArray<const AnimationTrack*>& binding = animation.GetTrackBinding(skeleton);
+    for (UInt64 i = 0; i < layout.NodeCount() && i < binding.Size(); ++i)
+    {
+        if (const AnimationTrack* track = binding[i])
+        {
+            outPose[i].Location = track->GetLocationAtTime(ticks);
+            outPose[i].Rotation = track->GetRotationAtTime(ticks);
+            outPose[i].Scale    = track->GetScaleAtTime(ticks);
+        }
+    }
+    return true;
 }

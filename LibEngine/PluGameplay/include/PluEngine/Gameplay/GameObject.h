@@ -94,6 +94,9 @@ namespace Plu
 		TUsePointer<class SceneWorld> mWorld;
 		TUsePointer<class EngineObjectManager> mObjectManager;
 
+		float mLifetime = 0.0f;
+		float mElapsedLifetime = 0.0f;
+
 		friend class GameObjectComponent;
 		friend class WorldComponent;
 		friend class SceneWorld;
@@ -106,9 +109,6 @@ namespace Plu
 		// has to be updated between the two calls.
 		void OnAttachComponent(const TOwningPointer<WorldComponent>& component, const TUsePointer<WorldComponent>& attachPoint);
 		void OnDetachComponent(const TOwningPointer<WorldComponent>& component, const TUsePointer<WorldComponent>& attachPoint);
-		// Physics reports a WORLD transform; when the object is attached it has to be folded back
-		// into the parent's space, because mLocation/mRotation are parent-relative.
-		void SyncFromPhysicsBody(const Vec3& worldLocation, const Vec3& worldRotationDeg);
 
 		bool DeleteGameObjectComponentImpl(TUsePointer<GameObjectComponent> component);
 		bool DeleteWorldComponentImpl(TUsePointer<WorldComponent> component);
@@ -132,10 +132,10 @@ namespace Plu
 		virtual void OnEndPlay() {}
 
 		PLU_FUNCTION(PyOverride)
-		virtual void OnOverlapBegin(GameObjectComponent* component) {}
+		virtual void OnOverlapBegin(TUsePointer<WorldComponent> component, TUsePointer<GameObject> otherObject, TUsePointer<WorldComponent> otherComponent) {}
 
 		PLU_FUNCTION(PyOverride)
-		virtual void OnOverlapEnd(GameObjectComponent* component) {}
+		virtual void OnOverlapEnd(TUsePointer<WorldComponent> component, TUsePointer<GameObject> otherObject, TUsePointer<WorldComponent> otherComponent) {}
 
 		PLU_FUNCTION(PyNotCallable)
 		void Cleanup();
@@ -158,6 +158,17 @@ namespace Plu
 
 		PLU_FUNCTION()
 		TUsePointer<GameObjectComponent> GetComponentByClass(const TClassPointer<GameObjectComponent>& componentClass);
+		PLU_FUNCTION()
+		DynamicArray<TUsePointer<GameObjectComponent>> GetAllComponentsByClass(const TClassPointer<GameObjectComponent>& componentClass);
+
+		// Lookup by GameObjectComponent::Uuid. Takes a plain UInt64 so Python can call it (PluUUID
+		// converts implicitly). GetComponentByUUID searches only the plain (non-world) component
+		// list; GetWorldComponentByUUID searches the flattened world component tree, so a component
+		// attached under another one is found too. Null when nothing matches or the UUID is invalid (0).
+		PLU_FUNCTION()
+		TUsePointer<GameObjectComponent> GetComponentByUUID(UInt64 uuid);
+		PLU_FUNCTION()
+		TUsePointer<WorldComponent> GetWorldComponentByUUID(UInt64 uuid);
 
 		/** Trwała nazwa obiektu w scenie (patrz mObjectName). Pusta tylko dla obiektów
 		 *  utworzonych z pominięciem SceneWorld::SpawnGameObject. */
@@ -219,8 +230,6 @@ namespace Plu
 		PLU_FUNCTION()
 		PluUUID& GetObjectUUID();
 
-		PLU_FUNCTION()
-		TUsePointer<PhysicsBody> GetPhysicsBody();
 
 		// --- Attachment (UE: AActor::AttachToComponent / AttachToActor / DetachFromActor) ---------
 		// Rides parentComponent, optionally a named socket (a skeletal mesh attach point) on it.
@@ -282,6 +291,12 @@ namespace Plu
 		// is one frame behind it (which is exactly what used to happen when this was resolved from
 		// GameObject::TickObject).
 		[[nodiscard]] TUsePointer<SkeletalMeshComponent> GetSkeletalAttachmentParent() const;
+
+		PLU_FUNCTION()
+		float GetElapsedTimeSinceSpawn() const;
+		PLU_FUNCTION()
+		void SetLifetime(float lifetime);
+
 
 		// Whether this object's physics body simulates (Dynamic) or is Static. A JPH::Body has a
 		// single motion type for the whole compound shape, so this is a per-object property, not a

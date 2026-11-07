@@ -29,18 +29,18 @@ namespace Plu
 		Orthographic
 	};
 
-	PLU_STRUCT()
-	struct CameraOptions
+	PLU_STRUCT(PyExport)
+	struct PLURENDER_API CameraOptions
 	{
 		REFLECTION_BODY_CAMERAOPTIONS()
 
-		PLU_PROPERTY()
+		PLU_PROPERTY(PyExport)
 		PerspectiveType CameraPerspective;
 
-		PLU_PROPERTY()
+		PLU_PROPERTY(PyExport)
 		float OrthoWidth = 100;
 
-		PLU_PROPERTY()
+		PLU_PROPERTY(PyExport)
 		float FieldOfView = 45;
 	};
 

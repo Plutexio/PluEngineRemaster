@@ -23,6 +23,7 @@ void Plu::Controller::SetControlRotation(Vec3 newRot)
 	mControlRotation = newRot;
 	Vec3 newPoint = GetSphericalOrbitPoint(Vec3(0), 5, newRot.y, newRot.x);
 	mRealControlRotation = GetLookAtRotatorDegrees(Vec3(0), newPoint);
+	mRealControlRotation = GetForwardVector(mRealControlRotation);
 }
 
 Vec3 Plu::Controller::GetControlRotation() const

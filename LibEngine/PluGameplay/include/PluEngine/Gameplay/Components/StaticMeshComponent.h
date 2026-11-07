@@ -26,6 +26,8 @@ namespace Plu
 		PLU_PROPERTY()
 		TUsePointer<MaterialInfo> Material;
 
+		// Model-space bounds of the displayed mesh. Assign through SetMeshBoundingBox, never
+		// directly — the cached world sphere below would keep the previous box.
 		BoundingBox MeshBoundingBox;
 		// Twardy guard: CreateBoundingBoxForStaticMesh chodzi po każdym wierzchołku, więc liczymy
 		// raz (przy SetStaticMesh, jeśli mesh już załadowany, albo leniwie w RenderSnapshotBuilder,
@@ -47,6 +49,24 @@ namespace Plu
 
 		//Rendering
 		Matrix4 GetRenderMatrix();
+
+		// World-space bounding sphere of this component's mesh: MeshBoundingBox put through the
+		// component's world transform. Cached against GetTransformVersion() and the local box, so a
+		// component that did not move answers from memory — RenderSnapshotBuilder asks every static
+		// mesh component in the scene for this on every frame.
+		void GetWorldBoundingSphere(Vec3& outCenter, float& outRadius);
+
+		// Sets the model-space box and drops the cached world sphere. The only supported way to
+		// change MeshBoundingBox.
+		void SetMeshBoundingBox(const BoundingBox& boundingBox);
+
+	private:
+		// World sphere derived from MeshBoundingBox and the world matrix. Valid while
+		// mWorldBoundsVersion equals the component's transform version; 0 means "never computed"
+		// and is also what SetMeshBoundingBox resets it to (versions start at 1).
+		Vec3 mWorldBoundsCenter = Vec3(0.0f);
+		float mWorldBoundsRadius = 0.0f;
+		UInt32 mWorldBoundsVersion = 0;
 
 	protected:
 		// Only meaningful for meshes that carry collision shapes — those are baked into the owning

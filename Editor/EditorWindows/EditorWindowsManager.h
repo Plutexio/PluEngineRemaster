@@ -89,12 +89,12 @@ namespace Plu
 		// Which window each panel class belongs in, by class name. The layout describes *where* a
 		// panel goes, not that it should exist — replaying it at startup would resurrect panels the
 		// user had closed.
-		GameHashMap<String, UInt32> mPanelWindowByClass;
+		HashMap<String, UInt32> mPanelWindowByClass;
 		// The subset of the above still waiting to be applied, filled when a project opens. A panel
 		// consumes its entry the moment it is opened, and from then on follows the focused window
 		// like everything else. Deferred like this because the panels a project opens (the asset
 		// browser) are not registered yet at the moment OpenProject returns.
-		GameHashMap<String, UInt32> mPendingPanelPlacements;
+		HashMap<String, UInt32> mPendingPanelPlacements;
 
 		// Loads each window's docking layout once its ImGui context exists, and writes it back
 		// whenever ImGui asks (io.WantSaveIniSettings). One .ini per window.

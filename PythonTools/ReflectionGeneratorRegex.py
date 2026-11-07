@@ -676,14 +676,14 @@ def ParamsCheck(Data: List[TypeInfo]):
                         Prop.UuidForClass = UuidForClass
 
             # Walidacja Getter=/Setter= – oba albo żaden (lub tylko jeden z nich)
-            HasGetter = bool(Prop.GetterName)
-            HasSetter = bool(Prop.SetterName)
-            if HasGetter and not HasSetter:
-                print(f"Error: {Cls.Name}::{Prop.Name} – podano Getter= bez Setter=. Prop zostanie pominięty.")
-                Prop.GetterName = ""
-            elif HasSetter and not HasGetter:
-                print(f"Error: {Cls.Name}::{Prop.Name} – podano Setter= bez Getter=. Prop zostanie pominięty.")
-                Prop.SetterName = ""
+            # HasGetter = bool(Prop.GetterName)
+            # HasSetter = bool(Prop.SetterName)
+            # if HasGetter and not HasSetter:
+            #     print(f"Error: {Cls.Name}::{Prop.Name} – podano Getter= bez Setter=. Prop zostanie pominięty.")
+            #     Prop.GetterName = ""
+            # elif HasSetter and not HasGetter:
+            #     print(f"Error: {Cls.Name}::{Prop.Name} – podano Setter= bez Getter=. Prop zostanie pominięty.")
+            #     Prop.SetterName = ""
 
         for Param in Cls.ReflectionParams:
             if Param.startswith("UUID="):
@@ -721,15 +721,40 @@ REFLECTION_TRIGGER_MACROS: List[str] = [
 ]
 
 
+# Platforms whose code is guarded by a PluBase/Base.h macro. Their Platforms/<X> folders are scanned on
+# every host, and what the generator emits for them is wrapped in #ifdef <macro> (the headers themselves
+# are guarded the same way). That keeps ReflectionCache/ independent of the host: a Linux -> Windows
+# cross build compiles the same cache as the Linux build next to it. Folders of platforms without such
+# a macro are still skipped when they do not match the host (IsExcludedPlatformDir).
+# Limitation: the guard covers .generated.cpp and Init<Module>Reflection.cpp, not the pybind11
+# bindings or EnumList.txt — a PyExport class or a PLU_ENUM in a platform folder would need that too.
+PlatformGuardMacros: dict = {
+    "Windows": "PLU_PLATFORM_WINDOWS",
+    "Linux":   "PLU_PLATFORM_LINUX",
+}
+
+
+def PlatformGuardOfPath(FilePath) -> Optional[str]:
+    """The #ifdef macro the generated code of a header under Platforms/<X>/ needs, or None."""
+    NormPath = str(FilePath).replace("\\", "/")
+    for FolderName, Macro in PlatformGuardMacros.items():
+        if f"/Platforms/{FolderName}/" in NormPath:
+            return Macro
+    return None
+
+
 def IsExcludedPlatformDir(DirPath: str) -> bool:
     """
     Zwraca True jeśli folder jest podfolderem Platforms/<Platforma>
     która nie pasuje do bieżącej platformy.
     Działa zarówno dla ścieżek z separatorem / jak i \\.
+    Platforms with a guard macro (PlatformGuardMacros) are never excluded.
     """
     NormDir = DirPath.replace("\\", "/")
     for FolderName, SysPlatformPrefix in PlatformFolderMap.items():
         if f"/Platforms/{FolderName}" in NormDir:
+            if FolderName in PlatformGuardMacros:
+                return False
             return not sys.platform.startswith(SysPlatformPrefix)
     return False
 
@@ -951,7 +976,8 @@ def WriteMathStubs(P) -> None:
 
 # Regex do rozpoznawania szablonów kontenerów (kolejność ma znaczenie – bardziej szczegółowe pierwsze)
 _RE_DYNAMIC_ARRAY   = re.compile(r"^DynamicArray\s*<(.+)>$")
-_RE_GAME_HASH_MAP   = re.compile(r"^GameHashMap\s*<(.+),\s*(.+?)(?:,.*)?>\s*$")  # K, V[, hasher, alloc]
+# HashMap is the current name; GameHashMap is the transitional alias still accepted here.
+_RE_GAME_HASH_MAP   = re.compile(r"^(?:Game)?HashMap\s*<(.+),\s*(.+?)(?:,.*)?>\s*$")  # K, V[, hasher, alloc]
 _RE_BASIC_STRING    = re.compile(r"^BasicString\s*<.*>$")
 _RE_USE_POINTER     = re.compile(r"^TUsePointer\s*<(.+)>$")
 _RE_OWNING_POINTER  = re.compile(r"^TOwningPointer\s*<(.+)>$")
@@ -1005,9 +1031,9 @@ def CppTypeToPy(CppType: str) -> str:
     if M:
         return f"List[{CppTypeToPy(M.group(1))}]"
 
-    # GameHashMap<K, V, ...> → Dict[K, V]
+    # HashMap<K, V, ...> (or the GameHashMap alias) → Dict[K, V]
     Inner = _StripOuterTemplate(Clean)
-    if Clean.startswith("GameHashMap") and Inner:
+    if (Clean.startswith("HashMap") or Clean.startswith("GameHashMap")) and Inner:
         Parts = _SplitTemplateArgs(Inner)
         if len(Parts) >= 2:
             return f"Dict[{CppTypeToPy(Parts[0])}, {CppTypeToPy(Parts[1])}]"
@@ -1103,11 +1129,46 @@ def _NeedsLambda(Params: List[ParamInfo], ReturnType: str, AllClasses: List = []
             InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerTClean), None)
             if InnerTypeInfo and IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
                 return True
+        # TUsePointer<T> gdzie T to EngineObject → T* + UserFromPython
+        if _ObjectUsePointerInner(P.Type, AllClasses):
+            return True
         # std::function → py::function (używamy outer strip żeby zachować * wewnątrz szablonu)
         CleanPOuter = re.sub(r"\bPlu::", "", _StripOuterQualifiers(P.Type)).strip()
         if _RE_STD_FUNCTION.match(CleanPOuter):
             return True
     return False
+
+def _AssetUsePointerInner(CppType: str, AllClasses: List = []):
+    """For TUsePointer<T> where T derives from IAssetData returns T's TypeInfo, otherwise None.
+    Such fields cannot use def_readwrite: pybind11 has no caster for TUsePointer, and Python only
+    ever holds assets as raw IAssetData* (e.g. from GetAssetByUUID)."""
+    Clean = re.sub(r"\bPlu::", "", _StripQualifiers(CppType)).strip()
+    M = _RE_USE_POINTER.match(Clean)
+    if not M or not AllClasses:
+        return None
+    InnerT = re.sub(r"\bPlu::", "", M.group(1)).strip()
+    InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerT), None)
+    if InnerTypeInfo and IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
+        return InnerTypeInfo
+    return None
+
+
+def _ObjectUsePointerInner(CppType: str, AllClasses: List = []):
+    """For TUsePointer<T> where T is an EngineObject (but not an asset) returns T's TypeInfo, otherwise None.
+    Python holds such objects as raw T*: bindings take T* and rebuild the pointer with UserFromPython,
+    trampolines hand Python .GetRaw()."""
+    Clean = re.sub(r"\bPlu::", "", _StripQualifiers(CppType)).strip()
+    M = _RE_USE_POINTER.match(Clean)
+    if not M or not AllClasses:
+        return None
+    InnerT = re.sub(r"\bPlu::", "", M.group(1)).strip()
+    InnerTypeInfo = next((C for C in AllClasses if C.Name == InnerT), None)
+    if InnerTypeInfo is None or IsTypeDerivedFrom("IAssetData", InnerTypeInfo, AllClasses):
+        return None
+    if InnerT == "EngineObject" or IsTypeDerivedFrom("EngineObject", InnerTypeInfo, AllClasses):
+        return InnerTypeInfo
+    return None
+
 
 def _ReturnsPointer(ReturnType: str) -> bool:
     """Zwraca True jeśli typ zwracany jest surowym wskaźnikiem (nie TUsePointer/TOwningPointer)."""
@@ -1138,7 +1199,8 @@ def _BuildParamList(Params: List[ParamInfo], SelfDecl: str, AllClasses: List = [
     """
     Buduje listy parametrów lambdy, wywołań i rozpakowań.
     Obsługuje: TClassPointer<T> → py::object,
-               TUsePointer<T> gdzie T:IAssetData → T* + GetAssetUserAsRaw, reszta bez zmian.
+               TUsePointer<T> gdzie T:IAssetData → T* + GetAssetUserAsRaw,
+               TUsePointer<T> gdzie T:EngineObject → T* + UserFromPython, reszta bez zmian.
     Typy glm są zwykłymi klasami modułu (RegisterMathTypes) – przechodzą bez konwersji.
     """
     LambdaParams: List[str] = ([SelfDecl] if SelfDecl else [])
@@ -1190,7 +1252,12 @@ def _BuildParamList(Params: List[ParamInfo], SelfDecl: str, AllClasses: List = [
             BindingCalls.append(Wrapper)
             continue
         MCP = _RE_CLASS_POINTER.match(CleanNoNs)
-        if MUP and IsAsset:
+        ObjectInner = _ObjectUsePointerInner(Raw, AllClasses)
+        if ObjectInner:
+            # TUsePointer<T:EngineObject> → Python passes T*, the pointer is rebuilt from the handle
+            LambdaParams.append(f"{ObjectInner.Name}* {ArgName}")
+            BindingCalls.append(f"UserFromPython({ArgName})")
+        elif MUP and IsAsset:
             # Python przekazuje IAssetData* (nie T*) – nie trzeba .__class__ po stronie Pythona
             LambdaParams.append(f"IAssetData* {ArgName}")
             BindingCalls.append(f"GetAssetUserAsRaw({ArgName})")
@@ -1253,7 +1320,7 @@ _RE_LITERAL_DEFAULT = re.compile(
     r"|true|false|nullptr|\"[^\"]*\"|'\\?.')$"
 )
 # Pusty kontener silnika, np. DynamicArray<GameObject*>{} – caster robi z niego pustą listę
-_RE_EMPTY_CONTAINER_DEFAULT = re.compile(r"^(?:Plu::)?(?:DynamicArray|GameHashMap|HashSet)\s*<.*>\s*(?:\{\s*\}|\(\s*\))$")
+_RE_EMPTY_CONTAINER_DEFAULT = re.compile(r"^(?:Plu::)?(?:DynamicArray|(?:Game)?HashMap|HashSet)\s*<.*>\s*(?:\{\s*\}|\(\s*\))$")
 # Konstrukcja typu, np. RaycastDebugSettings() / Vec3{} – bezpieczna tylko dla typów już
 # zarejestrowanych w module przed tym .def()
 _RE_TYPE_CONSTRUCTION_DEFAULT = re.compile(r"^(?:Plu::)?(\w+)\s*(?:\{\s*\}|\(\s*\))$")
@@ -1295,8 +1362,8 @@ def _PyArgDefault(P: ParamInfo, RegisteredNames: Optional[set] = None) -> str:
 
 def _HasUnbindableParams(Params: List[ParamInfo], AllClasses: List = []) -> bool:
     """
-    True gdy funkcji nie da się sensownie wystawić do Pythona: bierze TUsePointer/TOwningPointer
-    do typu, który nie jest assetem. pybind11 nie ma castera dla smart pointerów silnika (a z
+    True gdy funkcji nie da się sensownie wystawić do Pythona: bierze TOwningPointer do typu, który
+    nie jest assetem, albo TUsePointer do typu, który nie jest ani assetem, ani EngineObjectem. pybind11 nie ma castera dla smart pointerów silnika (a z
     surowego wskaźnika nie da się ich odtworzyć – TUsePointer powstaje tylko z ControlBlocka),
     więc takie .def rzucałoby cast_error przy pierwszym wywołaniu. Lepiej nie wystawiać wcale.
     """
@@ -1304,6 +1371,8 @@ def _HasUnbindableParams(Params: List[ParamInfo], AllClasses: List = []) -> bool
         CleanNoNs = re.sub(r"\bPlu::", "", _StripQualifiers(P.Type.strip())).strip()
         M = _RE_USE_POINTER.match(CleanNoNs) or _RE_OWNING_POINTER.match(CleanNoNs)
         if not M:
+            continue
+        if _ObjectUsePointerInner(P.Type, AllClasses):
             continue
         InnerClean = re.sub(r"\bPlu::", "", M.group(1).strip()).strip()
         InnerInfo  = next((C for C in AllClasses if C.Name == InnerClean), None)
@@ -1352,9 +1421,68 @@ def _CollectAllOverrideFns(Cls: TypeInfo, AllTypes: List[TypeInfo],
                 NameToFunc[F.Name] = F
 
     Collect(Cls)
-    # Funkcje z nieprzekładalnymi parametrami (TUsePointer<T> spoza assetów) pomijamy – ani
+    # Funkcje z nieprzekładalnymi parametrami (patrz _HasUnbindableParams) pomijamy – ani
     # trampolina, ani .def nie mogłyby ich obsłużyć.
     return [F for F in NameToFunc.values() if not _HasUnbindableParams(F.Params, AllParsedTypes or AllTypes)]
+
+
+def ReadEngineModuleOrder() -> List[str]:
+    """
+    Engine modules bottom-up, read from PLU_MODULES in LibEngine/CMakeLists.txt so the order the
+    per-module bindings are registered in cannot drift from the layering.
+    """
+    CMakeListsPath = os.path.join(ProjectDir, "LibEngine", "CMakeLists.txt")
+    with open(CMakeListsPath, "r", encoding="utf-8") as F:
+        Match = re.search(r"set\(PLU_MODULES\s+(.*?)\s+CACHE\b", F.read(), re.S)
+    if not Match:
+        raise RuntimeError(f"PLU_MODULES not found in {CMakeListsPath}")
+    return Match.group(1).split()
+
+
+def ModuleOfPath(FilePath) -> str:
+    """Owning project of a scanned file: the engine module for LibEngine/<Module>/..., else the top-level dir."""
+    Parts = Path(FilePath).resolve().relative_to(Path(ProjectDir).resolve()).parts
+    return Parts[1] if Parts[0] == "LibEngine" and len(Parts) > 1 else Parts[0]
+
+
+# Target size of one bindings chunk, in generated characters. Measured: every bindings TU pays ~6 s
+# for pybind11 and the headers, plus ~0.12 s per KB of generated bindings.
+BindingsChunkTargetChars = 16000
+
+_RE_BINDINGS_CHUNK_FILE = re.compile(r"PluEngineBindings_([A-Za-z0-9]+)_(\d+)\.cpp")
+
+
+def BindingsRegisterFuncName(Module: str, Index: int) -> str:
+    return f"RegisterPluEngineBindings_{Module}_{Index}"
+
+
+def ReadBindingsLayout(LayoutPath: str) -> Optional[dict]:
+    """Chunk file count per module from BindingsLayout.cmake, or None when there is none yet."""
+    if not os.path.exists(LayoutPath):
+        return None
+    Layout: dict = {}
+    with open(LayoutPath, "r", encoding="utf-8") as F:
+        for Match in _RE_BINDINGS_CHUNK_FILE.finditer(F.read()):
+            Layout[Match.group(1)] = max(Layout.get(Match.group(1), 0), int(Match.group(2)) + 1)
+    return Layout
+
+
+def PackBindingsBlocks(Blocks: List[tuple], BlockSize, ChunkCount: int) -> List[list]:
+    """Splits Blocks, in order, into ChunkCount chunks of about the same generated size."""
+    Chunks: List[list] = [[] for _ in range(ChunkCount)]
+    if ChunkCount == 0:
+        return Chunks
+    ChunkLimit = -(-sum(BlockSize(N, C) for N, C in Blocks) // ChunkCount)
+    Index, ChunkSize = 0, 0
+    for Name, Code in Blocks:
+        Size = BlockSize(Name, Code)
+        # Close the chunk when this block would end mostly past the limit.
+        if Chunks[Index] and ChunkSize + Size / 2 > ChunkLimit and Index < ChunkCount - 1:
+            Index, ChunkSize = Index + 1, 0
+        Chunks[Index].append((Name, Code))
+        ChunkSize += Size
+    return Chunks
+
 
 
 def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []):
@@ -1411,47 +1539,102 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             if HasPyParam(Enum.ReflectionParams, "PyExport"):
                 ExportedEnums.append(Enum)
 
+    # Bindings are compiled into PluApp, the only module that sees every other one, so only engine
+    # modules can export. Anything else used to overwrite the engine's bindings file.
+    ModuleOrder = ReadEngineModuleOrder()
+    def IsEngineItem(Item) -> bool:
+        Module = ModuleOfPath(Item.FilePath)
+        if Module in ModuleOrder:
+            return True
+        print(f"Bindings: skipping {Item.Name} from {Module} – only engine modules can PyExport.")
+        return False
+    ExportedTypes  = [T for T in ExportedTypes if IsEngineItem(T)]
+    AllGlobalFuncs = [GF for GF in AllGlobalFuncs if IsEngineItem(GF)]
+    ExportedEnums  = [E for E in ExportedEnums if IsEngineItem(E)]
+
     if not ExportedTypes and not AllGlobalFuncs and not ExportedEnums:
         print("Bindings: nothing to export – nothing generated.")
         return
 
-    os.makedirs(OutputDir, exist_ok=True)
+    # A module's bindings are packed, in order, into ceil(size / BindingsChunkTargetChars)
+    # translation units (ReflectionCache/Bindings/PluEngineBindings_<Module>_<N>.cpp), each defining
+    # RegisterPluEngineBindings_<Module>_<N>(), plus PluEngineBindings.cpp that calls them bottom-up.
+    # A single file was the longest compile of the whole build, and splitting by module alone left
+    # PluGameplay holding most of it. Bottom-up is enough for pybind11's ordering needs: a base
+    # class, or a type used as a default argument, lives in the same module or one below it, and a
+    # trampoline stays in the chunk of its class.
+    #
+    # The file set lives in BindingsLayout.cmake, which CMake include()s. This runs inside the build,
+    # after CMake fixed the list of sources, so it always writes the files of the layout CMake already
+    # knows – bigger chunks when more are wanted, empty ones when fewer – and only records the wanted
+    # layout. A changed BindingsLayout.cmake reconfigures on the next build, which then switches.
+    BindingsDir = os.path.join(OutputDir, "Bindings")
+    os.makedirs(BindingsDir, exist_ok=True)
     BindingsCpp = os.path.join(OutputDir, "PluEngineBindings.cpp")
+    LayoutPath  = os.path.join(OutputDir, "BindingsLayout.cmake")
     StubPyi     = os.path.join(OutputDir, "PluEngine.pyi")
+    CurrentLayout = ReadBindingsLayout(LayoutPath)
+    WantedLayout: dict = {}
+    WrittenLayout: dict = {}
+    # Bindings of a module that has no file in the current layout (its first export) go into
+    # PluEngineBindings.cpp for this one build, rather than missing from Python until the next.
+    MainFileBindings: List[str] = []
 
-    # ── PluEngineBindings.cpp ─────────────────────────────────────────
-    B = io.StringIO()
-    if True:
-        B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
-        B.write("// pybind11 bindings for PluEngine\n\n")
-        B.write('#include <pybind11/embed.h>\n')
-        B.write('#include <pybind11/stl.h>\n')
-        B.write('#include <pybind11/operators.h>\n\n')
-        B.write('#include "PluEngine/Scripting/PythonMath.h"\n\n')
-        B.write("namespace py = pybind11;\n\n")
+    # Types already registered in the module – only their values can go into py::arg(...) = default
+    # (pybind11 converts default arguments when .def() runs).
+    RegisteredNames: set = set(MATH_TYPE_NAMES)
 
-        # Includes per plik źródłowy
+    for Module in ModuleOrder:
+        ModuleTypes        = [T for T in ExportedTypes if ModuleOfPath(T.FilePath) == Module]
+        ModuleGlobalFuncs  = [GF for GF in AllGlobalFuncs if ModuleOfPath(GF.FilePath) == Module]
+        ModuleEnums        = [E for E in ExportedEnums if ModuleOfPath(E.FilePath) == Module]
+
+        # Every bindings TU must include the same pybind11 headers: type casters (stl.h) present in
+        # one and missing in another is an ODR violation.
+        H = io.StringIO()
+        H.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+        H.write(f"// pybind11 bindings for {Module}, registered from PluEngineBindings.cpp\n\n")
+        H.write('#include <pybind11/embed.h>\n')
+        H.write('#include <pybind11/stl.h>\n')
+        H.write('#include <pybind11/operators.h>\n\n')
+        # The String / DynamicArray type_casters. Every bindings TU needs them, right after pybind11:
+        # one without them instantiates pybind11's generic caster under the same symbol names, and
+        # the linker keeps whichever copy comes first – then no String argument converts anywhere
+        # (create(): incompatible function arguments). The single bindings file only got this
+        # header by accident, through some other module's header.
+        H.write('#include "PluEngine/Core/Reflection/TypeTraits.h"\n')
+        H.write('#include "PluEngine/Scripting/PythonMath.h"\n')
+        H.write('#include "PluEngine/Scripting/PythonPointers.h"\n')
+        # Named by the generated code itself (asset pointer properties/params), not by the headers
+        # being bound – the single bindings file used to get them from some other module's header.
+        H.write('#include "PluEngine/Core/IAssetData.h"\n')
+        H.write('#include "PluEngine/AssetCore/EngineAssetManager.h"\n\n')
+        H.write("namespace py = pybind11;\n\n")
+
+        # The exported headers of this module and of every module below it – the include context the
+        # single bindings file gave each binding. A bound header that only forward-declares a type
+        # from a lower module (TUsePointer<MaterialInfo>) still needs it complete here.
+        VisibleModules = set(ModuleOrder[:ModuleOrder.index(Module) + 1])
         IncludedFiles: set = set()
-        for Cls in ExportedTypes:
-            FP = str(Cls.FilePath).replace("\\", "/")
+        for Item in [*ExportedTypes, *AllGlobalFuncs, *ExportedEnums]:
+            if ModuleOfPath(Item.FilePath) not in VisibleModules:
+                continue
+            FP = str(Item.FilePath).replace("\\", "/")
             if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
-                IncludedFiles.add(FP)
-        for GF in AllGlobalFuncs:
-            FP = str(GF.FilePath).replace("\\", "/")
-            if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
-                IncludedFiles.add(FP)
-        for Enum in ExportedEnums:
-            FP = str(Enum.FilePath).replace("\\", "/")
-            if FP not in IncludedFiles:
-                B.write(f'#include "{FP}"\n')
+                H.write(f'#include "{FP}"\n')
                 IncludedFiles.add(FP)
 
-        B.write("\nusing namespace Plu;\n\n")
+        H.write("\nusing namespace Plu;\n\n")
+        ChunkHeader = H.getvalue()
+
+        # Each enum, class and global function is generated into a block of its own, a class's
+        # trampoline into Trampolines – the chunking below needs them separable.
+        Trampolines: dict = {}
+        Blocks: List[tuple] = []   # (class name or "", code)
 
         # ── Trampoline klasy dla PyDerive + PyOverride ─────────────────
-        for Cls in ExportedTypes:
+        for Cls in ModuleTypes:
+            B = Trampolines.setdefault(Cls.Name, io.StringIO())
             IsDerive    = HasPyParam(Cls.ReflectionParams, "PyDerive")
             OwnOverride = [F for F in Cls.Functions if HasPyParam(F.MacroParams, "PyOverride")
                            and not _HasUnbindableParams(F.Params, AllClasses)]
@@ -1478,29 +1661,34 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 CallArgs  = ", ".join(P.Name if P.Name else f"arg{I}" for I, P in enumerate(F.Params))
                 ConstQual = " const" if F.IsConst else ""
                 B.write(f"    {F.ReturnType} {F.Name}({ParamDecl}){ConstQual} override {{\n")
-                B.write(f"        PYBIND11_OVERRIDE(\n")
-                B.write(f"            {F.ReturnType},\n")
-                B.write(f"            {Cls.Name},\n")
-                B.write(f"            {F.Name}")
-                if CallArgs:
-                    B.write(f",\n            {CallArgs}")
-                B.write(f"\n        );\n")
+                # Smart-pointer params have no pybind11 caster – Python gets the raw pointer
+                # (GetAssetUserAsRaw / UserFromPython turn it back on the way in). PYBIND11_OVERRIDE
+                # would pass the same arguments to both Python and the base call, so it is split here.
+                PyCallArgList = []
+                for I, P in enumerate(F.Params):
+                    ArgName   = P.Name if P.Name else f"arg{I}"
+                    CleanNoNs = re.sub(r"\bPlu::", "", _StripQualifiers(P.Type)).strip()
+                    IsSmart   = _RE_USE_POINTER.match(CleanNoNs) or _RE_OWNING_POINTER.match(CleanNoNs)
+                    PyCallArgList.append(f"{ArgName}.GetRaw()" if IsSmart else ArgName)
+                PyCallArgs = ", ".join(PyCallArgList)
+                if PyCallArgs != CallArgs:
+                    B.write(f"        PYBIND11_OVERRIDE_IMPL({F.ReturnType}, {Cls.Name}, \"{F.Name}\", {PyCallArgs});\n")
+                    B.write(f"        return {Cls.Name}::{F.Name}({CallArgs});\n")
+                else:
+                    B.write(f"        PYBIND11_OVERRIDE(\n")
+                    B.write(f"            {F.ReturnType},\n")
+                    B.write(f"            {Cls.Name},\n")
+                    B.write(f"            {F.Name}")
+                    if CallArgs:
+                        B.write(f",\n            {CallArgs}")
+                    B.write(f"\n        );\n")
                 B.write(f"    }}\n\n")
             B.write(f"}};\n\n")
 
-        B.write("PYBIND11_EMBEDDED_MODULE(PluEngine, m) {\n")
-        B.write('    m.doc() = "PluEngine Python bindings";\n\n')
-
-        # ── Typy matematyczne ─────────────────────────────────────────
-        # Vec2/3/4, IVec2/3/4, Quaternion i Matrix4 – ręcznie pisane bindingi. Muszą pójść przed
-        # enumami i klasami: pybind11 rozwiązuje typy argumentów i wartości domyślne w .def().
-        B.write("    // Math types (hand-written bindings)\n")
-        B.write("    RegisterMathTypes(m);\n\n")
-
         # ── Enumy ──────────────────────────────────────────────────────
-        if ExportedEnums:
-            B.write("    // Enums\n")
-        for Enum in ExportedEnums:
+        for Enum in ModuleEnums:
+            B = io.StringIO()
+            Blocks.append(("", B))
             PyName  = GetPyParamValue(Enum.ReflectionParams, "PyName") or Enum.Name
             PyDoc   = GetPyDoc(Enum.ReflectionParams)
             B.write(f'    py::enum_<{Enum.Name}>(m, "{PyName}"')
@@ -1517,11 +1705,11 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             B.write(f'        .def_static("FromString", [](const Plu::String& s) {{ return FromString<{Enum.Name}>(s); }}, py::arg("str"))\n')
             B.write(f'        ;\n\n')
 
-        # Typy już zarejestrowane w module – tylko ich konstrukcje/wartości mogą trafić do
-        # py::arg(...) = default (pybind11 konwertuje domyślne argumenty w momencie .def()).
-        RegisteredNames: set = {E.Name for E in ExportedEnums} | MATH_TYPE_NAMES
+        RegisteredNames |= {E.Name for E in ModuleEnums}
 
-        for Cls in ExportedTypes:
+        for Cls in ModuleTypes:
+            B = io.StringIO()
+            Blocks.append((Cls.Name, B))
             PyName      = GetPyName(Cls)
             PyDoc       = GetPyDoc(Cls.ReflectionParams)
             IsAbstr     = HasPyParam(Cls.ReflectionParams, "Abstract")
@@ -1572,7 +1760,29 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 # Sprawdź czy typ to TClassPointer<T> – wymaga custom settera przez TypeRegistry
                 CleanPropType = re.sub(r"\bPlu::", "", _StripQualifiers(Prop.Type)).strip()
                 MCP = re.match(r"^(?:Plu::)?TClassPointer\s*<(.+)>$", CleanPropType)
-                if MCP:
+                AssetInner = _AssetUsePointerInner(Prop.Type, AllClasses)
+                if AssetInner and not (Prop.GetterName or Prop.SetterName):
+                    # TUsePointer<T:IAssetData> field: exposed as a raw IAssetData* (pybind11 downcasts to
+                    # the most derived registered type); the setter recovers the TUsePointer from the asset
+                    # manager and rejects assets of the wrong type instead of reinterpreting them.
+                    T = AssetInner.Name
+                    Getter = (f"[]({Cls.Name}& self) {{ return static_cast<IAssetData*>(self.{Prop.Name}.GetRaw()); }}")
+                    if ReadOnly:
+                        B.write(f'        .def_property_readonly("{Prop.Name}", {Getter}, py::return_value_policy::reference')
+                    else:
+                        Setter = (
+                            f"[]({Cls.Name}& self, IAssetData* asset) {{ "
+                            f"TUsePointer<{T}> typed; "
+                            f"if (asset) typed = DynamicCast<{T}>(GetAssetUserAsRaw(asset)); "
+                            f"if (asset && !typed) throw py::type_error(\"{Cls.Name}.{Prop.Name} expects a {T} asset\"); "
+                            f"self.{Prop.Name} = typed; "
+                            f"}}"
+                        )
+                        B.write(f'        .def_property("{Prop.Name}", {Getter}, {Setter}, py::return_value_policy::reference')
+                    if PropDoc:
+                        B.write(f', "{PropDoc}"')
+                    B.write(")\n")
+                elif MCP:
                     # def_property z getterem zwracającym pole i setterem przez TypeRegistry
                     Getter = f"[](const {Cls.Name}& self) {{ return self.{Prop.Name}; }}"
                     if ReadOnly:
@@ -1589,13 +1799,21 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                         B.write(f', "{PropDoc}"')
                     B.write(")\n")
                 else:
-                    if Prop.GetterName and Prop.SetterName:
+                    if Prop.GetterName or Prop.SetterName:
                         # Getter/Setter przez metody – ignorujemy PyReadOnly (błąd walidacji byłby osobno)
                         PropDoc  = GetPyDoc(Prop.Params)
                         NeedsRef = _ReturnsPointer(Prop.Type)
                         RefPolicy = ", py::return_value_policy::reference" if NeedsRef else ""
-                        Getter = f"[]({Cls.Name}& self) {{ return self.{Prop.GetterName}(); }}"
-                        Setter = f"[]({Cls.Name}& self, const {Prop.Type}& v) {{ self.{Prop.SetterName}(v); }}"
+                        Getter: str = ""
+                        Setter: str = ""
+                        if Prop.GetterName:
+                            Getter = f"[]({Cls.Name}& self) {{ return self.{Prop.GetterName}(); }}"
+                        else:
+                            Getter = f"[]({Cls.Name}& self) {{ return self.{Prop.Name}; }}"
+                        if Prop.SetterName:
+                            Setter = f"[]({Cls.Name}& self, const {Prop.Type}& v) {{ self.{Prop.SetterName}(v); }}"
+                        else:
+                            Setter = f"[]({Cls.Name}& self, const {Prop.Type}& v) {{ self.{Prop.Name} = v; }}"
                         B.write(f'        .def_property("{Prop.Name}", {Getter}, {Setter}')
                         if PropDoc:
                             B.write(f', "{PropDoc}"')
@@ -1649,9 +1867,9 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
             RegisteredNames.add(Cls.Name)
 
         # ── Funkcje globalne ───────────────────────────────────────────
-        if AllGlobalFuncs:
-            B.write("    // Global functions\n")
-        for GF in AllGlobalFuncs:
+        for GF in ModuleGlobalFuncs:
+            B = io.StringIO()
+            Blocks.append(("", B))
             if _HasUnbindableParams(GF.Params, AllClasses):
                 continue
             ArgList = _BuildPySignature(GF.Params, RegisteredNames)
@@ -1669,7 +1887,99 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 B.write(f', "{FDoc}"')
             B.write(");\n")
 
-        B.write("}\n")
+        # ── Pack the blocks into chunks ───────────────────────────────
+        Blocks = [(Name, Buf.getvalue()) for Name, Buf in Blocks if Buf.getvalue()]
+        BlockSize = lambda Name, Code: len(Code) + len(Trampolines[Name].getvalue() if Name in Trampolines else "")
+        TotalChars = sum(BlockSize(N, C) for N, C in Blocks)
+        WantedLayout[Module] = -(-TotalChars // BindingsChunkTargetChars)
+        FileCount = WantedLayout[Module] if CurrentLayout is None else CurrentLayout.get(Module, 0)
+        WrittenLayout[Module] = FileCount
+
+        def WriteChunk(Out, Chunk: list, RegisterFunc: str):
+            Out.write(ChunkHeader)
+            for Name, _ in Chunk:
+                if Name in Trampolines:
+                    Out.write(Trampolines[Name].getvalue())
+            Out.write(f"void {RegisterFunc}(py::module_& m) {{\n")
+            for _, Code in Chunk:
+                Out.write(Code)
+            Out.write("}\n\n")
+
+        if FileCount == 0 and Blocks:
+            M = io.StringIO()
+            WriteChunk(M, Blocks, BindingsRegisterFuncName(Module, 0))
+            MainFileBindings.append(M.getvalue())
+
+        for Index, Chunk in enumerate(PackBindingsBlocks(Blocks, BlockSize, min(FileCount, WantedLayout[Module]))
+                                      + [[]] * max(0, FileCount - WantedLayout[Module])):
+            ChunkPath    = os.path.join(BindingsDir, f"PluEngineBindings_{Module}_{Index}.cpp")
+            RegisterFunc = BindingsRegisterFuncName(Module, Index)
+            B = io.StringIO()
+            if not Chunk:
+                # Kept until CMake drops it on the next configure. No pybind11 include – it is most of
+                # the compile time.
+                B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+                B.write(f"// Unused bindings chunk of {Module}, registered from PluEngineBindings.cpp\n\n")
+                B.write("namespace pybind11 { class module_; }\n\n")
+                B.write(f"void {RegisterFunc}(pybind11::module_&) {{}}\n")
+            else:
+                WriteChunk(B, Chunk, RegisterFunc)
+            Changed = WriteIfChanged(ChunkPath, B.getvalue())
+            if Changed:
+                print(f"Generated {ChunkPath} ({len(Chunk)} block(s))")
+
+    def LayoutFiles(Layout: dict) -> List[str]:
+        return [f"PluEngineBindings_{M}_{I}.cpp" for M in ModuleOrder for I in range(Layout.get(M, 0))]
+
+    # Bindings/ belongs to this function alone. Files of the layout CMake builds from must stay even
+    # when unused; anything else is a leftover the next configure would not compile anyway.
+    KeptFiles = set(LayoutFiles(WrittenLayout))
+    for FileName in os.listdir(BindingsDir):
+        if FileName not in KeptFiles:
+            os.remove(os.path.join(BindingsDir, FileName))
+            print(f"Removed stale {os.path.join(BindingsDir, FileName)}")
+
+    L = io.StringIO()
+    L.write("# AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+    L.write("# pybind11 bindings chunks, include()d by LibEngine/CMakeLists.txt. A change here reconfigures\n")
+    L.write("# CMake on the next build.\n")
+    L.write("set(PLU_BINDINGS_SOURCES\n")
+    for FileName in LayoutFiles(WantedLayout):
+        L.write(f'        "${{CMAKE_SOURCE_DIR}}/ReflectionCache/Bindings/{FileName}"\n')
+    L.write(")\n")
+    if WriteIfChanged(LayoutPath, L.getvalue()) and CurrentLayout is not None:
+        print(f"Bindings layout changed – CMake reconfigures on the next build: {WantedLayout}")
+
+    # ── PluEngineBindings.cpp ─────────────────────────────────────────
+    B = io.StringIO()
+    B.write("// AUTO-GENERATED by ReflectionGenerator – DO NOT EDIT\n")
+    B.write("// pybind11 module for PluEngine. The bindings themselves are in Bindings/, chunked per module.\n\n")
+    B.write('#include <pybind11/embed.h>\n')
+    B.write('#include <pybind11/stl.h>\n')
+    B.write('#include <pybind11/operators.h>\n\n')
+    # Same type_casters as every chunk – see the chunk header above.
+    B.write('#include "PluEngine/Core/Reflection/TypeTraits.h"\n')
+    B.write('#include "PluEngine/Scripting/PythonMath.h"\n\n')
+    for Module in ModuleOrder:
+        for Index in range(WrittenLayout.get(Module, 0)):
+            B.write(f"void {BindingsRegisterFuncName(Module, Index)}(pybind11::module_& m);\n")
+    B.write("\n")
+    for Code in MainFileBindings:
+        B.write(Code)
+    B.write("PYBIND11_EMBEDDED_MODULE(PluEngine, m) {\n")
+    B.write('    m.doc() = "PluEngine Python bindings";\n\n')
+    # Vec2/3/4, IVec2/3/4, Quaternion and Matrix4 – hand-written bindings. They go before every
+    # module: pybind11 resolves default argument values when .def() runs.
+    B.write("    // Math types (hand-written bindings)\n")
+    B.write("    Plu::RegisterMathTypes(m);\n\n")
+    B.write("    // Engine modules, bottom-up – bases before derived classes\n")
+    for Module in ModuleOrder:
+        Count = WrittenLayout.get(Module, 0)
+        if Count == 0 and any(f"void {BindingsRegisterFuncName(Module, 0)}(" in Code for Code in MainFileBindings):
+            Count = 1
+        for Index in range(Count):
+            B.write(f"    {BindingsRegisterFuncName(Module, Index)}(m);\n")
+    B.write("}\n")
 
     Changed = WriteIfChanged(BindingsCpp, B.getvalue())
     print(f"{'Generated' if Changed else 'Unchanged'} {BindingsCpp} ({len(ExportedTypes)} type(s), {len(AllGlobalFuncs)} global func(s))")
@@ -1771,7 +2081,20 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
                 PyType   = CppTypeToPy(Prop.Type)
                 ReadOnly = HasPyParam(Prop.Params, "PyReadOnly")
                 HasGetterSetter = bool(Prop.GetterName and Prop.SetterName)
-                if ReadOnly or HasGetterSetter:
+                AssetInner = _AssetUsePointerInner(Prop.Type, AllClasses)
+                if AssetInner and not (Prop.GetterName or Prop.SetterName):
+                    # Mirrors the binding: getter yields the asset (as IAssetData when T is not exported),
+                    # setter takes any IAssetData and type-checks it at runtime.
+                    GetType = f"Optional[{GetPyName(AssetInner)}]" if IsPyExported(AssetInner) else "Optional[IAssetData]"
+                    P.write(f"    @property\n")
+                    P.write(f"    def {Prop.Name}(self) -> {GetType}:\n")
+                    if PropDoc:
+                        P.write(f'        """{PropDoc}"""\n')
+                    P.write(f"        ...\n")
+                    if not ReadOnly:
+                        P.write(f"    @{Prop.Name}.setter\n")
+                        P.write(f"    def {Prop.Name}(self, value: Optional[IAssetData]) -> None: ...\n")
+                elif ReadOnly or HasGetterSetter:
                     P.write(f"    @property\n")
                     P.write(f"    def {Prop.Name}(self) -> {PyType}:\n")
                     if PropDoc:
@@ -2020,9 +2343,14 @@ def GenerateReflectionData(Data: List[FileData]):
                             UuidClassPath = str(C.FilePath)
                     UuidProps[Prop.Name] = {"class": Prop.UuidForClass, "classPath": UuidClassPath}
 
+        PlatformGuard = PlatformGuardOfPath(FilePath)
         S = io.StringIO()
         if True:
             S.write(f'#include "{FilePath}"\n')
+            # The header defines its class only on its own platform; the include above brings in
+            # PluBase/Base.h, which defines the macro.
+            if PlatformGuard:
+                S.write(f"#ifdef {PlatformGuard}\n")
             S.write("#include <PluEngine/Core/Reflection/TypeTraits.h>\n")
             # std::is_copy_assignable_v, used by the emitted CopyPtr lambdas.
             S.write("#include <type_traits>\n\n")
@@ -2069,14 +2397,24 @@ def GenerateReflectionData(Data: List[FileData]):
                     S.write(f'        PropertyInfo* prop{Prop.Name} = new PropertyInfo{{ '
                             f'"{Prop.Name}", offsetof({Cls.Name}, {Prop.Name}), sizeof({Prop.Type}), '
                             f'"{Prop.Type}" }};\n')
-                    if Prop.GetterName and Prop.SetterName:
-                        # Getter/Setter lambdy – nie używamy offsetof do serializacji
-                        S.write(f'        prop{Prop.Name}->GetterPtr = [](void* obj, void* outBuf) {{\n')
-                        S.write(f'            *static_cast<{Prop.Type}*>(outBuf) = static_cast<{Cls.Name}*>(obj)->{Prop.GetterName}();\n')
-                        S.write(f'        }};\n')
-                        S.write(f'        prop{Prop.Name}->SetterPtr = [](void* obj, const void* buf) {{\n')
-                        S.write(f'            static_cast<{Cls.Name}*>(obj)->{Prop.SetterName}(*static_cast<const {Prop.Type}*>(buf));\n')
-                        S.write(f'        }};\n')
+                    if Prop.GetterName or Prop.SetterName:
+                        if Prop.GetterName:
+                            # Getter/Setter lambdy – nie używamy offsetof do serializacji
+                            S.write(f'        prop{Prop.Name}->GetterPtr = [](void* obj, void* outBuf) {{\n')
+                            S.write(f'            *static_cast<{Prop.Type}*>(outBuf) = static_cast<{Cls.Name}*>(obj)->{Prop.GetterName}();\n')
+                            S.write(f'        }};\n')
+                        else:
+                            S.write(f'        prop{Prop.Name}->GetterPtr = [](void* obj, void* outBuf) {{\n')
+                            S.write(f'            *static_cast<{Prop.Type}*>(outBuf) = static_cast<{Cls.Name}*>(obj)->{Prop.Name};\n')
+                            S.write(f'        }};\n')
+                        if Prop.SetterName:
+                            S.write(f'        prop{Prop.Name}->SetterPtr = [](void* obj, const void* buf) {{\n')
+                            S.write(f'            static_cast<{Cls.Name}*>(obj)->{Prop.SetterName}(*static_cast<const {Prop.Type}*>(buf));\n')
+                            S.write(f'        }};\n')
+                        else:
+                            S.write(f'        prop{Prop.Name}->SetterPtr = [](void* obj, const void* buf) {{\n')
+                            S.write(f'            static_cast<{Cls.Name}*>(obj)->{Prop.Name} = *static_cast<const {Prop.Type}*>(buf);\n')
+                            S.write(f'        }};\n')
                         # Scratch lifecycle so the editor can hand the accessors a
                         # properly constructed T (never raw malloc'd bytes — that is
                         # UB for non-trivial types).
@@ -2160,6 +2498,9 @@ def GenerateReflectionData(Data: List[FileData]):
                         S.write(f'    info->AddValue("{V.Name}", static_cast<UInt64>({QualName}::{V.Name}));\n')
                     S.write(f"    Plu::TypeRegistry::GetInstance()->AddEnum<{QualName}>(info);\n")
                     S.write(f"}}\n\n")
+
+            if PlatformGuard:
+                S.write(f"#endif // {PlatformGuard}\n")
 
         WriteIfChanged(GenSource, S.getvalue())
 
@@ -2256,7 +2597,8 @@ def GenerateReflectionData(Data: List[FileData]):
                 for RawLine in CL:
                     Parts = RawLine.strip().split(" - ")
                     if len(Parts) >= 3:
-                        ProjectClassList.append([Parts[0], Parts[2]])
+                        Guard = PlatformGuardOfPath(Parts[3]) if len(Parts) >= 4 else None
+                        ProjectClassList.append([Parts[0], Parts[2], Guard])
 
         if os.path.exists(EnumListFile):
             with open(EnumListFile, "r", encoding="utf-8") as EL:
@@ -2272,10 +2614,16 @@ def GenerateReflectionData(Data: List[FileData]):
         I = io.StringIO()
         I.write("#include <PluEngine/Core/Reflection/ReflectionBase.h>\n\n")
         I.write(f"// Project: {Proj}\n\n")
+        def WriteGuarded(Line: str, Guard: Optional[str]) -> None:
+            if Guard:
+                I.write(f"#ifdef {Guard}\n{Line}#endif\n")
+            else:
+                I.write(Line)
+
         for Entry in ProjectClassList:
             if Entry[1].removeprefix("ClassType.") == "INTERFACE":
                 continue
-            I.write(f"extern void Register_Reflection_{Entry[0]}();\n")
+            WriteGuarded(f"extern void Register_Reflection_{Entry[0]}();\n", Entry[2])
         for EnumName in ProjectEnumList:
             I.write(f"extern void Register_Reflection_{EnumName}();\n")
         I.write("\n")
@@ -2291,7 +2639,7 @@ def GenerateReflectionData(Data: List[FileData]):
         for Entry in ProjectClassList:
             if Entry[1].removeprefix("ClassType.") == "INTERFACE":
                 continue
-            I.write(f"    Register_Reflection_{Entry[0]}();\n")
+            WriteGuarded(f"    Register_Reflection_{Entry[0]}();\n", Entry[2])
         for EnumName in ProjectEnumList:
             I.write(f"    Register_Reflection_{EnumName}();\n")
         I.write("}\n")

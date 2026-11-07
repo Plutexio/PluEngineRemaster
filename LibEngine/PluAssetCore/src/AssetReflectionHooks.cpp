@@ -8,6 +8,8 @@
 #include "PluEngine/AssetCore/AssetReflectionHooks.h"
 
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
+#include "UI/IconsFontAwesome7.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 
@@ -21,7 +23,7 @@ bool TUsePointerAssetUI_Impl(void *value, String name, TypeInfo *typeInfo)
     TUsePointer<EngineAssetManager> assetManager = TypeRegistry::GetInstance()->GetAssetManager();
     TUsePointer<EngineObjectManager> engineObjectManager = TypeRegistry::GetInstance()->GetObjectManager();
 
-    static GameHashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> allAssetsPerField;
+    static HashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> allAssetsPerField;
     String mapKey = name + typeInfo->TypeName + String::FromInt(reinterpret_cast<UInt64>(value));
     if (!allAssetsPerField.Contains(mapKey)) {
         allAssetsPerField[mapKey] = assetManager->GetAllAssetDescriptorsOfType(typeInfo);
@@ -42,20 +44,14 @@ bool TUsePointerAssetUI_Impl(void *value, String name, TypeInfo *typeInfo)
 	if (ImGui::BeginCombo(name.CStr(), preview.CStr(), 0))
     {
         // Refresh lives inside the dropdown to keep the row uncluttered.
-        if (ImGui::SmallButton("Refresh"))
-        {
+        static ImGuiTextFilter filter;
+        const float refreshSize = ImGui::GetFrameHeight();
+        ImGuiWidgets::PopupSearchBar(&filter, "Search...", -(refreshSize + ImGui::GetStyle().ItemSpacing.x));
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_ROTATE "##Refresh", ImVec2(refreshSize, refreshSize))) {
             allAssetsPerField[mapKey] = assetManager->GetAllAssetDescriptorsOfType(typeInfo);
         }
-        ImGui::SameLine();
-
-        static ImGuiTextFilter filter;
-        if (ImGui::IsWindowAppearing())
-        {
-            ImGui::SetKeyboardFocusHere();
-            filter.Clear();
-        }
-        ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-        filter.Draw("##Filter", -FLT_MIN);
+        ImGui::SetItemTooltip("Refresh the list");
 
 		bool is_selected = selected == nullptr;
 
@@ -94,8 +90,8 @@ bool TUsePointerAssetUI_Impl(void *value, String name, TypeInfo *typeInfo)
 
 bool UUIDForAssetUI_Impl(void* value, String name, TypeInfo* typeInfo, PropertyInfo* propertyInfo)
 {
-    static GameHashMap<String, DynamicArray<EngineObjectHandle>> objectsPerUuidField;
-    static GameHashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> assetsPerUuidField;
+    static HashMap<String, DynamicArray<EngineObjectHandle>> objectsPerUuidField;
+    static HashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> assetsPerUuidField;
 
     TUsePointer<EngineAssetManager> assetManager = TypeRegistry::GetInstance()->GetAssetManager();
     TUsePointer<EngineObjectManager> engineObjectManager = TypeRegistry::GetInstance()->GetObjectManager();
@@ -136,19 +132,14 @@ bool UUIDForAssetUI_Impl(void* value, String name, TypeInfo* typeInfo, PropertyI
         if (ImGui::BeginCombo(propertyInfo->PropertyName.CStr(), preview.CStr(), 0))
         {
             // Refresh lives inside the dropdown to keep the row uncluttered.
-            if (ImGui::SmallButton("Refresh")) {
+            static ImGuiTextFilter filter;
+            const float refreshSize = ImGui::GetFrameHeight();
+            ImGuiWidgets::PopupSearchBar(&filter, "Search...", -(refreshSize + ImGui::GetStyle().ItemSpacing.x));
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_ROTATE "##Refresh", ImVec2(refreshSize, refreshSize))) {
                 assets = assetManager->GetAllAssetDescriptorsOfType(propertyInfo->UuidForClass);
             }
-            ImGui::SameLine();
-
-            static ImGuiTextFilter filter;
-            if (ImGui::IsWindowAppearing())
-            {
-                ImGui::SetKeyboardFocusHere();
-                filter.Clear();
-            }
-            ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-            filter.Draw("##Filter", -FLT_MIN);
+            ImGui::SetItemTooltip("Refresh the list");
 
             for (int n = 0; n < assets.Size(); n++)
             {
@@ -182,19 +173,14 @@ bool UUIDForAssetUI_Impl(void* value, String name, TypeInfo* typeInfo, PropertyI
         if (ImGui::BeginCombo(propertyInfo->PropertyName.CStr(), preview.CStr(), 0))
         {
             // Refresh lives inside the dropdown to keep the row uncluttered.
-            if (ImGui::SmallButton("Refresh")) {
+            static ImGuiTextFilter filter;
+            const float refreshSize = ImGui::GetFrameHeight();
+            ImGuiWidgets::PopupSearchBar(&filter, "Search...", -(refreshSize + ImGui::GetStyle().ItemSpacing.x));
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_ROTATE "##Refresh", ImVec2(refreshSize, refreshSize))) {
                 objects = engineObjectManager->GetAllObjectsOfClass(propertyInfo->UuidForClass);
             }
-            ImGui::SameLine();
-
-            static ImGuiTextFilter filter;
-            if (ImGui::IsWindowAppearing())
-            {
-                ImGui::SetKeyboardFocusHere();
-                filter.Clear();
-            }
-            ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-            filter.Draw("##Filter", -FLT_MIN);
+            ImGui::SetItemTooltip("Refresh the list");
 
             for (int n = 0; n < objects.Size(); n++)
             {

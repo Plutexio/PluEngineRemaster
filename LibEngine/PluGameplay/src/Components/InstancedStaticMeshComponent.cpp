@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "PluEngine/Gameplay/GameObject.h"
+#include "glm/gtc/matrix_inverse.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/quaternion.hpp"
 
@@ -20,9 +21,9 @@ void Plu::InstancedStaticMeshComponent::SetStaticMesh(TUsePointer<StaticMesh> st
 {
 	StaticMeshToDisplay = staticMesh;
 	MeshBoundingBoxComputed = false;
+	mInstanceCacheDirty = true;
 	if (staticMesh && staticMesh->IsLoaded) {
-		MeshBoundingBox = Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw());
-		MeshBoundingBoxComputed = true;
+		SetMeshBoundingBox(Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw()));
 	}
 }
 
@@ -93,7 +94,8 @@ void Plu::InstancedStaticMeshComponent::SetInstances(const DynamicArray<MeshInst
 
 const DynamicArray<Matrix4>* Plu::InstancedStaticMeshComponent::GetInstanceWorldMatrices()
 {
-	const Matrix4 componentWorld = GetWorldMatrix();
+	const Matrix4& componentWorld = GetWorldMatrixRef();
+	const UInt32 transformVersion = GetTransformVersion();
 
 	// Rozmiar/zawartość porównane wprost: mInstanceCacheDirty łapie tylko AddInstance/RemoveInstance/
 	// UpdateInstance/ClearInstances/SetInstances. Edycje z panelu detali (reflekcja) i deserializacja
@@ -103,20 +105,36 @@ const DynamicArray<Matrix4>* Plu::InstancedStaticMeshComponent::GetInstanceWorld
 	const bool instancesContentChanged = Instances.Size() != mCachedInstances.Size() ||
 		(!Instances.IsEmpty() && std::memcmp(Instances.Data(), mCachedInstances.Data(), Instances.Size() * sizeof(MeshInstanceTransform)) != 0);
 
-	if (mInstanceCacheDirty || instancesContentChanged || std::memcmp(&componentWorld, &mCachedComponentWorldMatrix, sizeof(Matrix4)) != 0) {
+	if (mInstanceCacheDirty || instancesContentChanged || mCachedTransformVersion != transformVersion) {
 		mCachedWorldMatrices.Clear();
 		mCachedWorldMatrices.Reserve(Instances.Size());
 		mCachedNormalMatrices.Clear();
 		mCachedNormalMatrices.Reserve(Instances.Size());
+		mCachedInstanceBounds.Clear();
+		mCachedInstanceBounds.Reserve(Instances.Size());
+		const Vec3 localCenter = MeshBoundingBox.GetCenter();
+		const Vec3 localExtent = MeshBoundingBox.GetExtent();
 		for (const MeshInstanceTransform& inst : Instances) {
 			const Matrix4 local = glm::translate(glm::mat4(1.0f), inst.Location) *
 				glm::mat4_cast(glm::quat(glm::radians(inst.Rotation))) *
 				glm::scale(glm::mat4(1.0f), inst.Scale);
 			const Matrix4 world = componentWorld * local;
 			mCachedWorldMatrices.PushBack(world);
-			mCachedNormalMatrices.PushBack(glm::transpose(glm::inverse(world)));
+			// Only mat3(normalMatrix) is ever read by the shaders, and for an affine matrix that
+			// block is the inverse-transpose of the matrix's own 3x3 — same result, no 4x4 inverse.
+			mCachedNormalMatrices.PushBack(Matrix4(glm::inverseTranspose(glm::mat3(world))));
+
+			// Scale per instance is not stored separately (only the final matrix), so it is read
+			// back off the basis column lengths — the equivalent of GetWorldScale() for a plain
+			// component, correct as long as there is no shear (translate * rotate * scale).
+			const Vec3 instanceScale = Vec3(glm::length(Vec3(world[0])),
+											glm::length(Vec3(world[1])),
+											glm::length(Vec3(world[2])));
+			InstanceBoundingSphere& sphere = mCachedInstanceBounds.EmplaceBack();
+			sphere.Center = Vec3(world * Vec4(localCenter, 1.0f));
+			sphere.Radius = glm::length(localExtent * instanceScale);
 		}
-		mCachedComponentWorldMatrix = componentWorld;
+		mCachedTransformVersion = transformVersion;
 		mCachedInstances = Instances;
 		mInstanceCacheDirty = false;
 	}
@@ -127,4 +145,18 @@ const DynamicArray<Matrix4>* Plu::InstancedStaticMeshComponent::GetInstanceNorma
 {
 	GetInstanceWorldMatrices();
 	return &mCachedNormalMatrices;
+}
+
+const DynamicArray<Plu::InstancedStaticMeshComponent::InstanceBoundingSphere>*
+Plu::InstancedStaticMeshComponent::GetInstanceWorldBounds()
+{
+	GetInstanceWorldMatrices();
+	return &mCachedInstanceBounds;
+}
+
+void Plu::InstancedStaticMeshComponent::SetMeshBoundingBox(const BoundingBox &boundingBox)
+{
+	MeshBoundingBox = boundingBox;
+	MeshBoundingBoxComputed = true;
+	mInstanceCacheDirty = true;
 }

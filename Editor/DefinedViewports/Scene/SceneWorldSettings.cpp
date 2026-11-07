@@ -10,10 +10,11 @@
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
 #include "PluEngine/Render/Renderer.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
+#include "PluEngine/Physics/JoltIntializer.h"
+#include "PluEngine/Physics/PhysicsWorld.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -46,21 +47,19 @@ void Plu::SceneWorldSettings::OnUpdate(float deltaTime)
 
 		ImGui::Separator();
 		ImGui::Text("World Stats");
-		PhysicsWorld* physicsWorld = gEditorAppContext->EditorScenesManager->GetCurrentWorld()->GetPhysicsWorld();
-		ImGui::Text("Physics Bodies: %d", physicsWorld->GetSystem().GetNumBodies());
-		ImGui::Separator();
-		// Ustawienia wizualizacji debugowej fizyki żyją teraz na PhysicsWorld (czytane na main
-		// przy budowie snapshotu), bo Renderer jest obiektem wyłącznie wątku renderu.
-		if (TypeSerializer<PhysicsDebugRender>::EditorControl(
-			&physicsWorld->PhysicsDebugRenderMode,
-			"Physics Visualize Mode")) {
-			PanelChangedAsset();
-		}
-		if (ImGui::ColorEdit3("Wireframe Color", &physicsWorld->PhysicsDebugRenderColorWireframe.x)) {
-			PanelChangedAsset();
-		}
-		if (ImGui::ColorEdit3("Points Color", &physicsWorld->PhysicsDebugRenderColorPoints.x)) {
-			PanelChangedAsset();
+		PhysicsWorld* physicsWorld = JoltPhysics::GetPhysicsWorldBySceneHandle(gEditorAppContext->EditorScenesManager->GetCurrentWorld()->GetObjectHandle()).GetRaw();
+		if (physicsWorld) {
+			ImGui::Text("Physics Bodies: %d", physicsWorld->GetNumOfBodies());
+			if (TypeSerializer<PhysicsDebugRenderMode>::EditorControl(
+				&physicsWorld->DebugRenderMode,
+				"Physics Visualize Mode")) {
+				}
+			if (ImGui::ColorEdit3("Wireframe Color", &physicsWorld->DebugLineColor.x)) {
+				PanelChangedAsset();
+			}
+			if (ImGui::ColorEdit3("Points Color", &physicsWorld->DebugPointColor.x)) {
+				PanelChangedAsset();
+			}
 		}
 
 		ImGui::Separator();

@@ -5,9 +5,17 @@
 struct InstanceData { mat4 model; mat4 normalMatrix; };
 layout(std430, binding = 1) buffer InstanceMatrices { InstanceData instances[]; };
 
+// Skompaktowane indeksy instancji, które przeżyły culling danego frustum (Renderer::
+// CullShadowCasters, binding 3). KAŻDY pass rysujący static meshe — główny, depth prepass i mapy
+// cieni — adresuje instancje przez tę samą indirekcję, więc ten sam vertex shader obsługuje je
+// wszystkie (patrz Renderer::ResolveDepthProgram): pass głębi rysuje podzbiór batcha nie ruszając
+// danych instancji, a pass główny widzi dokładnie te same macierze.
+layout(std430, binding = 3) buffer VisibleInstanceIndices { uint visibleIndices[]; };
+
 // Bufor bindujemy w całości (BindBase), więc offset batcha idzie uniformem, nie BindRange.
+// UWAGA: instanceBaseIndex indeksuje visibleIndices, NIE instances.
 uniform int instanceBaseIndex;
-// UWAGA: celowo BRAK `uniform mat4 model` — model idzie z InstanceMatrices[instanceBaseIndex + gl_InstanceID].
+// UWAGA: celowo BRAK `uniform mat4 model` — model idzie z InstanceMatrices[visibleIndices[...]].
 
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
@@ -28,7 +36,7 @@ uniform mat4 projection;
 
 void main()
 {
-    InstanceData inst = instances[instanceBaseIndex + gl_InstanceID];
+    InstanceData inst = instances[visibleIndices[instanceBaseIndex + gl_InstanceID]];
     mat4 model = inst.model;
 
     gl_Position = projection * view * model * vec4(aPos, 1.0);

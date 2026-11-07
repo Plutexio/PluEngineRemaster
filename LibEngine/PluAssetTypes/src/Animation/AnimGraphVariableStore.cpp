@@ -21,7 +21,7 @@ namespace Plu
 	void AnimGraphVariableStore::MergeFrom(const DynamicArray<TOwningPointer<IAnimationGraphVariable>>& defaults)
 	{
 		DynamicArray<TOwningPointer<IAnimationGraphVariable>> merged;
-		GameHashMap<String, UInt64> mergedIndex;
+		HashMap<String, UInt64> mergedIndex;
 		bool changed = defaults.Size() != mVariables.Size();
 
 		for (const TOwningPointer<IAnimationGraphVariable>& def : defaults) {

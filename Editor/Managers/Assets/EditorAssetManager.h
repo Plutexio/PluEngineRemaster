@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_EDITORASSETMANAGER_H
 #define PLUENGINE_EDITORASSETMANAGER_H
 #include "PluEngine/Core/IAssetData.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu
 {
@@ -18,7 +18,7 @@ namespace Plu
 	public:
 		using EditorAssetConstructor = std::function<TOwningPointer<IEditorAssetObject>(TOwningPointer<IAssetData>)>;
 	private:
-		GameHashMap<String, EditorAssetConstructor> mEditorAssetsCreators;
+		HashMap<String, EditorAssetConstructor> mEditorAssetsCreators;
 	public:
 		static EditorTypeRegistry* GetInstance();
 		void AddConstructor(String name, EditorAssetConstructor cons);

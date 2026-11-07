@@ -45,8 +45,9 @@ namespace Plu
         // BOTH DEFAULT TO ZERO, which is not an oversight: on the spot path the caster-side
         // budget already covers acne on its own. The depth pass renders with front-face culling
         // (only back faces reach the map, so the self-shadowing threshold sits on the geometry's
-        // hidden side) plus a slope-scaled glPolygonOffset — measured on a real scene that is
-        // enough for a clean image at zero receiver bias.
+        // hidden side; lit faces are never compared against themselves). Note: before 2026-10-06
+        // the culling was inverted by the clockwise mesh winding and a slope-scaled polygon offset
+        // was doing the work instead — the zero defaults were measured under that setup.
         //
         // Every positive value here is therefore pure loss: it erodes the shadow near the point
         // where caster and receiver meet, which reads as "the shadow does not reach". The

@@ -216,6 +216,8 @@ namespace Plu
 
             ShadowCascadeData data;
             data.ViewProj       = lightProj * lightView;
+            data.View           = lightView;
+            data.Proj           = lightProj;
             data.SplitDistance  = currSplit;
             data.TexelWorldSize = texelWorldSize;
             data.Radius         = radius;
@@ -254,6 +256,13 @@ namespace Plu
 
     Matrix4 ComputeSpotLightMatrix(const Vec3& Apex, const Vec3& Dir, float Range, float OuterHalfAngleRadians)
     {
+        Matrix4 view, proj;
+        return ComputeSpotLightMatrix(Apex, Dir, Range, OuterHalfAngleRadians, view, proj);
+    }
+
+    Matrix4 ComputeSpotLightMatrix(const Vec3& Apex, const Vec3& Dir, float Range, float OuterHalfAngleRadians,
+                                   Matrix4& OutView, Matrix4& OutProj)
+    {
         const Vec3 axis = glm::normalize(Dir);
 
         // Pick the world axis least parallel to the light direction. A lamp pointing straight
@@ -271,11 +280,14 @@ namespace Plu
 
         const Matrix4 lightProj = glm::perspective(fovY, 1.0f, kSpotShadowNearClip, farPlane);
         const Matrix4 lightView = glm::lookAt(Apex, Apex + axis * farPlane, up);
+        OutView = lightView;
+        OutProj = lightProj;
         return lightProj * lightView;
     }
 
     void AppendConeWireframe(DynamicArray<float>& OutLineVerts, const Vec3& Apex, const Vec3& Dir,
-                             float Range, float HalfAngleRadians, const Vec3& Color, Int32 Segments)
+                             float Range, float HalfAngleRadians, const Vec3& Color, Int32 Segments,
+                             float MaxHalfAngleRadians)
     {
         if (Range <= 0.0f || Segments < 3) return;
 
@@ -286,7 +298,7 @@ namespace Plu
         const Vec3 right = glm::normalize(glm::cross(axis, reference));
         const Vec3 up    = glm::cross(right, axis);
 
-        const float halfAngle = glm::clamp(HalfAngleRadians, 0.0f, glm::half_pi<float>() - 0.01f);
+        const float halfAngle = glm::clamp(HalfAngleRadians, 0.0f, glm::clamp(MaxHalfAngleRadians, 0.0f, glm::pi<float>()));
         // The rim sits on the SPHERE of radius Range, not on a flat cap — that is where the
         // light actually stops, so the wireframe matches the falloff the shader computes.
         const Vec3  baseCenter = Apex + axis * (Range * std::cos(halfAngle));
@@ -323,6 +335,43 @@ namespace Plu
             }
 
             previous = current;
+        }
+    }
+
+    void AppendSphereWireframe(DynamicArray<float>& OutLineVerts, const Vec3& Center, float Radius,
+                               const Vec3& Color, Int32 Segments)
+    {
+        if (Radius <= 0.0f || Segments < 3) return;
+
+        auto pushVertex = [&](const Vec3& position) {
+            OutLineVerts.PushBack(position.x);
+            OutLineVerts.PushBack(position.y);
+            OutLineVerts.PushBack(position.z);
+            OutLineVerts.PushBack(Color.r);
+            OutLineVerts.PushBack(Color.g);
+            OutLineVerts.PushBack(Color.b);
+        };
+
+        // 3 circles, Segments lines each, 2 vertices of 6 floats per line.
+        OutLineVerts.Reserve(OutLineVerts.Size() + static_cast<UInt32>(Segments) * 3 * 2 * 6);
+
+        const Vec3 axes[3][2] = {
+            {Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f)},
+            {Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)},
+            {Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)},
+        };
+        const float step = glm::two_pi<float>() / static_cast<float>(Segments);
+        for (const auto& plane : axes)
+        {
+            Vec3 previous = Center + plane[0] * Radius;
+            for (Int32 s = 1; s <= Segments; s++)
+            {
+                const float angle = step * static_cast<float>(s);
+                const Vec3 current = Center + (plane[0] * std::cos(angle) + plane[1] * std::sin(angle)) * Radius;
+                pushVertex(previous);
+                pushVertex(current);
+                previous = current;
+            }
         }
     }
 

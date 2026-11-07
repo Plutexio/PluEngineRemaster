@@ -32,9 +32,9 @@ void Plu::EditorAssetCreator::RenderUI()
 {
     static TOwningPointer<IAssetData> newAsset;
     //Show this monstrosity!!
-    static GameHashMap<String, DynamicArray<EngineObjectHandle>> objectsPerUuidField;
-    static GameHashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> assetsPerUuidField;
-    static GameHashMap<String, int> selectedObjectInUuid;
+    static HashMap<String, DynamicArray<EngineObjectHandle>> objectsPerUuidField;
+    static HashMap<String, DynamicArray<TUsePointer<AssetDescriptor>>> assetsPerUuidField;
+    static HashMap<String, int> selectedObjectInUuid;
     if (mFirstTime) {
         ImGui::OpenPopup("Asset Creator");
         void* newObj = mTypeInfo->Construct();

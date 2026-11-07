@@ -18,8 +18,11 @@
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
 #include "SceneStructurePanel.h"
-#include "Utils/RGBTransformDragger.h"
+#include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
+#include "PluEngine/Core/Widgets/TypeTree.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
@@ -94,7 +97,7 @@ static bool WorldComponentAttachTarget(const Plu::TUsePointer<Plu::GameObject>& 
 				&& (!newAttachPoint || (newAttachPoint->GetParentGameObject().GetRaw() == owner.GetRaw()
 					&& !newAttachPoint->IsAttachedTo(dragged.GetRaw())));
 			if (legal && ImGui::AcceptDragDropPayload(CSceneComponentDragPayload)) {
-				dragged->AttachTo(newAttachPoint, EAttachmentRule::KeepWorld);
+				dragged->AttachTo(newAttachPoint,"", EAttachmentRule::KeepWorld);
 				attached = true;
 			}
 		} else if (peek && peek->IsDataType(CSceneObjectDragPayload)) {
@@ -136,46 +139,31 @@ bool ObjectAttachmentSection(const Plu::TUsePointer<Plu::GameObject>& object)
 
 	// Attach point inside the parent: its own transform, or any of its world components.
 	const DynamicArray<TUsePointer<WorldComponent>>* parentComponents = parent->GetObjectWorldComponents();
+	// Dead entries are dropped up front: a null one would match a null current component and take the
+	// place of the "(object transform)" entry.
+	DynamicArray<TUsePointer<WorldComponent>> liveComponents;
+	for (const auto& comp : *parentComponents) {
+		if (comp) liveComponents.PushBack(comp);
+	}
 	TUsePointer<WorldComponent> currentComponent = object->GetAttachParentComponent();
-	const char* currentLabel = currentComponent ? currentComponent->GetComponentName().CStr() : "(object transform)";
-	if (ImGui::BeginCombo("Attach to", currentLabel)) {
-		if (ImGui::Selectable("(object transform)", !currentComponent)) {
-			object->AttachToObject(parent.GetRaw(), EAttachmentRule::KeepWorld);
-			changed = true;
-		}
-		for (const auto& comp : *parentComponents) {
-			if (!comp) continue;
-			const bool selected = currentComponent.GetRaw() == comp.GetRaw();
-			if (ImGui::Selectable(comp->GetComponentName().CStr(), selected)) {
-				object->AttachToComponent(comp.GetRaw(), "", EAttachmentRule::KeepWorld);
-				changed = true;
-			}
-		}
-		ImGui::EndCombo();
+	if (ImGuiWidgets::ComboValue("Attach to", &currentComponent, liveComponents,
+			[](const TUsePointer<WorldComponent>& comp) { return comp->GetComponentName(); },
+			"(object transform)")) {
+		if (currentComponent) object->AttachToComponent(currentComponent.GetRaw(), "", EAttachmentRule::KeepWorld);
+		else                  object->AttachToObject(parent.GetRaw(), EAttachmentRule::KeepWorld);
+		changed = true;
 	}
 
 	// Sockets exist only on skeletal meshes — the attach points authored on their skeleton.
-	if (currentComponent && currentComponent->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) {
-		auto* skeletalMesh = static_cast<SkeletalMeshComponent*>(currentComponent.GetRaw());
-		TUsePointer<SkeletalMesh> mesh = skeletalMesh->GetSkeletalMesh();
-		if (mesh && mesh->MeshSkeleton) {
-			const String& socket = object->GetAttachSocketName();
-			if (ImGui::BeginCombo("Socket", socket.IsEmpty() ? "(none)" : socket.CStr())) {
-				if (ImGui::Selectable("(none)", socket.IsEmpty())) {
-					object->AttachToComponent(currentComponent.GetRaw(), "", EAttachmentRule::KeepWorld);
-					changed = true;
-				}
-				for (const auto& [attachName, attachPoint] : mesh->MeshSkeleton->AttachPoints) {
-					if (ImGui::Selectable(attachName.CStr(), socket == attachName)) {
-						// SnapToTarget: picking a socket in the inspector means "sit on that bone",
-						// which is what the old AttachToSkeletalMeshComponent did. Nudge it off the
-						// bone afterwards with the relative transform if an offset is wanted.
-						object->AttachToComponent(currentComponent.GetRaw(), attachName, EAttachmentRule::SnapToTarget);
-						changed = true;
-					}
-				}
-				ImGui::EndCombo();
-			}
+	if (currentComponent && currentComponent->HasAttachPoints()) {
+		String socket = object->GetAttachSocketName();
+		if (ImGuiWidgets::ComboValue("Socket", &socket, currentComponent->GetAttachPoints(), "(none)")) {
+			// SnapToTarget: picking a socket in the inspector means "sit on that bone",
+			// which is what the old AttachToSkeletalMeshComponent did. Nudge it off the
+			// bone afterwards with the relative transform if an offset is wanted.
+			object->AttachToComponent(currentComponent.GetRaw(), socket,
+				socket.IsEmpty() ? EAttachmentRule::KeepWorld : EAttachmentRule::SnapToTarget);
+			changed = true;
 		}
 	}
 
@@ -277,27 +265,19 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 			TUsePointer<GameObject> gameObj = gEngineObjectManager->GetObjectAsUser<GameObject>(gEditorAppContext->EditorState.SelectedGameObject);
 
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0,1,0,1));
-			if (ImGui::BeginMenu(ICON_FA_PLUS "")) {
-				//obj->AddComponent(WorldComponent::GetStaticClass());
-				static DynamicArray<TypeInfo*> componentTypes;
-				if (componentTypes.IsEmpty()) {
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObjectComponent::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				for (auto type : componentTypes) {
-					if (ImGui::Button(type->TypeName.CStr())) {
-						gameObj->AddComponent(type, type->TypeName + "New");
-						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
-							PanelChangedAsset();
-						}
+			bool open = ImGui::BeginMenu(ICON_FA_PLUS "");
+			ImGui::PopStyleColor();
+			if (open) {
+				static TypeInfo* selected = nullptr;
+				if (ImGuiWidgets::TypeTree(GameObjectComponent::GetStaticClass(), &selected, "Add Component")) {
+					gameObj->AddComponent(selected, selected->TypeName + "New");
+					selected = nullptr;
+					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
+						PanelChangedAsset();
 					}
 				}
 				ImGui::EndMenu();
 			}
-			ImGui::PopStyleColor();
 
 			//Component Tree
 			// Drag a component onto another one to attach it, or onto this row to detach it back
@@ -326,7 +306,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 				obj = gEngineObjectManager->GetObjectAsUser<EngineObject>(gEditorAppContext->EditorState.SelectedGameObjectComponent).GetRaw();
 				if (obj->GetClass()->IsDerivedOfOrSame(WorldComponent::GetStaticClass())) {
 					Vec3 location = dynamic_cast<WorldComponent*>(obj)->GetRelativeLocation();
-					if (RGBTransformDrag3("R Location", glm::value_ptr(location), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Location", glm::value_ptr(location), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeLocation(location);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -334,7 +314,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 						}
 					}
 					Vec3 rotation = dynamic_cast<WorldComponent*>(obj)->GetRelativeRotation();
-					if (RGBTransformDrag3("R Rotation", glm::value_ptr(rotation), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Rotation", glm::value_ptr(rotation), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeRotation(rotation);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -342,18 +322,33 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 						}
 					}
 					Vec3 scale = dynamic_cast<WorldComponent*>(obj)->GetRelativeScale();
-					if (RGBTransformDrag3("R Scale", glm::value_ptr(scale), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+					if (ImGuiWidgets::DragVector("R Scale", glm::value_ptr(scale), 3, 0.1f))
 					{
 						dynamic_cast<WorldComponent*>(obj)->SetRelativeScale(scale);
 						if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
 							PanelChangedAsset();
 						}
 					}
+					// Attach point inside the parent component — only parents with authored attach points
+					// (skeletal meshes) have any. Same semantics as the object's "Socket" combo: picking a
+					// point snaps onto it, "(none)" goes back to the parent's origin keeping the world pose.
+					WorldComponent* comp = dynamic_cast<WorldComponent*>(obj);
+					TUsePointer<WorldComponent> parentComponent = comp->GetParentComponent();
+					if (parentComponent && parentComponent->HasAttachPoints()) {
+						String attachPoint = comp->GetAttachPointName();
+						if (ImGuiWidgets::ComboValue("Attach Point", &attachPoint, parentComponent->GetAttachPoints(), "(none)")) {
+							comp->AttachTo(parentComponent.GetRaw(), attachPoint,
+								attachPoint.IsEmpty() ? EAttachmentRule::KeepWorld : EAttachmentRule::SnapToTarget);
+							if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
+								PanelChangedAsset();
+							}
+						}
+					}
 				}
 			} else {
 				obj = gEngineObjectManager->GetObjectAsUser<EngineObject>(gEditorAppContext->EditorState.SelectedGameObject).GetRaw();
 				Vec3 location = dynamic_cast<GameObject*>(obj)->GetObjectLocation();
-				if (RGBTransformDrag3("Location", glm::value_ptr(location), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Location", glm::value_ptr(location), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectLocation(location);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -361,7 +356,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 					}
 				}
 				Vec3 rotation = dynamic_cast<GameObject*>(obj)->GetObjectRotation();
-				if (RGBTransformDrag3("Rotation", glm::value_ptr(rotation), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Rotation", glm::value_ptr(rotation), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectRotation(rotation);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -369,7 +364,7 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 					}
 				}
 				Vec3 scale = dynamic_cast<GameObject*>(obj)->GetObjectScale();
-				if (RGBTransformDrag3("Scale", glm::value_ptr(scale), 3, 0.1f,nullptr,nullptr,"%.3f",0))
+				if (ImGuiWidgets::DragVector("Scale", glm::value_ptr(scale), 3, 0.1f))
 				{
 					dynamic_cast<GameObject*>(obj)->SetObjectScale(scale);
 					if (!gEditorAppContext->EditorScenesManager->IsInPIE()) {
@@ -382,6 +377,13 @@ void Plu::SceneInspectorPanel::OnUpdate(float deltaTime)
 			// zmiana musi go dobić eventem — inaczej pokazywałby starą nazwę.
 			GameObject* namedObject = dynamic_cast<GameObject*>(obj);
 			const String nameBefore = namedObject ? namedObject->GetObjectName() : String();
+
+			if (obj->GetClass() == ParticleSpawnerComponent::GetStaticClass()) {
+				if (ImGui::Button("Spawn Particles")) {
+					ParticleSpawnerComponent* spawnerComponent = dynamic_cast<ParticleSpawnerComponent *>(obj);
+					spawnerComponent->SpawnParticles(spawnerComponent->NumParticlesToSpawn);
+				}
+			}
 
 			if (TypeSerializer<TypeInfo*>::EditorControl(obj->GetClass(), obj) && !gEditorAppContext->EditorScenesManager->IsInPIE()) {
 				PanelChangedAsset();

@@ -3,9 +3,11 @@
 //
 
 #include "ProfilerPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "imgui.h"
 #include "nfd.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Profiler.h"
@@ -54,6 +56,8 @@ void Plu::ProfilerPanel::OnHide()
 void Plu::ProfilerPanel::OnUpdate(float deltaTime)
 {
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		const float mainFPS = GetMainThreadFPS();
 		const float renderFPS = GetRenderThreadFPS();
 		ImGui::Text("Main: %.1f FPS (%.2f ms)", mainFPS, mainFPS > 0.0f ? 1000.0f / mainFPS : 0.0f);
@@ -78,18 +82,7 @@ void Plu::ProfilerPanel::OnUpdate(float deltaTime)
 		DynamicArray<String> threadNames = Profiler::GetInstance()->SnapshotThreadNames();
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(160.0f);
-		const char* filterPreview = mThreadFilter.IsEmpty() ? "All threads" : mThreadFilter.CStr();
-		if (ImGui::BeginCombo("##threadfilter", filterPreview)) {
-			if (ImGui::Selectable("All threads", mThreadFilter.IsEmpty())) {
-				mThreadFilter.Clear();
-			}
-			for (const String& threadName : threadNames) {
-				if (ImGui::Selectable(threadName.CStr(), mThreadFilter == threadName)) {
-					mThreadFilter = threadName;
-				}
-			}
-			ImGui::EndCombo();
-		}
+		ImGuiWidgets::ComboValue("##threadfilter", &mThreadFilter, threadNames, "All threads");
 
 		if (!mExportStatus.IsEmpty()) {
 			ImGui::TextDisabled("%s", mExportStatus.CStr());
@@ -97,7 +90,7 @@ void Plu::ProfilerPanel::OnUpdate(float deltaTime)
 
 		ImGui::Separator();
 
-		GameHashMap<String, ProfilerEntry> snapshot = Profiler::GetInstance()->Snapshot();
+		HashMap<String, ProfilerEntry> snapshot = Profiler::GetInstance()->Snapshot();
 
 		ImGuiTableFlags tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
 			ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY;

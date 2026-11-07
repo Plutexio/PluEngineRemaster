@@ -34,6 +34,8 @@ namespace Plu
 		// component's array or the game object's own mWorldComponents.
 		DynamicArray<TOwningPointer<WorldComponent>> mWorldComponents;
 		TUsePointer<WorldComponent> mParentComponent;
+		PLU_PROPERTY()
+		String mAttachPointName;
 
 		// GameObjects riding this component (GameObject::AttachToComponent). Non-owning: an attached
 		// object keeps its own lifetime, exactly like an attached AActor in UE — it is detached, not
@@ -58,6 +60,15 @@ namespace Plu
 		// tysiącach komponentów (RenderSnapshotBuilder pobiera to co klatkę do InstanceGPUData).
 		Matrix4 mNormalMatrix;
 		bool mRegenerateNormalMatrix = true;
+		// World scale (column lengths of the world matrix), refreshed in the same lazy pass as the
+		// matrix itself. Recomputing it per call meant three glm::length plus a 64-byte matrix copy
+		// for every caller — the snapshot builder asks every component for it every frame.
+		Vec3 mWorldScale = Vec3(1.0f);
+		// Incremented on every invalidation of the world matrix. Anything that derives world-space
+		// data from this transform (world bounds, per-instance matrix caches) can then tell
+		// "unchanged since I last looked" from an integer compare instead of re-deriving the value
+		// or comparing whole matrices. Starts at 1, so 0 is free as a "never computed" marker.
+		UInt32 mTransformVersion = 1;
 		void MarkWorldMatrixForRegeneration();
 		// translate(loc) * rotate(rot) * scale(scale) — this component's own transform, relative to
 		// whatever it is attached to.
@@ -68,9 +79,6 @@ namespace Plu
 		// offsets are baked into the compound shape when the body is built, so a moved component is
 		// invisible to physics until the body is rebuilt.
 		virtual void OnRelativeTransformChanged() {}
-		// Queues a rebuild of the owning object's physics body. No-op outside of play, or when the
-		// object has no body yet.
-		void MarkOwnerCollisionDirty();
 	public:
 		WorldComponent() = default;
 		virtual ~WorldComponent() override = default;
@@ -81,13 +89,18 @@ namespace Plu
 		PLU_FUNCTION()
 		DynamicArray<TUsePointer<WorldComponent>> GetChildren();
 
+		//Attachment
+		virtual bool HasAttachPoints() {return false;}
+		virtual DynamicArray<String> GetAttachPoints() {return {};};
+		virtual bool GetWorldMatrixForAttachPoint(String attachPoint, Matrix4* outMatrix) {return false;};
+
 		// Attaches this component under newAttachPoint, or directly under the owning game object when
 		// newAttachPoint is null. Both components must belong to the same game object — parenting
 		// across objects is a GameObject-level concept (see GameObject::AttachToComponent).
 		// Rejected (with an error log, leaving the attachment untouched): attaching to itself, or to
 		// one of its own descendants, which would build a transform cycle.
 		PLU_FUNCTION()
-		void AttachTo(WorldComponent* newAttachPoint, EAttachmentRule rule = EAttachmentRule::KeepRelative);
+		void AttachTo(WorldComponent* newAttachPoint, String attachPointName = "", EAttachmentRule rule = EAttachmentRule::KeepRelative);
 		// Shorthand for AttachTo(nullptr, rule) — moves the component back under the game object.
 		PLU_FUNCTION()
 		void Detach(EAttachmentRule rule = EAttachmentRule::KeepRelative);
@@ -101,12 +114,26 @@ namespace Plu
 		PLU_FUNCTION()
 		[[nodiscard]] bool IsAttachedTo(WorldComponent* component) const;
 
+		PLU_FUNCTION()
+		String GetAttachPointName() { return mAttachPointName; }
+
 		// GameObjects riding this component (GameObject::AttachToComponent), one level deep.
 		PLU_FUNCTION()
 		[[nodiscard]] DynamicArray<TUsePointer<GameObject>> GetAttachedObjects() const;
 
 		Matrix4 GetWorldMatrix();
 		Matrix4 GetNormalMatrix();
+
+		// The same two matrices without the 64-byte copy, for per-frame readers. RenderSnapshotBuilder
+		// walks every component of the scene each frame, and the copies alone were measurable on a
+		// scene with a couple of thousand components.
+		const Matrix4& GetWorldMatrixRef();
+		const Matrix4& GetNormalMatrixRef();
+
+		// Changes whenever this component's world matrix is invalidated (its own transform, an
+		// ancestor's, or a reparent). Cheap staleness check for caches built on top of the transform
+		// — see StaticMeshComponent::GetWorldBoundingSphere.
+		[[nodiscard]] UInt32 GetTransformVersion() const { return mTransformVersion; }
 
 		// The full chain of relative transforms up to (but excluding) the owning game object, i.e.
 		// this component's transform in object space. Differs from BuildLocalMatrix() only for
@@ -134,6 +161,15 @@ namespace Plu
 		Vec3 GetWorldRotation();
 		PLU_FUNCTION()
 		Vec3 GetWorldScale();
+
+		// World-space unit axes of this component, read straight from its world matrix (so they
+		// include every parent's rotation). Same convention as GetForwardVector: forward is -Z.
+		PLU_FUNCTION()
+		Vec3 GetWorldForwardVector();
+		PLU_FUNCTION()
+		Vec3 GetWorldRightVector();
+		PLU_FUNCTION()
+		Vec3 GetWorldUpVector();
 
 		PLU_FUNCTION()
 		void SetWorldLocation(Vec3 newLoc);

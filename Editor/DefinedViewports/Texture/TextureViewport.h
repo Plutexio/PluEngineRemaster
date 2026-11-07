@@ -2,8 +2,8 @@
 // Created by Plutex on 1/13/26.
 //
 
-#ifndef PLUENGINE_SCENEVIEWPORT_H
-#define PLUENGINE_SCENEVIEWPORT_H
+#ifndef PLUENGINE_TEXTUREVIEWPORT_H
+#define PLUENGINE_TEXTUREVIEWPORT_H
 #include "EditorViewports/IEditorViewport.h"
 #include "TextureViewport.generated.h"
 
@@ -24,4 +24,4 @@ namespace Plu
 	};
 }
 
-#endif //PLUENGINE_SCENEVIEWPORT_H
+#endif //PLUENGINE_TEXTUREVIEWPORT_H

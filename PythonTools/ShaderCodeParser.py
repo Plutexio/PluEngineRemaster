@@ -60,6 +60,12 @@ engineOnlyUniforms = [
     {"mat4", "projection"},
     {"vec3", "cameraPos"},
     {"float", "time"},
+    # Indeksy sterowane przez silnik per draw: offset batcha w buforze widocznych instancji
+    # (BasicVertInstanced.vert) i offset palety kości (BasicVertSkeletal.vert). Jako parametr
+    # materiału zostałyby nadpisane wartością z assetu — cały batch narysowałby się transformem
+    # pierwszej instancji, a mesh skeletalny paletą pierwszego obiektu.
+    {"int", "instanceBaseIndex"},
+    {"int", "paletteBaseIndex"},
     {"vec4", "dirLightColor"},
     {"vec3", "dirLightDir"},
     # Atlas map cieni kaskadowych (CSM) — bindowany przez silnik na stały slot 15

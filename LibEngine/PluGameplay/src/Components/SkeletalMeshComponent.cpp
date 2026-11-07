@@ -28,10 +28,9 @@ void Plu::SkeletalMeshComponent::OnUpdate(float deltaTime)
 	// see RenderSnapshotBuilder) or just one.
 	if (AnimGraph)
 	{
+		// The instance's own bookkeeping (LastEvalTimeSeconds → AnimEvalContext::DeltaSeconds) is
+		// derived from this clock inside AnimationGraph::Evaluate — nothing to push here.
 		GraphTimeSeconds += deltaTime;
-		if (AnimGraphInstance* instance = EnsureAnimGraphInstance()) {
-			instance->TimeSeconds = GraphTimeSeconds;
-		}
 	}
 
 	if (!AnimationToShow)
@@ -161,6 +160,25 @@ bool Plu::SkeletalMeshComponent::TryGetAttachPointWorldMatrix(const String& atta
 	return true;
 }
 
+DynamicArray<Plu::String> Plu::SkeletalMeshComponent::GetAttachPoints()
+{
+	DynamicArray<String> attachPointNames;
+	for (const auto& attachPoint : SkeletalMeshToDisplay->MeshSkeleton->AttachPoints) {
+		attachPointNames.PushBack(attachPoint.first);
+	}
+	return attachPointNames;
+}
+
+bool Plu::SkeletalMeshComponent::HasAttachPoints()
+{
+	return true;
+}
+
+bool Plu::SkeletalMeshComponent::GetWorldMatrixForAttachPoint(String attachPoint, Matrix4 *outMatrix)
+{
+	return TryGetAttachPointWorldMatrix(attachPoint, *outMatrix);
+}
+
 Vec3 Plu::SkeletalMeshComponent::GetAttachPointLocationInWorld(String attachPointName)
 {
 	Matrix4 attachPointWorld;
@@ -177,6 +195,62 @@ Vec3 Plu::SkeletalMeshComponent::GetAttachPointRotationInWorld(String attachPoin
 		return this->GetWorldRotation();
 	}
 	return GetRotationFromMatrix(attachPointWorld);
+}
+
+bool Plu::SkeletalMeshComponent::TryGetNodeTransform(const String& nodeName, NodeSpace space, BoneTransform& outTransform)
+{
+	if (!SkeletalMeshToDisplay || !SkeletalMeshToDisplay->MeshSkeleton) {
+		return false;
+	}
+	const SkeletonPoseLayout& layout = SkeletalMeshToDisplay->MeshSkeleton->GetPoseLayout();
+	const Int32 nodeIndex = layout.FindIndex(nodeName);
+	if (nodeIndex < 0) {
+		PLU_CORE_ERROR("No Node with name {0}", nodeName.CStr());
+		return false;
+	}
+	// Out of range means no pose has been evaluated yet (same as TryGetAttachPointWorldMatrix).
+	if (static_cast<UInt64>(nodeIndex) >= PosedGlobalTransforms.Size()) {
+		return false;
+	}
+
+	// PosedGlobalTransforms is skeleton space already — the COMPONENT answer as is.
+	const BoneTransform& global = PosedGlobalTransforms[static_cast<UInt64>(nodeIndex)];
+	switch (space) {
+		case NodeSpace::COMPONENT:
+			outTransform = global;
+			return true;
+		case NodeSpace::LOCAL:
+		{
+			const Int32 parentIndex = layout.ParentIndex[static_cast<UInt64>(nodeIndex)];
+			outTransform = parentIndex < 0 ? global
+				: PosedGlobalTransforms[static_cast<UInt64>(parentIndex)].Inverse().Compose(global);
+			return true;
+		}
+		case NodeSpace::WORLD:
+			// Live component matrix over the last pose — the same pairing attach points use.
+			outTransform = BoneTransform::FromMatrix(GetWorldMatrix() * global.ToMatrix());
+			return true;
+	}
+	return false;
+}
+
+Vec3 Plu::SkeletalMeshComponent::GetNodeLocation(String boneName, NodeSpace space)
+{
+	BoneTransform transform;
+	if (!TryGetNodeTransform(boneName, space, transform)) {
+		return {0.0f, 0.0f, 0.0f};
+	}
+	return transform.Location;
+}
+
+Vec3 Plu::SkeletalMeshComponent::GetNodeRotation(String boneName, NodeSpace space)
+{
+	BoneTransform transform;
+	if (!TryGetNodeTransform(boneName, space, transform)) {
+		return {0.0f, 0.0f, 0.0f};
+	}
+	// Euler through glm, the inverse of the Quaternion(radians(euler)) every rotation setter uses.
+	return glm::degrees(glm::eulerAngles(transform.Rotation));
 }
 
 bool Plu::SkeletalMeshComponent::TryGetNodeWorldMatrixAtLastPose(const String& nodeName, Matrix4& outMatrix)

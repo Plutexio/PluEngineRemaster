@@ -8,7 +8,7 @@
 #include <functional>
 
 #include "PluEngine/Core/InputInfo.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"
 
 namespace Plu
@@ -16,12 +16,12 @@ namespace Plu
 	PLU_CLASS(PyExport, NoReflection)
 	class PLUGAMEPLAY_API InputHandler final
 	{
-		GameHashMap<Key, std::function<void()>> mPressedActions;
-		GameHashMap<Key, std::function<void()>> mReleasedActions;
-		GameHashMap<Key, std::function<void()>> mHoldActions;
-		GameHashMap<MouseButton, std::function<void()>> mMousePressActions;
-		GameHashMap<MouseButton, std::function<void()>> mMouseReleaseActions;
-		GameHashMap<Key, ButtonState> mKeyboard;
+		HashMap<Key, std::function<void()>> mPressedActions;
+		HashMap<Key, std::function<void()>> mReleasedActions;
+		HashMap<Key, std::function<void()>> mHoldActions;
+		HashMap<MouseButton, std::function<void()>> mMousePressActions;
+		HashMap<MouseButton, std::function<void()>> mMouseReleaseActions;
+		HashMap<Key, ButtonState> mKeyboard;
 		MouseState mMouseState;
 
 #ifdef PLU_ENGINE_EDITOR_BUILD

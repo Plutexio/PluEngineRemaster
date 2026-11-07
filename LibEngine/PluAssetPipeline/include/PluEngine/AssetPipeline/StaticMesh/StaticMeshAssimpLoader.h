@@ -5,7 +5,7 @@
 #pragma once
 
 
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 #include "PluEngine/Core.h"
 #include "StaticMeshAssimpLoader.generated.h"

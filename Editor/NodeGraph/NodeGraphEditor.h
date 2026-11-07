@@ -6,12 +6,12 @@
 #define PLUENGINE_NODEGRAPHEDITOR_H
 
 #include "PluEngine/Core.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodeLink.h"
 #include "NodeGraph/NodeViewRegistry.h"
-#include "HashMap/HashMapV2.h"
-#include "String/String.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/String/String.h"
 #include <imgui-node-editor/imgui_node_editor.h>
 #include <functional>
 
@@ -106,15 +106,15 @@ namespace Plu
 		NodeViewRegistry mRegistry;
 
 		uintptr_t mNextId = 1;
-		GameHashMap<UInt64, uintptr_t>   mNodeIdByUuid;
-		GameHashMap<uintptr_t, UInt64>   mNodeUuidById;
-		GameHashMap<String, uintptr_t>   mPinIdByKey;
-		GameHashMap<uintptr_t, PinRef>   mPinById;
-		GameHashMap<String, uintptr_t>   mLinkIdByKey;
-		GameHashMap<uintptr_t, NodeLink> mLinkById;
+		HashMap<UInt64, uintptr_t>   mNodeIdByUuid;
+		HashMap<uintptr_t, UInt64>   mNodeUuidById;
+		HashMap<String, uintptr_t>   mPinIdByKey;
+		HashMap<uintptr_t, PinRef>   mPinById;
+		HashMap<String, uintptr_t>   mLinkIdByKey;
+		HashMap<uintptr_t, NodeLink> mLinkById;
 
-		GameHashMap<UInt64, ImVec2> mNodePositions;  // node uuid -> canvas position (layout)
-		GameHashMap<UInt64, bool>   mPositionApplied; // nodes already pushed into ed this session
+		HashMap<UInt64, ImVec2> mNodePositions;  // node uuid -> canvas position (layout)
+		HashMap<UInt64, bool>   mPositionApplied; // nodes already pushed into ed this session
 
 		ImVec2 mSpawnCanvasPos = ImVec2(0.0f, 0.0f); // where the next palette-added node lands
 		ax::NodeEditor::NodeId mContextNode = 0;      // node under the context menu

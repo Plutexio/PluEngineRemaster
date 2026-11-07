@@ -10,7 +10,10 @@
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
 #include "PluEngine/AssetTypes/Animation/AnimGraphInstance.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
+#include "PluEngine/Core/Widgets/Combo.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
+#include "PluEngine/Core/Widgets/Text.h"
+#include "UI/IconsFontAwesome7.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -65,18 +68,14 @@ void Plu::AnimationGraphVariablesPanel::OnOpened()
 
 void Plu::AnimationGraphVariablesPanel::BeginRename(const TUsePointer<IAnimationGraphVariable>& variable)
 {
-	mRenamingVariable   = variable;
-	mRenameFocusPending = true;
-	const String& name  = variable->Name;
-	const UInt64 length = name.Length() < sizeof(mRenameBuffer) - 1 ? name.Length() : sizeof(mRenameBuffer) - 1;
-	memcpy(mRenameBuffer, name.CStr(), length);
-	mRenameBuffer[length] = '\0';
+	mRenamingVariable = variable;
+	mRename.Begin(variable->Name.CStr());
 }
 
 void Plu::AnimationGraphVariablesPanel::CommitRename(const TUsePointer<AnimationGraph>& graph,
                                                      const TUsePointer<IAnimationGraphVariable>& variable)
 {
-	const String newName(mRenameBuffer);
+	const String newName(mRename.Buffer);
 	auto isTaken = [&](const String& candidate) {
 		for (const auto& other : graph->Variables)
 			if (other && other.GetRaw() != variable.GetRaw() && other->Name == candidate) return true;
@@ -90,8 +89,8 @@ void Plu::AnimationGraphVariablesPanel::CommitRename(const TUsePointer<Animation
 		++graph->VariablesRevision;
 		PanelChangedAsset();
 	}
-	mRenamingVariable   = nullptr;
-	mRenameFocusPending = false;
+	mRenamingVariable    = nullptr;
+	mRename.FocusPending = false;
 }
 
 void Plu::AnimationGraphVariablesPanel::OnUpdate(float deltaTime)
@@ -103,7 +102,7 @@ void Plu::AnimationGraphVariablesPanel::OnUpdate(float deltaTime)
 		TUsePointer<AnimationGraphViewport> viewport = DynamicCast<AnimationGraphViewport>(GetParentViewport());
 
 		if (!animationGraph || !viewport) {
-			ImGui::TextDisabled("No AnimationGraph asset loaded");
+			ImGuiWidgets::EmptyState("No AnimationGraph asset loaded", ICON_FA_DIAGRAM_PROJECT);
 			EndPanel();
 			return;
 		}
@@ -141,21 +140,10 @@ void Plu::AnimationGraphVariablesPanel::OnUpdate(float deltaTime)
 				AnimGraphInstance::GetLiveInstances(animationGraph->Uuid.getUUID());
 			if (!liveInstances.IsEmpty()) {
 				AnimGraphInstance* inspected = viewport->GetInspectedInstance();
-				const String previewLabel = inspected ? inspected->DebugName : String("Defaults");
 				ImGui::SetNextItemWidth(-FLT_MIN);
-				if (ImGui::BeginCombo("##InstancePicker", previewLabel.CStr())) {
-					if (ImGui::Selectable("Defaults", inspected == nullptr)) {
-						viewport->SetInspectedInstance(nullptr);
-					}
-					for (AnimGraphInstance* instance : liveInstances) {
-						if (!instance) continue;
-						ImGui::PushID(instance);
-						if (ImGui::Selectable(instance->DebugName.CStr(), instance == inspected)) {
-							viewport->SetInspectedInstance(instance);
-						}
-						ImGui::PopID();
-					}
-					ImGui::EndCombo();
+				if (ImGuiWidgets::ComboValue("##InstancePicker", &inspected, liveInstances,
+						[](AnimGraphInstance* instance) { return instance->DebugName.CStr(); }, "Defaults")) {
+					viewport->SetInspectedInstance(inspected);
 				}
 				ImGui::Separator();
 			}
@@ -173,16 +161,8 @@ void Plu::AnimationGraphVariablesPanel::OnUpdate(float deltaTime)
 			ImGui::PushID(variable.GetRaw());
 
 			if (mRenamingVariable.IsValid() && mRenamingVariable.GetRaw() == variable.GetRaw()) {
-				if (mRenameFocusPending) {
-					ImGui::SetKeyboardFocusHere();
-					mRenameFocusPending = false;
-				}
-				ImGui::SetNextItemWidth(-FLT_MIN);
-				const bool submitted = ImGui::InputText("##rename", mRenameBuffer, sizeof(mRenameBuffer),
-					ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-				// IsItemDeactivated catches both Esc and a click outside. Esc restores the old text
-				// into the buffer, so CommitRename then writes nothing.
-				if (submitted || ImGui::IsItemDeactivated()) {
+				// Esc restores the old text into the buffer, so CommitRename then writes nothing.
+				if (ImGuiWidgets::InlineRenameField(&mRename)) {
 					CommitRename(animationGraph, variable);
 				}
 				ImGui::PopID();

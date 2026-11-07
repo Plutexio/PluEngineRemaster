@@ -7,7 +7,7 @@
 
 
 #include "StaticMeshAssetImporter.generated.h"
-#include "Path/Path.h"
+#include "PluSTL/Path/Path.h"
 #include "PluEngine/AssetCore/AssetLoader.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 

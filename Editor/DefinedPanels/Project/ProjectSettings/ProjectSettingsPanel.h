@@ -23,9 +23,10 @@ namespace Plu
         void OnUpdate(float deltaTime) override;
 
     private:
-        // UE-style collision preset editor (operates on ActiveCollisionConfig()).
-        void DrawCollisionSettings();
-        int mSelectedPreset = 0; // currently edited preset in the collision section
+        void DrawPhysicsChannels();
+
+        char mNewChannelName[64] = {};
+        int  mNewChannelResponse = 2; // PhysicsCollisionResponse::Block
     };
 }
 

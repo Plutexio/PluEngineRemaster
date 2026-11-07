@@ -8,11 +8,12 @@
 #define NOMINMAX
 #include <windows.h>
 #include <Xinput.h>
-#pragma comment(lib, "Xinput.lib")
+// Lower case: the Windows SDK in a Linux cross build sits on a case-sensitive file system.
+#pragma comment(lib, "xinput.lib")
 
 namespace Plu
 {
-    class WinAPIInputBackend final : public PlatformInputBackend
+    class PLUPLATFORM_API WinAPIInputBackend final : public PlatformInputBackend
     {
     public:
         // =========================================================

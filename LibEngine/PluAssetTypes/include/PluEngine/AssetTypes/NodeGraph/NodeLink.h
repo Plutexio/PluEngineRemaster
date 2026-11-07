@@ -6,8 +6,8 @@
 #define PLUENGINE_NODELINK_H
 
 #include "PluEngine/Core.h"
-#include "PluEngine/PluUUID.h"
-#include "String/String.h"
+#include "PluBase/PluUUID.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {

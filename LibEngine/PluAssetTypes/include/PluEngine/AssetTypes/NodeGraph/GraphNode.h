@@ -6,11 +6,11 @@
 #define PLUENGINE_GRAPHNODE_H
 
 #include "PluEngine/Core.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/AssetTypes/NodeGraph/NodePin.h"
 #include "PluEngine/AssetTypes/NodeGraph/GraphEvalContext.h"
-#include "Array/Array.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/String/String.h"
 #include "GraphNode.generated.h"
 
 namespace Plu
@@ -45,6 +45,12 @@ namespace Plu
 		// Declare this node's pins. Category bases add their flow pins; concrete nodes add the rest
 		// (often via BuildDataPinsFromReflection()). Called on construction and on RebuildAllPins().
 		virtual void BuildPins() {}
+
+		// Whether the pin set (or its labels) depends on data outside the node that changed since the
+		// last BuildPins() — e.g. AnimBlendSpaceNode's Y pin exists only for a 2D blend space asset,
+		// which can be edited in its own editor. Editors poll this and RebuildAllPins() +
+		// PruneInvalidLinks() when it fires. Default: pins depend on the node's own properties only.
+		[[nodiscard]] virtual bool ArePinsStale() const { return false; }
 
 		// Title shown on the node header. Defaults to the reflected type name.
 		virtual String GetDisplayName();

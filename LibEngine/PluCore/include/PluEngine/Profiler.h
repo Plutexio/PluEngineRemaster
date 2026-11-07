@@ -6,8 +6,8 @@
 #define PLUENGINE_PROFILER_H
 
 #include "Core.h"
-#include "PluSTL_FWD.h"
-#include "Concurrent/ConcurrentHashMap.h"
+#include "PluSTL/PluSTL_FWD.h"
+#include "PluSTL/Concurrent/ConcurrentHashMap.h"
 
 namespace Plu {
 
@@ -16,12 +16,12 @@ namespace Plu {
     // Wpisy są rozdzielone per wątek: ten sam timer zmierzony na Main i na Render
     // daje dwa osobne wpisy (patrz Profiler::MakeKey).
     struct ProfilerEntry {
-        static constexpr Int4 kHistorySize = 120;
+        static constexpr Int32 kHistorySize = 120;
         String Name;                      // nazwa timera (bez prefiksu wątku)
         String ThreadName;                // wątek, z którego przyszły pomiary
         float History[kHistorySize] = {}; // ostatnie próbki w ms
-        Int4 WriteIndex = 0;              // następna pozycja zapisu (offset dla PlotLines)
-        Int4 SampleCount = 0;             // ile realnych próbek (<= kHistorySize)
+        Int32 WriteIndex = 0;              // następna pozycja zapisu (offset dla PlotLines)
+        Int32 SampleCount = 0;             // ile realnych próbek (<= kHistorySize)
         float LastMs = 0.0f;
         float MinMs = 0.0f;
         float MaxMs = 0.0f;
@@ -44,7 +44,7 @@ namespace Plu {
         void RecordForThread(const String& name, const String& threadName, float durationMs);
 
         // Kopia rejestru do bezpiecznego odczytu przez panel. Klucz = MakeKey(...).
-        GameHashMap<String, ProfilerEntry> Snapshot();
+        HashMap<String, ProfilerEntry> Snapshot();
 
         // Nazwy wątków, z których są jakiekolwiek pomiary (posortowane, do filtra w UI).
         DynamicArray<String> SnapshotThreadNames();

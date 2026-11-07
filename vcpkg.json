@@ -27,9 +27,5 @@
       "platform": "windows"
     },
     "imgui-node-editor"
-  ],
-  "overrides": [
-    { "name": "draco", "version": "1.5.6" },
-    { "name": "imgui", "version": "1.92.6" }
   ]
 }

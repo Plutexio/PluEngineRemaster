@@ -928,7 +928,7 @@ void Plu::AssetBrowserPanel::OnAssetDoubleClicked(const PathW& path, bool isDire
         PLU_PROFILE_SCOPE_LOG("Editor Viewport Open");
         TUsePointer<AssetDescriptor> assetDescriptor = mApplicationInfo->AppAssetManager->GetAssetDescriptor(ToNarrowPath(path));
         auto typeMap = TypeRegistry::GetInstance()->GetTypeMap();
-        GameHashMap<String,TClassPointer<IEditorViewport>> viewportClasses;
+        HashMap<String,TClassPointer<IEditorViewport>> viewportClasses;
         for (auto type : *typeMap) {
             if (type.second->IsDerivedOf(IEditorViewport::GetStaticClass())) {
                 viewportClasses.Insert(type.first,type.second);

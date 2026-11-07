@@ -35,6 +35,7 @@ wewnętrznie konwertowane na radiany.
 | `Vec3 GetLocationFromMatrix(const Matrix4& m)` | Translacja z macierzy transformacji (kolumna `m[3]`). |
 | `Vec3 GetScaleFromMatrix(const Matrix4& m)` | Skala z macierzy (długości wektorów bazowych `m[0..2]`). |
 | `Vec3 GetRotationFromMatrix(const Matrix4& m)` | Rotacja (Euler w **stopniach**, pitch=X/yaw=Y/roll=Z) z macierzy — baza znormalizowana skalą, `quat_cast` → `eulerAngles`. |
+| `Quaternion GetQuaternionFromEuler(Vec3 angles)` | Euler angles in **degrees** → quaternion (`glm::quat(glm::radians(angles))`). |
 | `Vec4 PackUInt32ToColor(UInt32 id)` | Pakuje 32-bit id (np. obcięty UUID / indeks obiektu) do koloru RGBA `[0,1]` — bajt na kanał (R=bity 0-7 … A=bity 24-31). Do picking framebuffera. `inline`. |
 | `UInt32 UnpackColorToUInt32(const Vec4& color)` | Odwrotność `PackUInt32ToColor` — odczytuje id z koloru (z zaokrągleniem, round-trip dokładny dla RGBA8). `inline`. |
 
@@ -80,20 +81,27 @@ if you need frame-rate independent damping, do not build it out of these.
 | Funkcja | Opis |
 |---|---|
 | `Matrix4 WorldComponent::GetWorldMatrix()` | Transform w przestrzeni świata (`parent * local`), cache'owany do najbliższej zmiany transformu. |
-| `Matrix4 WorldComponent::GetMatrixRelativeToGameObject()` | Transform w przestrzeni **obiektu** — cały łańcuch relative transformów w górę, bez macierzy samego `GameObject`. Nie cache'owany. Tego (a nie `GetRelativeLocation/Rotation/Scale`) używa się, gdy komponent może być podpięty przez `AttachTo` pod inny komponent — patrz budowa compound shape'a w `PhysicsCompoundShape::Init`. |
+| `const Matrix4& WorldComponent::GetWorldMatrixRef()` | The same matrix without the 64-byte copy. Per-frame readers (`RenderSnapshotBuilder` walks every component of the scene) use this one; `GetWorldMatrix()` is a copy of it. |
+| `Matrix4 WorldComponent::GetNormalMatrix()` / `const Matrix4& WorldComponent::GetNormalMatrixRef()` | `inverse-transpose` of the world matrix, cached alongside it. Only the upper-left 3x3 is meaningful (and that is all any shader reads — every one of them does `mat3(normalMatrix)`): it is built from a **3x3** inverse, not a 4x4 one. |
+| `Vec3 WorldComponent::GetWorldScale()` | Column lengths of the world matrix, computed by the same lazy refresh — a plain read, not a re-derivation. |
+| `Vec3 WorldComponent::GetWorldForwardVector()` / `GetWorldRightVector()` / `GetWorldUpVector()` | Unit world-space axes (−Z / +X / +Y) read from the world matrix, so they include every parent's rotation — e.g. the pitched aim of a `CharacterPuppet` camera, which `GameObject::GetObjectForwardVector()` (yaw only) does not see. Same convention as `GetForwardVector(rot)`. Python too. |
+| `UInt32 WorldComponent::GetTransformVersion()` | Bumped on every invalidation of the world matrix (own transform, an ancestor's, a reparent). Key for caches of world-space data derived from the transform — compare the stored version instead of re-deriving or comparing matrices. `0` is never a live version, so it is free as a "never computed" marker. Users: `StaticMeshComponent::GetWorldBoundingSphere`, `InstancedStaticMeshComponent`'s instance matrix cache. |
+| `Matrix4 WorldComponent::GetMatrixRelativeToGameObject()` | Transform w przestrzeni **obiektu** — cały łańcuch relative transformów w górę, bez macierzy samego `GameObject`. Nie cache'owany. Tego (a nie `GetRelativeLocation/Rotation/Scale`) używa się, gdy komponent może być podpięty przez `AttachTo` pod inny komponent — patrz budowa compound shape'a w `PhysicsWorld::RebuildObjectCollision`. |
 
 **Component attachments** (`GameObject/WorldComponent.h`, methods on `WorldComponent`):
 
 | Function | Description |
 |---|---|
-| `void AttachTo(WorldComponent* attachPoint, EAttachmentRule rule = KeepRelative)` | Attaches this component under `attachPoint` (both must belong to the same `GameObject`); `nullptr` puts it back directly under the object. Rejects self-attachment and descendant attachment (cycle) with an error log. Moves the owning pointer between attachment lists, invalidates the world matrix of the whole subtree and marks the owner's collision dirty. |
+| `void AttachTo(WorldComponent* attachPoint, EAttachmentRule rule = KeepRelative)` | Attaches this component under `attachPoint` (both must belong to the same `GameObject`); `nullptr` puts it back directly under the object. Rejects self-attachment and descendant attachment (cycle) with an error log. Moves the owning pointer between attachment lists, invalidates the world matrix of the whole subtree. Does not rebuild the owner's physics body (only the `Relative*Changed` events of `SetRelativeLocation/Rotation/Scale` do). |
 | `void Detach(EAttachmentRule rule = KeepRelative)` | `AttachTo(nullptr, rule)`. |
 | `void SnapToAttachParent(bool keepScale = false)` | Clears the relative transform, so the component sits on its attach point — or on the owning object's origin when it has none (hence no „is attached" guard, unlike the `GameObject` version). In the editor: right-click a row in the Inspector's component tree. |
 | `bool IsAttachedTo(WorldComponent* component)` | True when `component` is this component's parent, grandparent, … Used by the cycle guard and by the editor's drag&drop target test. |
 | `TUsePointer<WorldComponent> GetParentComponent()` | Attach point, or null when the component hangs directly off the `GameObject`. |
 | `DynamicArray<TUsePointer<WorldComponent>> GetChildren()` | Components attached directly under this one (one level). |
 
-`EAttachmentRule::KeepRelative` leaves the relative transform alone (component snaps into the new parent's space); `KeepWorld` recomputes it so the component stays put in the world — that is what the editor's Inspector drag&drop uses; `SnapToTarget` zeroes it (sits exactly on the parent/socket). Whole-object views (physics, ticking, `GetComponentByClass`) go through `GameObject::GetObjectWorldComponents()`, which flattens the attachment tree; `GetDirectlyAttachedWorldComponents()` returns only the roots (serialization writes children nested under them).
+`EAttachmentRule::KeepRelative` leaves the relative transform alone (component snaps into the new parent's space); `KeepWorld` recomputes it so the component stays put in the world — that is what the editor's Inspector drag&drop uses; `SnapToTarget` zeroes it (sits exactly on the parent/socket). Whole-object views (physics, ticking, `GetComponentByClass`) go through `GameObject::GetObjectWorldComponents()`, which flattens the attachment tree; `GetDirectlyAttachedWorldComponents()` returns only the roots (serialization writes children nested under them). `GameObject::GetAllComponentsByClass(componentClass)` returns every component derived from the class (world components from the flattened tree, otherwise the plain component list) — the multi-result counterpart of `GetComponentByClass`. `GameObject::GetComponentByUUID(uuid)` / `GetWorldComponentByUUID(uuid)` find a component by its `Uuid` — the first in the plain component list only, the second in the flattened world component tree; both take `UInt64` (so Python can call them; `PluUUID` converts implicitly) and return null for no match or UUID 0.
+
+`EngineObjectHandle` (`Core/Objects/EngineObjectHandle.h`) has `ToString()` and a `DefaultHash` specialization, so it can key a `HashMap` directly (per-scene maps: physics worlds, render-thread particle spawners).
 
 **Object attachments** (`GameObject/GameObject.h`, methods on `GameObject`) — UE's `AActor::AttachToComponent`:
 
@@ -172,6 +180,8 @@ Kolejność palety = **DFS pre-order** po drzewie `RootNode`, licząc **tylko** 
 | `bool SkeletalMeshComponent::TryGetAttachPointWorldMatrix(const String& name, Matrix4& out)` | Pełna ramka świata attach pointa (`componentWorld * parentNodeGlobal * attachPointLocal`), liczona z **pozy z ostatniego builda snapshotu** — więc śledzi animację i live posing za darmo. `false`, gdy brakuje mesha/attach pointa/rodzica albo snapshot jeszcze nie poszedł. Bierz to zamiast pary `GetAttachPointLocationInWorld`/`GetAttachPointRotationInWorld`, gdy potrzebujesz całej bazy (np. doczepienie obiektu). |
 | `Vec3 SkeletalMeshComponent::WorldLocationToNodeSpace(String nodeName, Vec3 worldLocation)` (`PLU_FUNCTION(PyExport)`) | Re-expresses a world-space location in the posed frame of skeleton node `nodeName`, using the world matrix **from the last pose build** (`CachedPoseWorldMatrix`), not the live one — inside `OnPreEvaluateAnimGraph` everything derived from poses is one frame stale, and the matching epoch makes that staleness cancel for anything riding the node rigidly. Built for feeding Bone-space graph goals (`EIKGoalSpace::Bone`); returns the input unchanged when the mesh/node/pose is missing. |
 | `Vec3 SkeletalMeshComponent::WorldRotationToNodeSpace(String nodeName, Vec3 worldRotationDegrees)` (`PLU_FUNCTION(PyExport)`) | Rotation variant of the above; euler degrees both ways. |
+| `Vec3 SkeletalMeshComponent::GetNodeLocation(String nodeName, NodeSpace space)` / `GetNodeRotation(...)` (`PLU_FUNCTION(PyExport)`) | Posed transform of any skeleton node (by node name — not an attach point) from the **last pose build**. `NodeSpace::COMPONENT` = skeleton space (root-relative, ignores where the component is), `LOCAL` = relative to the parent node, `WORLD` = live component world matrix × posed global (same pairing as attach points). Rotation in euler degrees (`glm::eulerAngles`, the inverse of the engine's rotation setters). Zero when the mesh/node/pose is missing. |
+| `bool SkeletalMeshComponent::TryGetNodeTransform(const String& nodeName, NodeSpace space, BoneTransform& out)` | C++ resolve behind the pair above; full `BoneTransform` (location, rotation, scale). `false` when the mesh/node/pose is missing. |
 
 ### Płaska poza — `SkeletonPoseLayout`
 
@@ -242,6 +252,8 @@ Track trzyma klucze per kanał (`LocationKeys`/`RotationKeys`/`ScaleKeys`), **po
 | `Vec3 AnimationTrack::GetScaleAtTime(double timeTicks, const Vec3& fallback = Vec3(1)) const` | Skala w czasie, lerp między kluczami. |
 | `void AnimationTrack::SortKeys()` | Sortuje wszystkie trzy tablice kluczy po `Timestamp` — wołać po ręcznym wypełnieniu tablic (samplery tego wymagają). |
 | `const DynamicArray<const AnimationTrack*>& Animation::GetTrackBinding(const Skeleton&) const` | Tracki rozwiązane po indeksach węzłów z `SkeletonPoseLayout`: `[i]` = track napędzający węzeł `i`, `nullptr` gdy animacja go nie rusza. **Bierz to zamiast `Tracks.Find(nazwa)` w pętli per-klatka.** Budowane raz, cache'owane na jeden szkielet naraz, współdzielone przez wszystkie komponenty grające tę animację. Main-only. |
+| `double Animation::GetDurationSeconds() const` | Clip length in seconds (`FramesAmount / FramesPerSecond`); 0 for an empty or FPS-less clip. |
+| `bool SampleAnimationPose(const Animation&, const Skeleton&, double timeSeconds, bool loop, Pose& outPose)` | **The one "sample a clip into a local pose" routine** — bind pose, then every node the clip animates (via `GetTrackBinding`). `loop` wraps the time into the clip, otherwise clamps (holds the first/last frame). `false` + empty pose when the skeleton has no valid layout. Used by `AnimSampleNode` and `AnimBlendSpaceNode`; main-only (track binding cache). |
 | `void Animation::InvalidateTrackBinding() const` | Zrzuca binding. Dodanie/usunięcie tracka wykrywa się samo (po `Tracks.Size()`), ale **edycja istniejącego tracka w miejscu już nie** — wtedy zawołać ręcznie (tak samo jak `CachedPoseValid` na komponencie). |
 
 ## Node graph (reużywalny) — `PluEngine/NodeGraph/` (`namespace Plu`)
@@ -250,10 +262,10 @@ Generyczny szkielet grafu nodeów oparty na refleksji (patrz `project_nodegraph_
 
 | Funkcja / typ | Opis |
 |---|---|
-| `struct NodePin { String Name; EPinDirection Direction; EPinCategory Category; String TypeId; }` | Pin runtime (budowany, nie serializowany). `Flow` = drut domenowy (TypeId np. `"Pose"`), `Data` = wartość (TypeId = nazwa typu z refleksji, np. `"float"`). |
+| `struct NodePin { String Name; EPinDirection Direction; EPinCategory Category; String TypeId; String Label; }` | Pin runtime (budowany, nie serializowany). `Flow` = drut domenowy (TypeId np. `"Pose"`), `Data` = wartość (TypeId = nazwa typu z refleksji, np. `"float"`). `Label` (optional, display only) — the editor shows `GetLabel()` (= `Label`, or `Name` when empty); links still address the pin by `Name`, so a label can change freely (e.g. `AnimBlendSpaceNode` labels its `"X"`/`"Y"` pins with the blend space's axis names). |
 | `static bool NodePin::CanConnect(a, b)` | Reguła łączenia: przeciwne `Direction` ∧ ta sama `Category` ∧ ten sam `TypeId`. |
 | `struct NodeLink { PluUUID FromNode; String FromPin; PluUUID ToNode; String ToPin; }` | Łącze trwałe po tożsamości (Uuid+nazwa pinu), nie po ephemeral id edytora. |
-| `GraphNode` (`PLU_STRUCT(Abstract)`) | Baza node'a: `PluUUID Uuid`, `InputPins`/`OutputPins`, `virtual void BuildPins()`, `virtual String GetDisplayName()`, `void BuildDataPinsFromReflection()` (dodaje Data-piny z `PLU_PROPERTY` typów: float/double/bool/int/Int*/UInt*/Vec2-4), `NodePin* FindPin(name, dir)`. Tu też siedzi kontrakt data-pinów (`EvaluateDataOutput` / `ReadDataPin<T>`, niżej) — celowo na warstwie generycznej, nie na bazie domenowej, żeby node'y wartościowe działały w każdym grafie. |
+| `GraphNode` (`PLU_STRUCT(Abstract)`) | Baza node'a: `PluUUID Uuid`, `InputPins`/`OutputPins`, `virtual void BuildPins()`, `virtual String GetDisplayName()`, `void BuildDataPinsFromReflection()` (dodaje Data-piny z `PLU_PROPERTY` typów: float/double/bool/int/Int*/UInt*/Vec2-4), `NodePin* FindPin(name, dir)`, `virtual bool ArePinsStale() const` (pins depend on data outside the node that changed since `BuildPins()` — e.g. another asset; `AnimationGraphViewportPanel` polls it every frame and does `RebuildAllPins()` + `PruneInvalidLinks()`). Tu też siedzi kontrakt data-pinów (`EvaluateDataOutput` / `ReadDataPin<T>`, niżej) — celowo na warstwie generycznej, nie na bazie domenowej, żeby node'y wartościowe działały w każdym grafie. |
 | `NodeGraph : IAssetData` (`PLU_STRUCT`) | Właściciel: `DynamicArray<TOwningPointer<GraphNode>> Nodes` + `DynamicArray<NodeLink> Links`. API: `AddNode(TypeInfo*)`, `RemoveNode(uuid)`, `Connect(fromNode,fromPin,toNode,toPin)` (waliduje + 1 źródło na input), `Disconnect(link)`, `FindNode(uuid)`, `GetLinkSource(toNode,toPin)` (węzeł zasilający dany pin wejściowy, `nullptr` gdy odłączony — baza pod traversal), `FindInputLink(toNode,toPin)` (samo łącze, nie tylko węzeł-źródło — potrzebne, gdy trzeba też nazwy pinu źródłowego, np. odczyt data-pinów; `GetLinkSource` jedzie teraz przez to), `RebuildAllPins()`, `PruneInvalidLinks()`, `virtual TypeInfo* GetNodeBaseType()` (rodzina domenowa), `virtual bool AcceptsNodeType(TypeInfo*)` (paleta + `AddNode`). |
 | `NodeGraphSerializer::Save(NodeGraph&, JSON&)` / `Load(dc, NodeGraph&, JSON&)` | Polimorficzny zapis/odczyt nodeów (`typeName`+`fields` przez `TypeSerializer<TypeInfo*>`) + linków. Wołać z loadera assetu (patrz `AnimationGraphAssetLoader`). |
 
@@ -281,23 +293,26 @@ Warstwa liczenia wartości w grafie — domenowo neutralna, więc te same node'y
 
 ### AnimGraph — runtime ewaluacji (`PluEngine/AssetTypes/AnimationGraph/`)
 
-Traversal + sampling/blend, zaimplementowane 2026-07-21 (wcześniej stuby). Bezstanowe: każde wywołanie liczy pozę od zera z `AnimEvalContext::TimeSeconds`, nic nie jest cache'owane na węźle/grafie (state machines / per-instance state = przyszłość).
+Traversal + sampling/blend, zaimplementowane 2026-07-21 (wcześniej stuby). Bezstanowe: każde wywołanie liczy pozę od zera z `AnimEvalContext::TimeSeconds`, nic nie jest cache'owane na węźle/grafie.
+
+**Per-instance node state (2026-10-14):** a node that needs state surviving between evaluations (sync phase, smoothed input — later state machines) keeps it in the evaluating `AnimGraphInstance`, never on the node (the node lives on the shared asset): `context.Instance->GetNodeState<MyState>(Uuid.getUUID())`, `MyState : AnimNodeRuntimeState`. Advance time-based state by `AnimEvalContext::DeltaSeconds`, and only when `state.LastEvaluationId != context.EvaluationId` (a node feeding two consumers is evaluated twice per graph evaluation). Without an `Instance` there is no state — fall back to something derived from `TimeSeconds`. See `AnimBlendSpaceNode`.
 
 | Funkcja / typ | Opis |
 |---|---|
-| `struct AnimEvalContext : GraphEvalContext { float TimeSeconds; bool Loop; TUsePointer<Skeleton> TargetSkeleton; AnimGraphInstance* Instance; Matrix4 ComponentToWorld; }` | Nie-reflected, budowany na nowo per wywołanie ewaluacji przez wołającego (`RenderSnapshotBuilder`, patrz niżej). `Graph` (z bazy) ustawia `AnimationGraph::Evaluate` — nie wypełniać ręcznie. `TargetSkeleton` może być pusty (podgląd grafu bez szkieletu) — nody wtedy zwracają pustą pozę. `Instance` = per-user wartości zmiennych (patrz sekcja "AnimGraph — instancje per użytkownik" niżej); `nullptr` = nody czytają wartości domyślne z assetu (podgląd w edytorze bez PIE). `ComponentToWorld` = world matrix of the driving component; used only by World-space nodes (`AnimTransformBoneNode`), identity when unknown (e.g. editor graph preview with no bound component — World then degenerates to Component space). |
+| `struct AnimEvalContext : GraphEvalContext { float TimeSeconds; bool Loop; float DeltaSeconds; UInt64 EvaluationId; TUsePointer<Skeleton> TargetSkeleton; AnimGraphInstance* Instance; Matrix4 ComponentToWorld; }` | `DeltaSeconds` / `EvaluationId` are filled by `AnimationGraph::Evaluate` from the instance (graph-clock delta since the previous evaluation — 0 when paused or the clock jumped back; a per-evaluation id) and stay 0 without an `Instance`. Nie-reflected, budowany na nowo per wywołanie ewaluacji przez wołającego (`RenderSnapshotBuilder`, patrz niżej). `Graph` (z bazy) ustawia `AnimationGraph::Evaluate` — nie wypełniać ręcznie. `TargetSkeleton` może być pusty (podgląd grafu bez szkieletu) — nody wtedy zwracają pustą pozę. `Instance` = per-user wartości zmiennych (patrz sekcja "AnimGraph — instancje per użytkownik" niżej); `nullptr` = nody czytają wartości domyślne z assetu (podgląd w edytorze bez PIE). `ComponentToWorld` = world matrix of the driving component; used only by World-space nodes (`AnimTransformBoneNode`), identity when unknown (e.g. editor graph preview with no bound component — World then degenerates to Component space). |
 | `Pose AnimGraphNode::EvaluateInputPose(AnimEvalContext&, const String& pinName) const` (protected) | Idzie po linku wpiętym w `pinName` do węzła źródłowego i woła jego `Evaluate`. Pin odłączony / źródło nie jest `AnimGraphNode`: fallback = bind pose z `TargetSkeleton->GetPoseLayout()` (albo pusta poza, gdy brak szkieletu). Tego używa każdy konkretny node zamiast ręcznego `GetLinkSource`+`dynamic_cast`. |
 | data-piny | `ReadDataPin<T>` / `EvaluateDataOutput` mieszkają na `GraphNode` (sekcja „Data-piny i node'y wartościowe" wyżej), nie na `AnimGraphNode` — `AnimBlendNode::Alpha` czyta dokładnie tak samo jak node matematyczny. `AnimVariableNode` nadpisuje `EvaluateDataOutput`: `dynamic_cast<AnimEvalContext*>` po `Instance` (wartość żywa), fallback na `Variable` assetu. |
 | `Pose AnimationGraph::Evaluate(AnimEvalContext&)` | Punkt wejścia: liniowo szuka `AnimOutputPoseNode` w `Nodes`, ustawia `context.Graph = this`, zwraca jego `Evaluate` (rekursywnie ciągnie graf w górę). Pusta poza gdy brak output node'a. |
-| `AnimSampleNode::Evaluate` | Sekundy z kontekstu → ticki (`* Animation::FramesPerSecond`), `fmod`/clamp wg `context.Loop`, potem `Animation::GetTrackBinding(*skeleton)` indeksowany po `SkeletonPoseLayout` — dokładnie wzorzec z `RenderSnapshotBuilder`. Start od `layout.MakeBindPose()`, nadpisywane per-node tylko gdzie jest track. |
+| `AnimSampleNode::Evaluate` | `SampleAnimationPose(*AnimationAsset, *skeleton, context.TimeSeconds, context.Loop, pose)` (see the SkeletalAnimation section); no animation → bind pose. |
+| `AnimBlendSpaceNode::Evaluate` | Plays a `BlendSpace` asset (section below). Inputs `ReadDataPin<float>("X"/"Y")` (Y only for a 2D space), clamped, optionally smoothed per axis (`InterpSpeedX/Y`, `InterpToF`, 0 = off) → `BlendSpace::ComputeWeights` → samples blended N-way (pairwise `BlendPoses` with `w_i / Σw_so_far`). **Phase sync:** one normalized phase per instance, advanced by `DeltaSeconds * PlayRate / cycle`, cycle = weight-averaged length of the synced samples in play; every synced sample plays at `phase * itsLength`. `ExcludeFromSync` samples play at `TimeSeconds * PlayRate`. State (`SmoothedInput`, `Phase`) lives in `AnimGraphInstance::GetNodeState`. Pins are relabelled / Y added or dropped via `ArePinsStale()` when the asset changes. |
 | `AnimBlendNode::Evaluate` | `EvaluateInputPose` na pinach `"A"`/`"B"`, `ReadDataPin<float>(context, "Alpha", Alpha)` dla współczynnika, `BlendPoses(a, b, alpha, result)`. |
 | `AnimBlendByBoolNode::Evaluate` | Piny pozy `"True"`/`"False"` → `"Result"`, warunek z `ReadDataPin<bool>(context, "Condition", Condition)` (bool data-pin z `BuildDataPinsFromReflection`). **Liczy tylko wybraną gałąź** (przegrana może być całym poddrzewem animacji). Przełączenie jest natychmiastowe — cross-fade w czasie (blend time z UE) wymagałby stanu per instancja, a ewaluacja grafu jest bezstanowa; płynne przejście = `AnimBlendNode` ze sterowaną `Alpha`. |
 | `AnimOutputPoseNode::Evaluate` | `return EvaluateInputPose(context, "Pose")`. |
-| `AnimLayeredBlendPerBoneNode::Evaluate` | Splits the skeleton at `Bone` (a `BoneRef`): everything OUTSIDE its subtree comes from pose `"A"`, `Bone` and its whole subtree from `"B"`, weighted by `ReadDataPin<float>(context, "Alpha", Alpha)`. Builds the per-node weights via `SkeletonPoseLayout::BuildSubtreeMask` and blends with `BlendPosesMasked`. `Alpha` is a hard per-subtree weight (no falloff up the hierarchy) — the cut at the chosen joint is sharp by design. `alpha <= 0`, no `TargetSkeleton`, or `Bone` not found on the skeleton → returns `"A"` unevaluated (`"B"` can be a whole animation sub-tree, same reasoning as `AnimBlendByBoolNode`'s untaken branch). |
+| `AnimLayeredBlendPerBoneNode::Evaluate` | Splits the skeleton at `Bone` (a `BoneRef`): everything OUTSIDE its subtree comes from pose `"A"`, `Bone` and its whole subtree from `"B"`, weighted by `ReadDataPin<float>(context, "Alpha", Alpha)`. Builds the per-node weights via `SkeletonPoseLayout::BuildSubtreeMask` and blends with `BlendPosesMasked`. With `MeshSpaceRotationBlend` (bool, also a pin) the subtree's rotations are blended in component space instead — each layered bone's local rotation is re-solved so its component-space rotation is the slerp of A's and B's, so the layer keeps B's orientation whatever A's bones above it do (e.g. a forward-facing upper body over strafe legs whose pelvis turns); locations/scales stay a parent-space blend. `BlendDepth` (int, pin too) ramps the weight in over that many levels below `Bone` (`alpha·min(1, (depth+1)/(BlendDepth+1))`) instead of a hard cut — spreads e.g. a pelvis-to-chest turn over the vertebrae. With `BlendDepth` 0 `Alpha` is a hard per-subtree weight — a sharp cut at the chosen joint. `alpha <= 0`, no `TargetSkeleton`, or `Bone` not found on the skeleton → returns `"A"` unevaluated (`"B"` can be a whole animation sub-tree, same reasoning as `AnimBlendByBoolNode`'s untaken branch). |
 | `AnimTransformBoneNode::Evaluate` | Modifies one bone (`BoneRef Bone`) in-place: `Translation`/`Rotation`/`Scale` (`Vec3`, Rotation in degrees), each with its own `EBoneModifyMode` (`Ignore`/`Add`/`Replace`), authored in `EBoneTransformSpace` (`Local`/`Component`/`World`). `World` composes through `AnimEvalContext::ComponentToWorld`; `Component` composes through `SkeletonPoseLayout::ComposeGlobals`. Result is converted back to Local (parent-space, undoing the same composition) before being blended into the bone's local transform by `Alpha` — descendants are not touched directly, they ride along once `ComposeGlobals` runs downstream. All three modes `Ignore`, `alpha <= 0`, no `TargetSkeleton`, or `Bone` not found → returns the input pose unchanged. |
 | `AnimationGraphVariableFactory::RegisterBuiltInTypes()` | Rejestruje wbudowane typy zmiennych (Integer/Float/Boolean/String/Vec3). Wołane raz z `Application::EngineInit()` — **Editor i Runtime dzielą tę samą fabrykę** (wcześniej robił to tylko edytor, więc Runtime miał pustą fabrykę i `AnimationGraphAssetLoader` gubił każdą zmienną przy wczytaniu grafu). |
 
-**Podpięte do renderowania (2026-07-21):** `SkeletalMeshComponent` ma `PLU_PROPERTY() TUsePointer<AnimationGraph> AnimGraph` obok istniejącego `AnimationToShow` — **graf ma priorytet, gdy przypisany**, ale surowa animacja NIE jest kasowana ani ignorowana na stałe: odpięcie grafu (`AnimGraph = nullptr`) wraca od razu na `AnimationToShow`. Osobny licznik czasu `float GraphTimeSeconds` (runtime-only, jak `AnimationTimeTicks`) — graf nie ma jednego wspólnego FPS jak pojedyncza animacja, więc `AnimEvalContext::TimeSeconds` jedzie osobno; `OnUpdate` posuwa oba liczniki niezależnie, gdy `IsPlaying`, i przepisuje `GraphTimeSeconds` do `instance->TimeSeconds`. `RenderSnapshotBuilder.cpp` (~linia 436, `"Skeletal Mesh Calculations"`): gałąź `if (animGraph) { ...AnimationGraph::Evaluate → lokalna poza → BoneLocalOverrides → SkeletonPoseLayout::ComposeGlobals... } else { /* stara pętla sample-and-compose dla AnimationToShow */ }`, obie kończą się w `layout.BuildBonePalette`. Cache pozy (`CachedPoseAnimUuid`/`CachedPoseTicks`) klucz teraz źródło-agnostyczny (`poseSourceUuid`/`poseTimeKey` = uuid+czas grafu **albo** animacji, którykolwiek aktywny) **plus** `CachedPoseGraphValueRevision` (patrz niżej — `SetFloat` przy zatrzymanym czasie nie zmieniałby nic innego w kluczu) **plus** `CachedPoseWorldMatrix` (`Matrix4`, compared against `worldComponent->GetWorldMatrix()`) — added for World-space graph nodes (`AnimTransformBoneNode`), which fold the component's world matrix into the local-space pose itself, so unlike everything else in this key the pose stops being independent of the component's transform. Costs 16 float comparisons per component per frame and a cache miss on every move even without a world-space node.
+**Podpięte do renderowania (2026-07-21):** `SkeletalMeshComponent` ma `PLU_PROPERTY() TUsePointer<AnimationGraph> AnimGraph` obok istniejącego `AnimationToShow` — **graf ma priorytet, gdy przypisany**, ale surowa animacja NIE jest kasowana ani ignorowana na stałe: odpięcie grafu (`AnimGraph = nullptr`) wraca od razu na `AnimationToShow`. Osobny licznik czasu `float GraphTimeSeconds` (runtime-only, jak `AnimationTimeTicks`) — graf nie ma jednego wspólnego FPS jak pojedyncza animacja, więc `AnimEvalContext::TimeSeconds` jedzie osobno; `OnUpdate` posuwa oba liczniki niezależnie, gdy `IsPlaying` (the instance derives its per-evaluation delta from `GraphTimeSeconds` inside `AnimationGraph::Evaluate`). `RenderSnapshotBuilder.cpp` (~linia 436, `"Skeletal Mesh Calculations"`): gałąź `if (animGraph) { ...AnimationGraph::Evaluate → lokalna poza → BoneLocalOverrides → SkeletonPoseLayout::ComposeGlobals... } else { /* stara pętla sample-and-compose dla AnimationToShow */ }`, obie kończą się w `layout.BuildBonePalette`. Cache pozy (`CachedPoseAnimUuid`/`CachedPoseTicks`) klucz teraz źródło-agnostyczny (`poseSourceUuid`/`poseTimeKey` = uuid+czas grafu **albo** animacji, którykolwiek aktywny) **plus** `CachedPoseGraphValueRevision` (patrz niżej — `SetFloat` przy zatrzymanym czasie nie zmieniałby nic innego w kluczu) **plus** `CachedPoseWorldMatrix` (`Matrix4`, compared against `worldComponent->GetWorldMatrix()`) — added for World-space graph nodes (`AnimTransformBoneNode`), which fold the component's world matrix into the local-space pose itself, so unlike everything else in this key the pose stops being independent of the component's transform. Costs 16 float comparisons per component per frame and a cache miss on every move even without a world-space node.
 
 ### AnimGraph — instancje per użytkownik (`PluEngine/Animation/AnimGraphVariableStore.h`, `AnimGraphInstance.h`)
 
@@ -308,12 +323,25 @@ Asset (`AnimationGraph::Variables`) trzyma tylko **definicje + wartości domyśl
 | `TOwningPointer<IAnimationGraphVariable> IAnimationGraphVariable::Clone() const` | Głęboka kopia (Name/TypeName/PinTypeId + wartość) do świeżo skonstruowanej zmiennej tego samego konkretnego typu. Zaimplementowane raz w `AnimationGraphVariable<T>`. |
 | `bool IAnimationGraphVariable::CopyValueTo(void* dst, const String& expectedPinTypeId) const` | Kopiuje wartość do `dst`, gdy `expectedPinTypeId == PinTypeId` (przez przypisanie `T`, nie `memcpy` — działa też dla `String`). Ścieżka odczytu data-pinów (`ReadDataPin`/`EvaluateDataOutput`). |
 | `struct AnimGraphVariableStore` | Czysty magazyn wartości (nazwa → sklonowana zmienna), nic nie wie o nodach/grafie/assecie. `RebuildFrom(defaults)` (od zera), `MergeFrom(defaults)` (zachowuje wartości dla zmiennych o tej samej nazwie **i** `TypeName` — edycja listy zmiennych w PIE nie kasuje żywego stanu), `Find(name)`, `GetAll()` (cała lista, w kolejności), `template<T> bool Set(name, value)` / `template<T> bool TryGet(name, outValue)` (type-safe przez `dynamic_cast<AnimationGraphVariable<T>*>`), `GetValueRevision()` / `MarkValueChanged()` (bumpowana przez `Set`, `RebuildFrom`, `MergeFrom` gdy coś się realnie zmieniło; klucz cache'a pozy). |
-| `struct AnimGraphInstance` (`PLU_STRUCT(PyExport)`) | Żywe wartości jednego "użytkownika" grafu. `BindTo(graph)` — (re)klonuje domyślne zmienne; tani no-op gdy uuid+`VariablesRevision` bez zmian, `MergeFrom` gdy ten sam graf zmienił listę zmiennych, `RebuildFrom` gdy graf się zmienił. `GetVariables()`, `GetGraph()`, `template<T> Set/TryGet` (C++). Python: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetBool/GetBool`, `SetString/GetString`, `SetVec3/GetVec3`, `HasVariable(name)`, `GetVariableNames()`. Pole `float TimeSeconds` — zegar ewaluacji per instancja (docelowo tu wjedzie stan maszyn stanów). Editor-only: `String DebugName`, `static DynamicArray<AnimGraphInstance*>& GetLiveInstances(graphUuid)` (rejestr żywych instancji per asset, do panelu Variables w PIE). |
+| `struct AnimGraphInstance` (`PLU_STRUCT(PyExport)`) | Żywe wartości jednego "użytkownika" grafu. `BindTo(graph)` — (re)klonuje domyślne zmienne; tani no-op gdy uuid+`VariablesRevision` bez zmian, `MergeFrom` gdy ten sam graf zmienił listę zmiennych, `RebuildFrom` gdy graf się zmienił. `GetVariables()`, `GetGraph()`, `template<T> Set/TryGet` (C++). Python: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetBool/GetBool`, `SetString/GetString`, `SetVec3/GetVec3`, `HasVariable(name)`, `GetVariableNames()`. `template<T> T& GetNodeState(UInt64 nodeUuid)` — per-node runtime state (`T : AnimNodeRuntimeState`, created lazily, dropped when the instance binds to a different graph; `ResetNodeStates()` clears it). `float LastEvalTimeSeconds` / `UInt64 EvaluationId` — bookkeeping `AnimationGraph::Evaluate` turns into `AnimEvalContext::DeltaSeconds` / `EvaluationId`. Editor-only: `String DebugName`, `static DynamicArray<AnimGraphInstance*>& GetLiveInstances(graphUuid)` (rejestr żywych instancji per asset, do panelu Variables w PIE). |
 | `AnimGraphInstance* SkeletalMeshComponent::EnsureAnimGraphInstance()` | Tworzy przy pierwszym użyciu, woła `BindTo(AnimGraph)` (tanie gdy nic się nie zmieniło), `nullptr` gdy brak `AnimGraph`. Wołane co klatkę z `RenderSnapshotBuilder` (nie tylko podczas `IsPlaying`) i z `OnUpdate`. |
 | `AnimGraphInstance* SkeletalMeshComponent::GetAnimGraphInstance()` (`PLU_FUNCTION(PyExport)`) | Alias Pythona dla `EnsureAnimGraphInstance()` — `comp.GetAnimGraphInstance().SetFloat("Speed", 5.0)`. |
 | `UInt32 SkeletalMeshComponent::CachedPoseGraphValueRevision` | Dodatkowy klucz cache'a pozy obok mesh/anim/ticks: `AnimGraphInstance::GetVariables().GetValueRevision()` w momencie ostatniego builda. Bez tego `SetFloat` przy zatrzymanym czasie (`IsPlaying=false`) nie zmieniałby pozy (cache hit na reszcie klucza). |
 
 Edytor (`AnimationGraphVariablesPanel`/`AnimationGraphViewport`/`AnimationGraphDetailsPanel`): każda mutacja listy zmiennych (Add/Delete/rename) bumpuje `AnimationGraph::VariablesRevision` (nie-serializowane, nie `PLU_PROPERTY`) obok `PanelChangedAsset()`. W PIE, gdy graf ma żywe instancje, Variables panel pokazuje combo `Defaults` + `DebugName` każdej instancji (`AnimationGraphViewport::SetInspectedInstance`/`GetInspectedInstance`); wybór zmienia, przeciw czemu rozwiązuje się `AnimationGraphViewport::GetSelectedVariable()` (nazwa → `store.Find` albo `graph->FindVariable`). Details panel w trybie live: Name/Type read-only, wartość edytowalna, **bez `PanelChangedAsset()`** (patrz `Editor/CLAUDE.md`, "Czego NIE brudzić") — zamiast tego `store.MarkValueChanged()`.
+
+### BlendSpace — `PluEngine/AssetTypes/Animation/BlendSpace.h` (`namespace Plu`)
+
+One asset type for 1D and 2D (`EBlendSpaceDimensions`): `AxisX`/`AxisY` (`BlendSpaceAxis`: `Name`, `Min`, `Max`, editor-only `GridDivisions`), `DynamicArray<BlendSample> Samples` (`AnimationAsset`, `Vec2 Position` in axis units, `ExcludeFromSync`), `TargetSkeleton`, editor-only `PreviewMesh`. Plain reflection (generic JSON); `BlendSpaceAssetLoader` only rebuilds the derived data after load and maps the type to `BlendSpaceViewport`.
+
+| Function | Description |
+|---|---|
+| `void BlendSpace::RebuildTriangulation()` | Rebuilds the derived lookup data: 1D sort order, 2D Delaunay triangulation (in-house Bowyer–Watson over **axis-normalized** positions, so axes with different units weigh equally) + hull edges. **Call after every edit** of `Samples`, `Dimensions` or axis ranges, and after load. Bumps `GetRevision()`. |
+| `void BlendSpace::ComputeWeights(Vec2 input, DynamicArray<BlendSampleWeight>& out) const` | Blend weights for an input point (axis units, clamped to the ranges): 1D = the two neighbours (lerp), 2D = barycentric weights of the enclosing triangle (≤ 3 samples). Outside the hull → projected onto the nearest hull edge; < 3 non-collinear samples → nearest segment/point. Weights > 0, sum 1; empty only for an empty space. |
+| `Vec2 BlendSpace::ClampInput(Vec2) const` | Input clamped to the axis ranges (y = 0 in 1D). |
+| `const DynamicArray<BlendSpaceTriangle>& BlendSpace::GetTriangles() const`, `UInt32 GetRevision() const` | Derived data for drawing / change detection. |
+
+Editor-only drawing (`Editor/DefinedViewports/BlendSpace/BlendSpaceDrawing.h`): `BlendSpaceScreenMapping { Space, Min, Max }` (`ToScreen`/`FromScreen` between axis units and a screen rect; 1D on the centre line), `DrawBlendSpaceStructure(drawList, mapping, radius)` (triangulation/axis line + sample dots, colour-coded via `BlendSampleColor`), `DrawBlendSpaceThumbnail(space, w, h)` (read-only picture, used inside the graph node).
 
 ## Stringi (engine) — `PluEngine/PluUtils.h` (`namespace Plu`)
 
@@ -332,6 +360,8 @@ Edytor (`AnimationGraphVariablesPanel`/`AnimationGraphViewport`/`AnimationGraphD
 | `Vec3 ToGLM(const JPH::RVec3&)` | `JPH::RVec3` → `Vec3`. |
 | `JPH::Vec3 ToJPHVec3(const Vec3&)` | `Vec3` → `JPH::Vec3`. |
 | `Vec3 ToGLMFromVec3(const JPH::Vec3&)` | `JPH::Vec3` → `Vec3`. |
+| `JPH::Quat ToJPHRotation(Vec3 rotationDegrees)` | Engine Euler rotation in **degrees** → `JPH::Quat` (`sEulerAngles`). |
+| `UInt32 GetUserData(const JPH::Body&, const JPH::SubShapeID&)` | Collider index of the hit sub-shape (compound sub-shape `mUserData`); index into `PhysicsWorld::mCollidersPerObject[objectUuid]`. A non-compound body has one collider → `0`. |
 
 ---
 
@@ -442,6 +472,17 @@ przesuwanie go do przodu nie oddala go od niej i pierwsze próbki łapią własn
 jako szarpane, postrzępione zaciemnienie na płaskich powierzchniach. Reguła `tan` jest ta sama,
 której używają biasy kaskad.
 
+**Distance limits (pixel footprint).** A screen pixel grows linearly with distance
+(`PixelWorldSize(depthView)` in the lit shaders — ~13 cm at 100 m, 1080p, 70° FOV), so a
+fixed-metre ray and a fixed-millimetre bias stop meaning anything far away: each sample reads the
+depth at its pixel's centre, up to half a pixel sideways, and a 2 mm bias no longer lifts the ray
+above its own surface — every distant lit surface shadowed itself. Two rules fix it: the effective
+bias is `max(ContactShadowBias, pixelWorld)` (one pixel along the normal is enough at any view
+angle), and the whole result fades out by `smoothstep(2, 4, ContactShadowLength / pixelWorld)` —
+i.e. by how many pixels the ray spans, so the cut-off moves out with resolution and in with FOV.
+This fade is separate from the cascade fade on purpose: contact shadows are combined with `min()`
+after it, so the cascade fade never reached them.
+
 Parametry na `DirectionalLight`: `ContactShadows`, `ContactShadowLength` (0…1 m),
 `ContactShadowSteps` (4…`kMaxContactShadowSteps` = 64, tyle pobrań głębi na oświetlony piksel —
 to jedyne realne pokrętło wydajności; podniesienie zagęszcza przede wszystkim BLISKIE próbki),
@@ -462,6 +503,10 @@ Karmi je **depth prepass** (`Renderer::RenderDepthPrepass`, `mDepthPrepassBuffer
 - rysuje shaderami głębi **dokładnie to**, co pass oświetlenia: zakres kamery w `CullShadowCasters`
   jest kopiowany z `batch.VisibleCount` (culling z MAIN), a **nie** cullowany ponownie — instancja
   obecna w głębi, ale nieobecna w kolorze, zasłania bez cieniowania, czyli robi czarną dziurę;
+- **Exception: components with `CastsShadow = false` are left out** (static batches and skeletal
+  meshes alike), so the flag turns off their contact shadows too — they neither shadow their
+  surroundings nor themselves. Leaving geometry OUT is safe: there is no early-Z, and every ray
+  starts from the shaded fragment's own position, not from the prepass depth;
 - **NIE daje early-Z i celowo nie blituje głębi do głównego bufora.** Shadery głębi liczą
   `gl_Position` inaczej niż shadery materiałów — `lightSpaceMatrix * model * skinMatrix * pos`
   (gdzie `proj*view` złożono na CPU) kontra `projection * view * model * (skinMatrix * pos)`.
@@ -507,7 +552,8 @@ Stałe: `kMaxVisibleSpotLights` (64, rozmiar SSBO 5 — nadmiar odrzuca MAIN po 
 |---|---|
 | `void ComputeSpotBoundingSphere(apex, dir, range, halfAngleRad, OutCenter, OutRadius)` | Sfera opisana na stożku, do cullingu światła względem frustum kamery. Dwa przypadki, bo najmniejsza sfera zmienia charakter na 45°: półkąt ≤ 45° → środek na osi w `range / (2·cos²θ)`, promień taki sam (sfera dotyka wierzchołka i obręczy); powyżej → środek w `range·cosθ`, promień `range·sinθ` (najszersza jest sama podstawa). Znacznie ciaśniejsza niż sfera o promieniu `range` wokół wierzchołka, a to **jedyny** test decydujący, czy światło w ogóle trafi na GPU. |
 | `Matrix4 ComputeSpotLightMatrix(apex, dir, range, outerHalfAngleRad)` | Macierz light-space mapy cienia spota: kwadratowa projekcja perspektywiczna o FOV = pełny kąt zewnętrzny, `near = kSpotShadowNearClip`, `far = range`. Wektor „up" to oś świata najmniej równoległa do `dir` — bez tego `lookAt` degeneruje się dla lampy świecącej pionowo w dół (czyli typowego przypadku). |
-| `void AppendConeWireframe(OutLineVerts, apex, dir, range, halfAngleRad, color, segments = 24)` | Dopisuje wireframe stożka (okrąg podstawy + 4 szprychy z wierzchołka) do bufora linii interleaved pos(3)+color(3) — tego samego formatu, co debug fizyki, więc rysuje go istniejący pass `RenderDebugGeometry` bez nowego shadera. Obręcz leży na **sferze** o promieniu `range`, nie na płaskiej pokrywie — tam realnie kończy się światło. |
+| `void AppendConeWireframe(OutLineVerts, apex, dir, range, halfAngleRad, color, segments = 24, maxHalfAngleRad = π/2 - 0.01)` | Dopisuje wireframe stożka (okrąg podstawy + 4 szprychy z wierzchołka) do bufora linii interleaved pos(3)+color(3) — tego samego formatu, co debug fizyki, więc rysuje go istniejący pass `RenderDebugGeometry` bez nowego shadera. Obręcz leży na **sferze** o promieniu `range`, nie na płaskiej pokrywie — tam realnie kończy się światło. The half-angle is clamped to `maxHalfAngleRad` (just under 90° by default, the spot light limit); pass up to `π` for cones wider than a hemisphere (particle launch cones). |
+| `void AppendSphereWireframe(OutLineVerts, center, radius, color, segments = 32)` | Sphere wireframe as three axis-aligned great circles, same line format as `AppendConeWireframe`. Both are the low-level builders behind `DebugDrawAdapter::DrawDebugCone/DrawDebugSphere` — to draw into a scene, use the adapter (section Physics → Debug drawing), not these directly. |
 
 ### Static mesh: draw calls i bounding box — `PluEngine/AssetTypes/StaticMesh/StaticMesh.h`, `PluEngine/AssetTypes/MeshBounds.h`
 
@@ -519,6 +565,9 @@ Stałe: `kMaxVisibleSpotLights` (64, rozmiar SSBO 5 — nadmiar odrzuca MAIN po 
 | `BoundingBox CreateBoundingBoxForStaticMesh(StaticMesh*)` | Chodzi po **każdym wierzchołku** — nigdy per klatka, cache'uj (patrz `StaticMeshComponent::MeshBoundingBoxComputed` / `InstancedStaticMeshComponent`). |
 | `BoundingBox CreateBoundingBoxForSkeletalMesh(SkeletalMesh*)` | To samo dla skeletal mesha (bind pose). Cache'owane w `SkeletalMeshComponent::MeshBoundingBox` + `MeshBoundingBoxComputed`. Animacja wypycha wierzchołki poza te bounds — `RenderSnapshotBuilder` rozdmuchuje promień przed użyciem do cullingu. |
 | `StaticMeshComponent::MeshBoundingBox` / `MeshBoundingBoxComputed` | Bounding box (local space) komponentu; `MeshBoundingBoxComputed` to twardy guard — liczony raz w `SetStaticMesh` (jeśli mesh już załadowany) albo leniwie w `RenderSnapshotBuilder`, gdy mesh dojedzie asynchronicznie. |
+| `void StaticMeshComponent::SetMeshBoundingBox(const BoundingBox&)`, `void InstancedStaticMeshComponent::SetMeshBoundingBox(const BoundingBox&)` | The only supported way to change `MeshBoundingBox`: sets it, raises `MeshBoundingBoxComputed` and drops the cached world bounds derived from it. Assigning the field directly leaves those caches on the old box. |
+| `void StaticMeshComponent::GetWorldBoundingSphere(Vec3& center, float& radius)` | World-space bounding sphere of the component (local box through the world transform), cached against `GetTransformVersion()` — a component that did not move answers from memory. This is what `RenderSnapshotBuilder` puts into `InstanceCullData` per instance per frame. |
+| `const DynamicArray<InstanceBoundingSphere>* InstancedStaticMeshComponent::GetInstanceWorldBounds()` | Per-instance world spheres, parallel (same index) to `GetInstanceWorldMatrices()` / `GetInstanceNormalMatrices()` and built in the same cache rebuild. Deriving them per frame in the snapshot builder cost three `glm::length` plus a matrix-vector product per instance. |
 
 ### Introspekcja shaderów — `PluEngine/Shaders/ShaderProgram.h`
 
@@ -574,7 +623,32 @@ Samo `EngineAssets.h` (stałe `Plu::EngineAssets::*`) odświeża **build**: `Eng
 
 **Uwaga przy dokładaniu podobnych generatorów:** to musi być osobny **target**, a nie `add_custom_command(TARGET ... PRE_BUILD)`. `PRE_BUILD` honoruje wyłącznie generator Visual Studio; na Ninja/Makefiles CMake degraduje go do `PRE_LINK`, czyli uruchamia **po** kompilacji, która wygenerowanego nagłówka potrzebuje. Generator refleksji radzi sobie mimo tego tylko dlatego, że ma dodatkowy bootstrap w `execute_process` na etapie konfiguracji.
 
-**Uwaga:** każdy nowy luźny uniform sterowany przez silnik musi trafić do `engineOnlyUniforms` w `PythonTools/ShaderCodeParser.py` w tej samej zmianie — inaczej parser wciągnie go jako parametr materiału i `RenderFromMaterial` nadpisze go zserializowaną wartością w środku klatki (w pliku udokumentowane dwa takie błędy).
+**Uwaga:** każdy nowy luźny uniform sterowany przez silnik musi trafić do `engineOnlyUniforms` w `PythonTools/ShaderCodeParser.py` w tej samej zmianie — inaczej parser wciągnie go jako parametr materiału i `RenderFromMaterial` nadpisze go zserializowaną wartością w środku klatki (w pliku udokumentowane dwa takie błędy). `RenderFromMaterial` pilnuje tego teraz także w runtime: parametr o nazwie silnikowej (`model`, `normalMatrix`, `view`, `projection`, `cameraPos`, `time`, `dirLightDir`, `dirLightColor`, `shadowCascades`, `instanceBaseIndex`, `paletteBaseIndex`) jest pomijany i raz na sesję logowany ostrzeżeniem. Sama lista w parserze nie wystarcza, bo chroni tylko materiały tworzone **po** jej rozszerzeniu — materiał zapisany wcześniej wiezie martwy wpis w swoim JSON-ie i nadpisywał nim wartość silnikową (tak `time = 0` w materiale trawy zatrzymał wiatr na fazie zero: shader liczył `sin(time + …)` z zerem co klatkę). Stary wpis znika z assetu przy ponownym zapisie materiału.
+
+### Pass głębi: warianty shaderów materiału — `Renderer::ResolveDepthProgram`
+
+Depth prepass i mapy cieni **nie** rysują już wszystkiego jednym silnikowym shaderem głębi. Dla każdego batcha renderer bierze **wariant głębi** materiału: jego własny vertex shader zlinkowany z `EngineShaders/Empty.frag`. Powód jest poprawnościowy: `OnlyPositionInstanced.vert` nie zna animacji wierzchołków z materiału, więc trawa odchylana wiatrem w passie oświetlenia trafiała do bufora głębi i do mapy cieni w pozycji spoczynkowej — cień stał w miejscu, a contact shadows marszowały po głębi geometrii, której na ekranie nie było.
+
+| Element | Zasada |
+|---|---|
+| Cache wariantów | Klucz to **UUID vertex shadera**, nie materiału — trzydzieści materiałów na `BasicVertInstanced.vert` dzieli jeden program głębi. `Renderer::mDepthVariants`, budowane leniwie na wątku renderu, zwalniane w `Shutdown`. |
+| Rejestracja | Wariant ląduje na liście `IShaderManager::GetRenderableShaderPrograms()`, więc dostaje uniformy globalne klatki i hot reload jak każdy inny program. Zbudowany w środku klatki łapie je dopiero od następnej (jedna klatka z `time = 0`). |
+| Parametry materiału | `RenderFromMaterial` leci **także** na wariancie — parametr materiału może sterować stopniem wiatru czy mapą przemieszczenia, a wariant to osobny program z własnym stanem uniformów. |
+| `view` / `projection` | Passy głębi ustawiają je **osobno**, nie premnożone (`ShadowCascadeData::View`/`Proj`, `Renderer::mSpotShadowViews`/`mSpotShadowProjs`). Dzięki temu materiałowy VS liczy `gl_Position` tym samym wyrażeniem we wszystkich passach — to był warunek wstępny wariantów, a przy okazji kasuje główną przeszkodę dla early-Z. |
+| Materiał nieinstancingowy | Wariant rysuje się tak jak w passie głównym: jeden draw na instancję z `model`/`normalMatrix` w uniformie. |
+| Skeletal | To samo, z jednym zabezpieczeniem: wariant bez bloku `BoneMatrices` (materiał bez skinningu w VS) wraca na silnikowy `OnlyPositionSkeletal` — inaczej cień byłby w bind pose. |
+
+**Konwencja dla własnych shaderów instancingu:** vertex shader musi adresować instancje przez blok widocznych indeksów, tak jak `BasicVertInstanced.vert`:
+
+```glsl
+layout(std430, binding = 3) buffer VisibleInstanceIndices { uint visibleIndices[]; };
+...
+InstanceData inst = instances[visibleIndices[instanceBaseIndex + gl_InstanceID]];
+```
+
+Tej indirekcji używają **wszystkie** passy (główny bierze zakres kamery, kaskada swój podzbiór), więc dopiero ona pozwala jednemu shaderowi obsłużyć je wszystkie. Shader instancingowy bez tego bloku nadal działa — `HasVisibleIndexBlock()` wykrywa starą konwencję, pass główny adresuje mu bufor instancji wprost, a pass głębi wraca na shader silnikowy (czyli zostaje ze starym rozjazdem) — i raz na program leci ostrzeżenie z instrukcją migracji.
+
+**Pułapka przy edycji shaderów silnikowych:** skompilowane programy lądują w cache'u binarnym (`<projekt>/Cache/<driver>/<uuid>.plubin`) kluczowanym **wyłącznie UUID-em** — zmiana źródła poza działającym edytorem go nie unieważnia. Po ręcznej edycji `.vert`/`.frag` (albo po `git pull`) skasuj `Cache/Linux_Driver*`, inaczej silnik wczyta stary binarny program. Działający edytor łapie zmiany plików przez `efsw` i rekompiluje sam.
 
 ### Wrappery zasobów GL — `PluEngine/Renderer/`
 
@@ -627,7 +701,20 @@ okno główne: manager je zna, ale nigdy nie niszczy — jego zamknięcie kończ
 
 ## DynamicArray (PluSTL) — `PluSTL/Array/Array.h`
 
-Poza podstawami (`PushBack`/`EmplaceBack`/`Reserve`/`Erase`/`Sort`/`Append`/`Find`/`Contains`/`IndexOf`/`Remove`/`RemoveIf`) tablica ma zestaw utilsów. `InvalidIndex` = `static_cast<SizeType>(-1)` — wartość zwracana przez `IndexOf*` i `GetRandomIndex()` przy braku wyniku.
+Poza podstawami (`PushBack`/`EmplaceBack`/`Reserve`/`Sort`/`Append`/`Find`/`Contains`/`IndexOf`) tablica ma zestaw utilsów. `InvalidIndex` = `static_cast<SizeType>(-1)` — wartość zwracana przez `IndexOf*` i `GetRandomIndex()` przy braku wyniku.
+
+**Usuwanie** — jedna rodzina `Remove*`, wspólna z `HashMap`/`HashSet`/`Queue`:
+
+| Funkcja | Opis |
+|---|---|
+| `bool Remove(const T&)` | Usuwa pierwszy równy element; `false` gdy nie znaleziono. |
+| `template SizeType RemoveIf(Predicate)` | Usuwa wszystkie pasujące; zwraca ile. |
+| `void RemoveAt(SizeType index)` | Usuwa po indeksie. **Rzuca `std::out_of_range`** przy złym indeksie. |
+| `void RemoveAt(Iterator)` | Usuwa pod iteratorem; iterator poza zakresem = no-op. |
+| `void RemoveRange(Iterator first, Iterator last)` | Usuwa półotwarty zakres `[first, last)`. |
+| `void PopBack()` | Zdejmuje ostatni; no-op na pustej tablicy. |
+
+`Erase(Iterator)` i `Erase(Iterator, Iterator)` zostały jako `[[deprecated]]` aliasy do `RemoveAt`/`RemoveRange` — nic w silniku ich nie używa, znikną.
 
 **Losowanie** (silnik z `PluRandom`, patrz niżej):
 
@@ -693,7 +780,169 @@ Header-only `std::mt19937_64` **thread_local** — losowanie z każdego wątku j
 | `float NextFloat(min = 0, max = 1)` | Liczba z `[min, max)`. |
 | `bool NextBool(probability = 0.5f)` | Rzut monetą z zadanym prawdopodobieństwem sukcesu. |
 
+**`PluRandom::FastRandom`** — xoshiro128+ for hot loops (particle spawning), a value type with its own state: own one per object/thread, it is not thread-safe and never touches the thread_local engine. No distribution object and no TLS lookup per draw, which is what makes `NextFloat` above slow in a tight loop (and very slow in Debug).
+
+| Member | Description |
+|---|---|
+| `FastRandom()` / `explicit FastRandom(uint64_t seed)` / `void Seed(uint64_t)` | Default-constructed instances are seeded from the thread's engine (`NextUInt64`), so they never share a sequence. Seeds go through splitmix64 — any value, 0 included, is valid. |
+| `uint32_t NextUInt32()` | Raw draw. The low bits of xoshiro128+ are weak — shift down rather than mask. |
+| `float NextFloat()` / `float NextFloat(min, max)` | `[0, 1)` from the top 24 bits / `[min, max)`. Bounds are **not** normalized — pass `min <= max`. |
+
 Do losowych transformów w edytorze (z jawnym seedem i wsadowym wypełnianiem tablic) jest osobne `Editor/Utils/RandomTransformUtils.h` — patrz sekcja Editor.
+
+---
+
+## HashMap (PluSTL) — `PluSTL/HashMap/HashMap.h` (`namespace Plu`)
+
+`HashMap<TKey, TValue, THasher = DefaultHash<TKey>, TAllocator = DefaultAllocator<std::pair<TKey,TValue>>>`
+replaces `std::unordered_map`. `GameHashMap` is a transitional alias for the same type — the
+name is being retired, write `HashMap` in new code.
+
+**Separate chaining, on purpose.** `Find` and `operator[]` hand back a `TValue*` and callers
+across the engine hold on to it, so a node has to keep its address: a rehash only relinks
+`Next` pointers, it never moves a node. Open addressing would be more cache-friendly but would
+invalidate every outstanding pointer on growth.
+
+**The per-insert malloc is gone.** Removed and cleared nodes go onto a free list and get
+reused, so a map that is `Clear()`ed and refilled every frame — `RenderSnapshotBuilder`'s batch
+lookup and frame-use counters — allocates during the first frames and then never again. Call
+`ShrinkToFit()` to hand that pooled storage back.
+
+Bucket count is always a power of two, so the bucket index is a mask rather than a division.
+
+| Funkcja | Opis |
+|---|---|
+| `bool Insert(const TKey&, const TValue&)` / `(TKey&&, TValue&&)` | `false` when the key already exists — the existing value is **not** overwritten. |
+| `bool InsertOrAssign(const TKey&, const TValue&)` / `(…, TValue&&)` | Always writes. `true` = the key was new, `false` = an existing value was replaced. |
+| `template bool Emplace(const TKey&, Args&&...)` | Builds the value in place. Like `Insert`, does nothing when the key exists. |
+| `TValue* Find(const TKey&)` / `const TValue* Find(…) const` | `nullptr` on a miss. The pointer stays valid until **that key** is removed — inserts and rehashes do not invalidate it. |
+| `bool Contains(const TKey&) const` | |
+| `TValue& operator[](const TKey&)` | Inserts a value-initialized `TValue` when the key is absent. Requires `TValue` to be default-constructible. |
+| `bool Remove(const TKey&)` | `false` when the key was not there. The node's storage goes to the free list. |
+| `void Clear()` | Destroys every element but keeps buckets **and** node storage, so refilling costs no allocations. |
+| `void ShrinkToFit()` | Releases the pooled node storage. |
+| `SizeType Size()` / `bool IsEmpty()` | |
+| `SizeType BucketCount()` / `SizeType Capacity()` / `float LoadFactor()` | `Capacity()` = elements that fit before the next rehash. `static constexpr float MaxLoadFactor()` = 0.75. |
+| `void Reserve(SizeType count)` | Sizes the map so `count` elements fit without rehashing. |
+| `void Rehash(SizeType bucketCount)` | Rounded up to a power of two, never below what the current elements need. |
+| `void Swap(HashMap&)` | |
+| `Iterator Begin()/End()` + `begin()/end()/cbegin()/cend()` (+ `const`) | Forward iteration over `std::pair<TKey, TValue>`, bucket by bucket. Order is unspecified and changes on rehash. |
+
+Copyable and movable. A moved-from map is empty but fully usable — it re-allocates its buckets
+on the next insert rather than dividing by a zero bucket count.
+
+---
+
+## HashSet (PluSTL) — `PluSTL/HashSet/HashSet.h` (`namespace Plu`)
+
+`HashSet<T, Hasher = DefaultHash<T>, Allocator = DefaultAllocator<T>>` replaces
+`std::unordered_set`. **Open addressing** with linear probing and tombstones — unlike `HashMap`,
+elements live inside one contiguous slot table, so `Find` returns an iterator and **any insert
+that rehashes invalidates it**. Copy the value out rather than holding the iterator.
+
+Capacity is a power of two; max load factor 0.75. `Remove` leaves a tombstone and triggers a
+rehash once tombstones pass half the capacity.
+
+| Funkcja | Opis |
+|---|---|
+| `bool Insert(const T&)` / `(T&&)` | `false` when the element is already there. |
+| `template bool Emplace(Args&&...)` | Builds the element from the arguments and inserts it. Unlike a map's `Emplace` this cannot skip the construction — a set probes by the value itself — so it saves a named temporary, not the work. |
+| `bool Remove(const T&)` | |
+| `Iterator Find(const T&)` / `ConstIterator Find(…) const` | `End()` on a miss. |
+| `bool Contains(const T&) const` | |
+| `void Clear()` | Keeps the slot table. |
+| `SizeType Size()` / `Capacity()` / `bool IsEmpty()` / `float LoadFactor()` | |
+| `void Reserve(SizeType)` / `void Rehash(SizeType)` | Both round up to a power of two. |
+| `Iterator Begin()/End()` + `begin()/end()/cbegin()/cend()` (+ `const`) | |
+
+---
+
+## Allocators (PluSTL) — `PluSTL/Allocators/Default.h` (`namespace Plu`)
+
+The interface every PluSTL container expects:
+
+```cpp
+using ValueType = T;
+template<typename U> using Rebind = <this allocator, for U>;   // optional
+T*   Allocate(std::size_t count) noexcept;                     // nullptr on failure
+void Deallocate(T* ptr, std::size_t count) noexcept;
+void Construct(T* ptr, Args&&... args);
+void Destroy(T* ptr) noexcept;
+```
+
+`Allocate` is **failable, not throwing** — it returns `nullptr` and the containers drop the
+operation rather than write past the end (`DynamicArray::PushBack` and `Queue::PushBack` become
+no-ops; `EmplaceBack`, which owes the caller a reference, aborts).
+
+| Element | Opis |
+|---|---|
+| `DefaultAllocator<T>` | Global new/delete, plus two things the raw operators do not give you: an over-aligned `T` (anything past `__STDCPP_DEFAULT_NEW_ALIGNMENT__`, e.g. `alignas(64)`) gets a correctly aligned block, and a `count * sizeof(T)` overflow returns `nullptr` instead of wrapping into a small request. Stateless. |
+| `RebindAllocatorT<Allocator, U>` | `Allocator` re-targeted at `U`. Containers that need storage for something other than `T` (`HashMap`'s nodes and bucket heads, `HashSet`'s slots) go through this, so a caller-supplied allocator is actually used. An allocator with no `Rebind` alias falls back to `DefaultAllocator<U>`. |
+
+`DefaultAllocator` is exported back into the global namespace by a `using` declaration, so both
+`DefaultAllocator<T>` and `Plu::DefaultAllocator<T>` compile.
+
+---
+
+## Hashers (PluSTL) — `PluSTL/Hashers/Default.h`, `Hashers/String.h` (`namespace Plu`)
+
+`DefaultHash<T>` is the default `THasher` for `HashMap`, `HashSet` and their concurrent
+counterparts. It handles directly:
+
+| Rodzaj klucza | Jak liczy |
+|---|---|
+| dowolny typ całkowity (`UInt8`…`UInt64`, `char`, `bool`, `long long`, …) | MurmurHash3 finalizer for ≤ 4 bytes, splitmix64 above — routed by width, so every integer type avalanches. |
+| enumy | Through the underlying integral type. |
+| `float` / `double` | Bits, **after canonicalizing**: `-0.0` hashes as `+0.0` (they compare equal) and every NaN hashes alike. |
+| `T*` | The address. |
+| `std::pair<A, B>` | `DefaultHash<A>` of `first`, then `HashCombine` with `DefaultHash<B>` of `second` — both members need a `DefaultHash`, nests (`pair<String, EngineObjectHandle>`, `pair<pair<…>, …>`). Order matters. Without it a pair key would not compile: `std::pair` is never trivially copyable. |
+| `Vec2/3/4`, `IVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluBase/GlmHash.h`, pulled in by `PluBase/Types.h` (and so by `PluTypes.h`). Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
+| `String` / `StringW` (`BasicString`), `Path` / `PathW` (`BasicPath`) | FNV-1a over the characters, so two equal strings hash equally regardless of SSO vs heap. |
+| `const char*` / `char*` / `const wchar_t*` / `wchar_t*` | The text, not the pointer. `nullptr` → 0. |
+| anything else | **Falls back to hashing the object's raw bytes.** |
+
+**Uwaga o fallbacku.** The byte-wise path reads `sizeof(T)` bytes, **padding included**. For a
+struct with holes — e.g. `{ UInt32; UInt32; bool; }`, nine bytes in a twelve-byte struct — two
+objects that compare equal can hash differently, because the padding is whatever was on the
+stack. Write a specialization for such a key:
+
+```cpp
+template<> struct Plu::DefaultHash<MyKey> {
+    std::size_t operator()(const MyKey& k) const noexcept {
+        std::size_t h = DefaultHash<UInt32>{}(k.A);
+        HashCombine(h, DefaultHash<UInt32>{}(k.B));
+        return h;
+    }
+};
+```
+
+`HashCombine(std::size_t& seed, std::size_t value)` never collapses when either side is 0 —
+which a plain xor or multiply does. (That was a real bug: `DefaultHash<EngineObjectHandle>`
+ended in `hash *= failHash`, and the MurmurHash3 finalizer of 0 is 0, so **every valid handle
+hashed to 0** and landed in one bucket.)
+
+A key type that is not trivially copyable is a **compile error**, not a silent wrong answer:
+the fallback would hash a pointer instead of the pointed-to value. Such a type states how it
+hashes.
+
+`Detail::HashBytes(ptr, length, seed)` is the single FNV-1a implementation behind all of the
+byte-wise hashers.
+
+**Why the glm specializations exist.** `Vec3` is three floats — trivially copyable, no padding
+— so the byte-wise fallback compiles and is wrong in exactly one way: it hashes the float
+*bits* while `operator==` compares the float *values*, and the two disagree on `-0.0f`. A cache
+keyed by a vector could therefore hold two entries under keys that compare equal.
+`PhysicsWorld` keys its scaled-shape cache by `GetWorldScale()`, which is scene data.
+
+What hashing still cannot fix: a **NaN** component makes `operator==` false against itself, so
+a NaN key never matches on lookup however it is hashed, and `operator[]` would insert a fresh
+entry every call. Keep NaN out of keys. (The bounding-box path is safe — `CreateBoundingBox`
+starts at zero and only widens, and the extents are clamped to `[0.001, FLT_MAX]`.)
+
+> `String/String.h`, `Path/Path.h` and `PluTypes.h` include their own hash specializations, so
+> any translation unit that can name the type can also key a `HashMap` with it — not only the
+> ones that go through the `PluSTL_FWD.h` precompiled header. Follow that rule for new key
+> types: the hasher travels with the type.
 
 ---
 
@@ -767,13 +1016,21 @@ Statyczne helpery na `BasicString` (`String` / `StringW`). Dostępne jako `Strin
 | `Plu::Format(const char*/String fmt, args...)` | Wolna funkcja, zwraca `String`. |
 | `Plu::FormatW(const wchar_t*/StringW fmt, args...)` | Wolna funkcja, zwraca `StringW`. |
 
+**Strip** (Python-style; `chars == nullptr` strips whitespace — space, `\t`, `\n`, `\r`; otherwise strips any character found in `chars`):
+
+| Function | Description |
+|---|---|
+| `str.Strip(const CharT* chars = nullptr)` | Returns a copy with leading and trailing `chars` removed. |
+| `str.StripLeft(chars)` / `str.StripRight(chars)` | Returns a copy stripped on one side only. |
+| `str.StripInPlace(chars)` / `StripLeftInPlace(chars)` / `StripRightInPlace(chars)` | Same, modifying the string in place. |
+
 ---
 
 ## Concurrent containers (PluSTL) — `PluSTL/Concurrent/`
 
 Purpose-built containers for data touched by more than one thread. Header-only, `namespace Plu`.
 **Not** pulled in by `PluSTL_FWD.h` (it is the PCH for the whole project) — include the one header
-you need, e.g. `#include "Concurrent/ConcurrentHashMap.h"`, or `Concurrent/Concurrent.h` for all of
+you need, e.g. `#include "PluSTL/Concurrent/ConcurrentHashMap.h"`, or `PluSTL/Concurrent/Concurrent.h` for all of
 them (it also carries the canonical write-up of the rules below).
 
 **The API is the single-threaded one.** Each container mirrors its PluSTL counterpart name for
@@ -781,7 +1038,7 @@ name, so switching a member over is a type change and not a rewrite:
 
 | Concurrent | Mirrors |
 |---|---|
-| `ConcurrentHashMap` | `GameHashMap` |
+| `ConcurrentHashMap` | `HashMap` |
 | `ConcurrentHashSet` | `HashSet` |
 | `ConcurrentArray` | `DynamicArray` |
 | `ConcurrentQueue` | `Queue` (and is one, behind a mutex) |
@@ -799,7 +1056,7 @@ Three rules apply to every type here:
    (`Find`/`Get`/`Snapshot`), in-place mutation goes through a visitor that runs while the relevant
    lock is held. Under a lock, a raw handle is a dangling-reference generator the moment another
    thread rehashes or removes the node — which is exactly why `DynamicArray::Iterator` (`= T*`),
-   `GameHashMap::Find` (`= TValue*`) and `HashSet::Find` cannot simply be wrapped in a lock. The
+   `HashMap::Find` (`= TValue*`) and `HashSet::Find` cannot simply be wrapped in a lock. The
    substitutions: `Find(key, out)` / `Get(index, out)` for reads, `Visit`/`VisitOrInsert`/`Write`
    for mutation, `ForEach`/`Drain`/`Snapshot` for iteration, an **index** rather than a `T&` from
    `ConcurrentArray::PushBack`.
@@ -812,7 +1069,7 @@ Three rules apply to every type here:
    "is there anything to do at all" fast-outs, never control flow that assumes the answer holds.
 
 All containers are non-copyable and non-movable: each is meant to be owned by one subsystem for its
-whole lifetime. Covered by `Tests/PluSTLTests` (unit + stress, clean under TSan).
+whole lifetime. Covered by `PluSTL/tests` (unit + stress, clean under TSan).
 
 ### `LockPrimitives.h`
 
@@ -834,7 +1091,7 @@ Not for direct use; listed so the duplication is easy to keep out of new contain
 | `Detail::StripedHashTable<TKey, TTraits, THasher>` | The whole striped chaining table: stripes, buckets, growth/rehash, node allocation, `Size`/`IsEmpty`/`BucketCount`/`LoadFactor`/`Contains`/`Remove`/`Clear`/`Reserve`/`Rehash`, plus the `InsertNode` / `VisitEntry` / `VisitOrInsertNode` / `ForEachEntry` / `DrainEntries` hooks. `ConcurrentHashMap` and `ConcurrentHashSet` are thin wrappers over it — they differ only in what a node stores (`Detail::KeyValueEntryTraits` vs `Detail::IdentityEntryTraits`) and in the names they publish. |
 | `Detail::SharedGuarded<T>` | One value behind a `shared_mutex`: `Read` / `Write` / `Get` / `Assign` / `Take`. `Read`/`Write` return whatever the callback returns **by value** (the deduced `auto` strips the reference on purpose — rule 1). `ConcurrentString` is this plus one line per `String` method. |
 
-### `ConcurrentHashMap<TKey, TValue, THasher = DefaultHash<TKey>>` — `GameHashMap`, striped
+### `ConcurrentHashMap<TKey, TValue, THasher = DefaultHash<TKey>>` — `HashMap`, striped
 
 Striped-lock chaining map (64 stripes; bucket count is a power of two, so the index is a `&`, not a
 `%`). A key's stripe is the low bits of its hash and therefore **independent** of the bucket count —
@@ -843,10 +1100,10 @@ stripe, in index order. Storage and striping come from `Detail::StripedHashTable
 
 | Function | Description |
 |---|---|
-| `bool Insert(const TKey&, const TValue&)` / `(TValue&&)` / `(TKey&&, TValue&&)` | `false` when the key already existed — `GameHashMap::Insert`. |
-| `template bool Emplace(const TKey&, Args&&...)` | Constructs the value in place; does nothing when the key exists — `GameHashMap::Emplace`. |
+| `bool Insert(const TKey&, const TValue&)` / `(TValue&&)` / `(TKey&&, TValue&&)` | `false` when the key already existed — `HashMap::Insert`. |
+| `template bool Emplace(const TKey&, Args&&...)` | Constructs the value in place; does nothing when the key exists — `HashMap::Emplace`. |
 | `bool InsertOrAssign(const TKey&, const TValue&)` / `(TValue&&)` | `true` = a new entry was created, `false` = an existing one was overwritten. |
-| `bool Find(const TKey&, TValue& out) const` | Copies the value out; `false` on a miss (`out` untouched). `GameHashMap::Find` minus the `TValue*` it cannot hand out. |
+| `bool Find(const TKey&, TValue& out) const` | Copies the value out; `false` on a miss (`out` untouched). `HashMap::Find` minus the `TValue*` it cannot hand out. |
 | `TValue FindOr(const TKey&, const TValue& fallback) const` | The read half of `operator[]`, by value. Never inserts. |
 | `bool Contains(const TKey&) const` | — |
 | `bool Remove(const TKey&)` | `false` when the key was absent. The node is destroyed outside the spinlock. |
@@ -854,9 +1111,9 @@ stripe, in index order. Storage and striping come from `Detail::StripedHashTable
 | `template VisitOrInsert(const TKey&, Fn, const TValue& defaultValue)` | Inserts `defaultValue` when absent, then **always** calls `fn(TValue&)`. The accumulate primitive ("bump this key's counter, creating it on the first sample") and the write half of `operator[]`. |
 | `template ForEach(Fn) const` | `fn(const TKey&, const TValue&)`, stripe by stripe. The map is **not** frozen for the whole walk. |
 | `template Drain(Fn)` | `fn(const TKey&, TValue&&)` for everything, then empties the map — all in **one** critical section. |
-| `GameHashMap<TKey,TValue,THasher> Snapshot() const` | A plain copy for readers that want a frozen view (UI panel, CSV export) or the iterators this type cannot have. |
+| `HashMap<TKey,TValue,THasher> Snapshot() const` | A plain copy for readers that want a frozen view (UI panel, CSV export) or the iterators this type cannot have. |
 | `SizeType Size()` / `bool IsEmpty()` / `SizeType BucketCount()` / `float LoadFactor()` | Atomic counters. |
-| `void Reserve(SizeType)` / `void Rehash(SizeType)` | As on `GameHashMap`; `Rehash` rounds up to a power of two and never goes below `kMinBucketCount` nor below what the load factor needs. Both take every stripe. |
+| `void Reserve(SizeType)` / `void Rehash(SizeType)` | As on `HashMap`; `Rehash` rounds up to a power of two and never goes below `kMinBucketCount` nor below what the load factor needs. Both take every stripe. |
 | `void Clear()` | Takes every stripe. |
 
 ### `ConcurrentHashSet<T, THasher = DefaultHash<T>>` — `HashSet`, striped
@@ -940,9 +1197,9 @@ a value. For anything else, pass a plain `String` by value.
 | `SizeType Length()` / `SizeType Capacity()` / `bool IsEmpty()` | — |
 | `SizeType Find(char/const char*, startPos = 0)` / `SizeType RFind(char, startPos = Npos)` | `Npos` on a miss, like `String`. |
 | `bool Contains(const char*/const String&)` / `StartsWith(...)` / `EndsWith(...)` / `Equals(const String&/const char*)` / `int Compare(const String&)` / `operator==` / `operator!=` | Readers return values, never references. |
-| `String Substring(start, length = Npos)` / `DynamicArray<String> Split(char/const char*)` / `String ToUpper()` / `String ToLower()` | Return fresh `String`s; the guarded value is untouched. |
+| `String Substring(start, length = Npos)` / `DynamicArray<String> Split(char/const char*)` / `String ToUpper()` / `String ToLower()` / `String Strip/StripLeft/StripRight(const char* chars = nullptr)` | Return fresh `String`s; the guarded value is untouched. |
 | `void Assign(const String&/String&&/const char*)` / `operator=` / `Append(const String&/const char*)` / `operator+=` / `Clear()` | — |
-| `void Insert(SizeType pos, const char*/const String&)` / `void Remove(SizeType start, SizeType length = Npos)` / `void ReplaceAt(SizeType, char)` / `ToUpperInPlace()` / `ToLowerInPlace()` | In-place edits, one critical section each. |
+| `void Insert(SizeType pos, const char*/const String&)` / `void Remove(SizeType start, SizeType length = Npos)` / `void ReplaceAt(SizeType, char)` / `ToUpperInPlace()` / `ToLowerInPlace()` / `StripInPlace/StripLeftInPlace/StripRightInPlace(const char* chars = nullptr)` | In-place edits, one critical section each. |
 | `void Replace(const char* oldStr, const char* newStr)` | Forwards to `String::Replace` — **first occurrence only**, not all of them. |
 | `void Reserve(SizeType)` | Grows only, exactly like `String::Reserve`. |
 | `String Take()` | Empties the buffer and returns what it held, in one critical section — the "flush the accumulated log" primitive. |
@@ -951,7 +1208,9 @@ a value. For anything else, pass a plain `String` by value.
 
 ---
 
-## Logowanie — `PluEngine/Log.h`
+## Logging — `PluBase/Log.h`
+
+Logging, asserts, the integer/math aliases, `PluUUID` and thread affinity live in **PluBase** (`PluBase/`, its own shared library linked by `PluCore`), so other projects can use them without the engine. The API is unchanged; only the include paths moved to `PluBase/…`.
 
 Makra spdlog. Wersje `PLU_CORE_*` logują na logger silnika, `PLU_*` na logger klienta/gry.
 Format z placeholderami `{0}`, `{1}`, …
@@ -964,7 +1223,7 @@ Format z placeholderami `{0}`, `{1}`, …
 | `PLU_ERROR(...)` / `PLU_CORE_ERROR(...)` | error |
 | `PLU_CRITICAL(...)` / `PLU_CORE_CRITICAL(...)` | critical |
 
-`Plu::Log::Init()` inicjalizuje loggery (wołane raz przy starcie).
+`Plu::Log::Init(coreLoggerName = "ENGINE", clientLoggerName = "APP")` creates both loggers; call it once at startup (the engine does, in `Application`). The names are what shows up in every log line.
 
 ## Profilowanie / timery — `PluEngine/Timer.h` + `PluEngine/Profiler.h`
 
@@ -986,7 +1245,7 @@ Pomiary czasu trafiają do globalnego rejestru `Profiler` (thread-safe singleton
 | `Profiler::GetInstance()` | Singleton rejestru timingów. |
 | `Record(name, durationMs)` | Dopisuje pomiar do historii wpisu `(name, bieżący wątek)` (zwykle wołane przez `Timer`). |
 | `RecordForThread(name, threadName, durationMs)` | Jak wyżej, ale z jawną nazwą wątku — dla pomiarów zbieranych gdzie indziej niż powstały (np. GPU timery). |
-| `Snapshot()` | Kopia rejestru (`GameHashMap<String, ProfilerEntry>`, klucz = `MakeKey`) do bezpiecznego odczytu (np. panel). |
+| `Snapshot()` | Kopia rejestru (`HashMap<String, ProfilerEntry>`, klucz = `MakeKey`) do bezpiecznego odczytu (np. panel). |
 | `SnapshotThreadNames()` | Posortowana `DynamicArray<String>` wątków, z których są pomiary — źródło listy dla filtra w panelu. |
 | `Profiler::MakeKey(name, threadName)` | Klucz wpisu: `"wątek\|nazwa"`. |
 | `Clear()` | Czyści wszystkie timingi. |
@@ -1014,7 +1273,7 @@ Globalny rejestr `RenderUsageStats` (plain singleton, jak `Profiler`) zliczając
 | `RenderUsageStats::GetInstance()` | Singleton rejestru użycia assetów. |
 | `BeginFrame()` | Nowa klatka: `CurrentFrameUses` → `LastFrameUses`, zeruje akumulator. Woła się raz/klatkę. |
 | `RecordMesh(uuid)` / `RecordTexture(uuid)` | Zlicza użycie (inkrementuje bieżącą klatkę + sumę). `uuid==0` ignorowane. |
-| `GetMeshUsage()` / `GetTextureUsage()` | Const-ref do rejestru (`GameHashMap<UInt64, AssetUsageEntry>`) — odczyt na tym samym wątku co zapis (MAIN). |
+| `GetMeshUsage()` / `GetTextureUsage()` | Const-ref do rejestru (`HashMap<UInt64, AssetUsageEntry>`) — odczyt na tym samym wątku co zapis (MAIN). |
 | `Clear()` | Zeruje wszystkie liczniki. |
 
 ### FPS per-wątek — `PluEngine/PluUtils.h` (`namespace Plu`)
@@ -1024,9 +1283,37 @@ Wątek Main (pętla gry/UI) i wątek Render chodzą niezależnie (rozdzielone pr
 | Funkcja | Opis |
 |---|---|
 | `float GetMainThreadFPS()` | FPS wątku Main (z ostatniej delty pętli głównej). `PLU_FUNCTION` (Python). |
-| `float GetRenderThreadFPS()` | FPS wątku Render (z ostatniej delty render loop). `PLU_FUNCTION` (Python). |
+| `float GetRenderThreadFPS()` | Render thread FPS, measured **between presents** (not loop iterations). Gaps over 0.1 s are an idle stretch under power saving and are not published, so the value holds the last real frame rate. `PLU_FUNCTION` (Python). |
 | `void SetMainThreadDeltaTime(float s)` | Publikuje deltę Main (woła silnik — nie ruszaj). |
 | `void SetRenderThreadDeltaTime(float s)` | Publikuje deltę Render (woła silnik — nie ruszaj). |
+
+### Power saving / frames on demand — `PluEngine/FrameDemand.h` (`namespace Plu`)
+
+With power saving on (editor setting `Power Saving`, default on; never in PIE, never in Runtime) the main
+loop sleeps on OS events and the render thread presents only what is new. Frames are produced on demand:
+every OS event asks for them automatically. **Anything that animates without input must ask itself**, or
+it freezes until the mouse moves. All functions are thread-safe.
+
+| Function | Use |
+|---|---|
+| `RequestRedraw()` | Something changed: frames for the next `kRedrawSettleSeconds` (1 s). Called for every OS event except a bare pointer move; call it when background work finishes (asset loaded, file watcher fired). |
+| `RequestProbe()` | Something happened that may not change the picture: **probe frames** for the next second. Called for mouse motion. The UI is built, but published only if its draw data differs from what is on screen, and the scene is not re-rendered. |
+| `IsProbeFrame()` / `SetProbeFrame(bool)` | Whether the frame being built is a probe frame (main thread; set by `Application::Run`). Check it before publishing anything to the render thread from a tick. |
+| `RequestContinuousRedraw()` | Full frame rate for as long as it keeps being called — covers the next frame only. Call each frame you draw while animating (playing preview, running import). |
+| `RequestRedrawAfter(float seconds)` | One frame no later than `seconds` from now. Re-request each frame for a slow periodic refresh; stats panels use `kStatsRefreshSeconds` (0.5 s = 2 Hz). |
+| `SetPowerSavingEnabled(bool)` / `IsPowerSavingEnabled()` | Global switch. Off by default; the editor sets it from `EditorSettings::PowerSaving`. |
+| `ConsumeFrameDemand()` | `Application::Run` only. |
+| `SetFrameDemandWakeCallback(fn)` | `Application` only — how an off-thread request breaks the event wait. |
+
+**Probe frames and the scene.** A pointer move with no button held never re-renders the scene — only a
+changed ImGui frame is presented (over the unchanged scene image). Scene state that reacts to plain hover
+therefore needs `RequestRedraw()` from whoever changes it. `RenderSnapshotBuilder::DiscardFrame()` runs in
+place of `BuildSnapshotAndPublish` on such frames and drops the per-frame debug geometry the tick queued.
+
+Related hooks: `Application::OnIdleTick(dt)` (runs instead of `OnTick` while idle, ~4 Hz — cheap
+housekeeping only), `Application::WantsContinuousFrames()` (editor: `IsInPIE()`),
+`RenderingManager::NotifyFrameAvailable()` (wakes a sleeping render thread; call after publishing a
+`RenderSnapshot`). Thread-side details are in `MULTITHREADING.md`, section "Power saving".
 
 ### Liczniki renderu (draw calls / instancje / culling) — `PluEngine/PluUtils.h` (`namespace Plu`)
 
@@ -1043,17 +1330,34 @@ Ten sam wzorzec co FPS per-wątek: `Renderer::RenderSnapshot` (render thread) li
 | `void SetSpotLightStats(const UInt32* casterCounts, UInt32 slotCount, UInt32 visibleLights)` / `UInt32 GetStatVisibleSpotLights()` / `UInt32 GetStatSpotShadowSlots()` / `UInt32 GetStatSpotShadowCasters(UInt32 slot)` | Ten sam mirror dla świateł stożkowych: ile spotów przeszło culling kamery na MAIN, ile z nich dostało slot w atlasie cieni i ilu casterów narysował każdy slot. Światło widoczne **bez** slotu jest normalne — świeci, tylko nie zasłania. |
 | `void SetRenderFrameStats(UInt32 drawCalls, UInt32 instancesDrawn, UInt32 culledCount)` | Publikuje liczniki klatki (woła silnik — nie ruszaj). |
 
-## Debug / asercje — `PluEngine/Core.h`
+### Particle debug stats — `PluEngine/Render/RenderParticleStats.h` (`namespace Plu`)
+
+Render-thread particle state for the **Debug Particles** panel (View → Debug). Particles are simulated on the render thread and main never touches a `ParticleSpawner`, so the state is copied out: variable-size, hence a mutex instead of atomics. Gathering walks every particle, so it runs only on request — renew the request every frame you want data.
+
+| Symbol | Description |
+|---|---|
+| `void RequestParticleDebugStats()` | Any thread. Asks the render thread to gather on its next rendered snapshot. Call every frame while looking. |
+| `bool ConsumeParticleDebugStatsRequest()` | Render thread. True (and clears the request) if somebody asked. Called by `Renderer::RenderSnapshot` after the particle tick, which publishes at most every 0.1 s (`kParticleDebugStatsInterval`) — gathering is O(alive particles), ~10 ms per million in Debug. |
+| `void PublishParticleDebugStats(ParticleDebugStats&&)` / `ParticleDebugStats GetParticleDebugStats()` | Publish (render, stamps `PublishCount`) / copy of the last published stats (any thread). `PublishCount == 0` = nothing yet; compare `SceneHandle` with the world you inspect — it is whichever world the render thread last simulated. Spawners held for other worlds are only counted (`OtherWorldSpawners`, `OtherWorldAliveParticles`). |
+| `ParticleDebugStats::SystemSpawners` (`ParticleSystemSpawnerDebugStats`) | Asset-driven spawners: render-side lifecycle (state, activation / clear / completed versions, synced request counter), `ParameterLayout` + the value block the emitters actually ran with (`UsingDefaults` when it did not match the program), and per emitter (`ParticleEmitterDebugStats`) alive / cap, emission clock, renderers, storage mode, trail samples, SoA columns, CPU and GPU bytes, bounds, and `Ops` (last-tick per-op ms). |
+| `void RequestParticleOpTimings()` / `bool ConsumeParticleOpTimingsRequest()` | Any thread / render thread. Renew every frame to time every op of every asset emitter for one tick (fills `ParticleEmitterDebugStats::Ops`, records `Particles/<emitter>/<stage> <i> <Op>` to the Profiler). Off by default — a clock read per op per block. |
+| `ParticleSpawnerDebugStats ParticleSpawner::GatherDebugStats() const` | (`PluEngine/Effects/Particles/ParticleSpawner.h`) Render thread. Alive/pool/free counts, synced request counter, loop phase, transform, and over alive particles: AABB, avg/max speed, lifetime-left range. O(alive particles). |
+| `const float* ParticleSpawner::GetPositions() const` / `UInt32 GetAliveCount() const` | Render thread. Alive particles after the last tick as interleaved xyz (`GetAliveCount() * 3` floats) — the vertex layout of `ParticlePointBuffer`, uploaded without a copy. The spawner keeps particles as dense SoA with swap-remove, so the order is **not stable** and the pointer dies with the next sync/tick. |
+| `struct ParticlePointBuffer` | (`PluEngine/Render/ParticlePointBuffer.h`) Render thread. One spawner's VAO + VBO of positions (attribute 0, vec3) drawn as `GL_POINTS`: `Upload(positions, count)` (GL objects created lazily, capacity grows 2x, storage orphaned each upload), `Draw()`, `Destroy()`. A copyable **handle**, not move-only RAII — `HashMap` copies values on rehash — so call `Destroy` exactly once. Drawn by `Renderer::RenderParticles` with `EngineAssets::ParticlePointProgram` (`uViewProj`, `uColor`); color and point size per spawner come from `ParticleClass::Color` / `PointSize` (clamped to >= 1 px). |
+| `const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& SceneWorld::GetParticleSpawnerComponents() const` | Main thread. Live spawner components by component UUID — the same UUID the render-side stats use. |
+
+## Debug / asserts — `PluBase/Assert.h` (pulled in by `PluEngine/Core.h`)
 
 | Makro | Opis |
 |---|---|
 | `PLU_ASSERT(x, msg...)` | Asercja na loggerze klienta (tylko `PLU_DEBUG`). |
 | `PLU_CORE_ASSERT(x, msg...)` | Asercja na loggerze silnika (tylko `PLU_DEBUG`). |
 | `PLU_DEBUGBREAK()` | Przerwanie debuggera (`__debugbreak` / `SIGTRAP`); no-op poza debugiem. |
+| `PLU_ENABLE_ASSERTS` | Defined by `PluBase/Base.h` when `PLU_DEBUG` is (the PluBase target sets `PLU_DEBUG` for Debug); define it yourself to keep asserts in other configurations. |
 
 ---
 
-## Thread affinity — `PluEngine/Threading/ThreadAffinity.h` (`namespace Plu`)
+## Thread affinity — `PluBase/ThreadAffinity.h` (`namespace Plu`)
 
 Identyfikacja wątku głównego dla egzekwowania thread-confinementu (multithreading: core mutowany tylko na main, render czyta snapshot) + nazwy wątków dla diagnostyki.
 
@@ -1079,82 +1383,137 @@ Każdy obiekt jest **przypięty do wątku, który go stworzył** (`ControlBlock:
 
 **Uwaga — to lifetime, nie synchronizacja.** `TUsePointer` pozwala bezpiecznie *trzymać i deref'ować* uchwyt z innego wątku, ale **nie chroni pól obiektu przed wyścigiem danych**. Współdzielone dane między wątkami → przez snapshot (`RenderSnapshot`/`TripleBuffer`), nie przez deref use-ptr. Warstwa wskaźników pilnuje tylko refcountu/lifetime i łapie przypadkowe przekroczenie wątku owningiem.
 
+**Externally owned objects / custom control blocks.** `TOwningPointer<T>::AdoptControlBlock(ControlBlock<T>* block)` wraps a freshly constructed control block (strong = weak = 1, not yet shared) — the way to attach extra state to an object's refcount. Setting `ControlBlockBase::externallyOwned` makes the last owner only drop its reference instead of deleting the object. The engine uses both for Python-created objects: `PyControlBlock` in `Scripting/PythonPointers.h` holds the `pybind11::object` keeper, and `OwnerFromPython` adopts it. `EngineObjectConc<T>` (T is or derives from `EngineObject`) is an engine concept and lives in `Core/Objects/EngineObject.h`, not in PluSTL.
+
 Konsekwencje praktyczne: zasoby GL (`FrameBuffer`/`Texture`) tworzone na render threadzie są render-owned (owningThread=render) — owning działa na renderze, main co najwyżej obserwuje przez `TUsePointer`. `EngineObjectManager` jest re-entrant-safe: `CreateObject` konstruuje obiekt PRZED `unique_lock`, `DestroyObject` odczepia slot pod lockiem i niszczy obiekt PO zwolnieniu locka (`shared_mutex` jest nierekurencyjny).
 
 ---
 
 ## Physics — `PluEngine/Physics/` (`namespace Plu`)
 
-**BoundingBox** (`Core/BoundingBox.h`) — `PLU_STRUCT`, pola `Vec2 X/Y/Z` (min/max na każdej osi):
+> Rewritten on the `physics-rework` branch (September 2026). The previous API — `PhysicsWorld::Raycast`,
+> `StaticMeshCollisionBuilder`, `PhysicsCompoundShape`, per-sub-shape `PluPhysicsMaterial`,
+> `Physics{Box,Sphere,Capsule}Component`, `SceneWorld::GetPhysicsWorld()`, `GameObject::GetPhysicsBody()` — is gone.
+> The legacy collision config still exists in `Core/CollisionChannels.h` (`CollisionProfileRef`, `ActiveCollisionConfig()`,
+> persisted with the project), but the new physics does not read it — it uses `PhysicsChannelsManager` below.
 
-| Funkcja | Opis |
+**Physics channels** (`Gameplay/Physics/PhysicsChannels.h`) — `PhysicsChannelsManager::GetInstance()` owns the project's channels (`PhysicsCollisionChannel`: `String Name`, `PhysicsCollisionResponse DefaultResponse` = `Ignore` / `Overlap` / `Block`). A pair of channels uses the weaker of the two responses. A channel's id is its slot index and **never shifts**: bodies bake it into their Jolt `ObjectLayer` (`id << 1 | moving`). Removing a channel frees its slot onto a free list, and the next added channel reuses the most recently freed id. Ids are **runtime-only** — nothing persists them; saved data refers to channels by name. `"Default"` always lives at id 0 and cannot be removed. Edited in Project Settings → Physics Channels.
+
+| Function | Description |
 |---|---|
-| `String BoundingBox::ToString()` | Tekstowa reprezentacja boxa. |
-| `Vec3 BoundingBox::GetCenter() const` | Środek boxa. |
-| `Vec3 BoundingBox::GetExtent() const` | Połowa rozmiaru (extent). |
-| `Vec3 BoundingBox::FitCamera(Vec3 origin, Vec3 rot, Vec2 aspect, float FOV) const` | Pozycja kamery mieszcząca cały box w kadrze (do "frame selected"). |
-| `BoundingBox BoundingBox::Add(const BoundingBox& other) const` | Suma (union) dwóch boxów. |
-| `BoundingBox BoundingBox::Multiply(Vec3 multiplier) const` | Skalowanie boxa. |
-| `BoundingBox CreateBoundingBoxForStaticMesh(StaticMesh*)` | Box obejmujący static mesh. |
-| `BoundingBox CreateBoundingBox(DynamicArray<Vec3> points)` | Box obejmujący zbiór punktów. |
+| `void AddChannel(name, defaultResponse = Block)` / `void RemoveChannel(name)` | Add (empty or duplicate names are rejected with an error) / remove by name. |
+| `PhysicsCollisionChannel* GetChannel(name)` / `GetChannelById(UInt16 id) const` | Lookup; null when missing, out of range or removed. |
+| `UInt16 GetChannelId(channel)` | Id of a live channel, `kInvalidChannelId` otherwise. |
+| `DynamicArray<String> GetAllChannels()` | Names of live channels in id order (cached until the set changes). |
+| `bool CanBeCompletelyIgnored(layerA, layerB)` / `bool CanBlock(layerA, layerB)` | Take Jolt `ObjectLayer`s. `CanBlock` resolves a layer whose channel was removed to `Default`. |
+| `nlohmann::json SaveToJson() const` / `bool LoadFromJson(json)` | `{ "Version": 1, "Channels": [ { "Name", "DefaultResponse" } ] }`. Loading replaces all channels (ids are assigned anew in file order); a `"Default"` entry only sets Default's response, duplicate names are skipped with a warning. |
+| `bool SaveToJsonFile(PathW)` / `bool LoadFromJsonFile(PathW)` | Editor storage: `<project>/Config/PhysicsChannels.json` (`EditorProjectManager::GetPhysicsChannelsConfigPath()` / `SavePhysicsChannels()`). Loaded in `OpenProject`, saved on every edit in the panel and on shutdown. |
+| `bool SaveToBinaryFile(PathW)` / `bool LoadFromBinaryFile(PathW)` | Shipped build: `BuildProjectForShipment` writes `ProjectDist/PhysicsChannels.bin`, `RuntimeApp::OnInit` reads it from next to the executable. Layout: `UInt32` magic `"PLCH"`, `UInt32` version (2), `UInt32` count, then per channel `UInt8` response, length-prefixed name. |
 
-**Raycast** (`Physics/PhysicsWorld.h`, metoda `PhysicsWorld`, `PLU_FUNCTION` — dostępna z Pythona):
+Every `Load*` resets to just `"Default"` and returns `false` when the file is missing or invalid. `TypeSerializer<PhysicsCollisionChannel>` is a reference by name: `Serialize` writes just the name string, `Deserialize` points at the manager's channel of that name and falls back to `"Default"` (with an error) when the name does not exist, `EditorControl` is a dropdown of the project's channels. It is written for `TUsePointer<PhysicsCollisionChannel>` properties: `TypeSerializer<TUsePointer<T>>` passes the raw object to `Serialize` but the `TUsePointer` itself to `Deserialize`/`EditorControl`.
 
-| Funkcja | Opis |
+**BoundingBox** (`Core/BoundingBox.h`) — `PLU_STRUCT`, fields `Vec2 X/Y/Z` (min/max per axis):
+
+| Function | Description |
 |---|---|
-| `RaycastHit PhysicsWorld::Raycast(const Vec3& origin, const Vec3& dir, float maxDist = 1000.0f, RaycastDebugSettings debug = {}, const DynamicArray<GameObject*>& ignoredObjects = {})` | Promień w świecie fizyki; zwraca `RaycastHit`. |
+| `String BoundingBox::ToString()` | Text form of the box. |
+| `Vec3 BoundingBox::GetCenter() const` | Box centre. |
+| `Vec3 BoundingBox::GetExtent() const` | Half size (extent). |
+| `Vec3 BoundingBox::FitCamera(Vec3 origin, Vec3 rot, Vec2 aspect, float FOV) const` | Camera position that fits the whole box in frame ("frame selected"). |
+| `BoundingBox BoundingBox::Add(const BoundingBox& other) const` | Union of two boxes. |
+| `BoundingBox BoundingBox::Multiply(Vec3 multiplier) const` | Scales the box. |
+| `BoundingBox CreateBoundingBoxForStaticMesh(StaticMesh*)` | Box around a static mesh. |
+| `BoundingBox CreateBoundingBox(DynamicArray<Vec3> points)` | Box around a point set. |
 
-`struct RaycastHit { bool Hit; Vec3 HitLocation; float Fraction; GameObject* HitObject; JPH::BodyID PhysicsBodyHit; }`
-`struct RaycastDebugSettings { bool DrawDebug; float DrawTime; }` (`DrawTime` 0 = jedna klatka, >0 = sekundy).
-`ignoredObjects` — ciała tych obiektów są pomijane (Jolt `IgnoreMultipleBodiesFilter`). Konieczne, gdy promień startuje wewnątrz własnego collidera: Jolt traktuje convex jako solid i trafiłby w siebie na `Fraction == 0` (tak działa `CharacterPuppet::CheckGrounded`).
+**Physics world per scene** (`Physics/JoltIntializer.h`, `namespace Plu::JoltPhysics`) — every `SceneWorld` (including the editor overlay and PIE worlds) gets its own `PhysicsWorld`. The physics module creates it on the `SceneManager` event `"NewWorldBeforeLoad"` and destroys it on `"UnloadWorld"`; `SceneWorld` itself knows nothing about physics.
 
-**Spawn puppeta** (`GameCore/Puppet.h`, `PLU_FUNCTION(PyOverride)`):
-
-| Funkcja | Opis |
+| Function | Description |
 |---|---|
-| `virtual Vec3 Puppet::GetSpawnOffset() const` | Offset dodawany do lokacji `PlayerStart` przy spawnie. Domyślnie 0; `CharacterPuppet` zwraca `(0, CapsuleHalfHeight + CapsuleRadius, 0)`, więc PlayerStart oznacza podłogę, a nie środek kapsuły. |
+| `TUsePointer<PhysicsWorld> GetPhysicsWorldBySceneHandle(EngineObjectHandle sceneHandle)` | The physics world of a scene, or null. The only way in from outside the physics module — e.g. `GetPhysicsWorldBySceneHandle(sceneManager->GetCurrentWorld()->GetObjectHandle())`. |
+| `TOwningPointer<JPH::JobSystem> GetJoltThreadPool()` | Shared Jolt job system (hardware threads − 2, at least 2). |
 
-**Kolizje static mesh** (`Physics/StaticMeshCollisionBuilder.h`):
+**`PhysicsWorld`** (`Physics/PhysicsWorld.h`, `EngineObject`):
 
-| Funkcja | Opis |
+| Function / field | Description |
 |---|---|
-| `DynamicArray<MeshCollisionShapeEntry> BuildCollisionShapesForMesh(StaticMesh* mesh, Vec3 scale = Vec3(1.0f))` | Buduje kształty kolizji Jolt z geometrii mesha. **Drogie** — ConvexHull po wszystkich wierzchołkach albo `MeshShape` (budowa BVH) po wszystkich trójkątach. |
-| `const DynamicArray<MeshCollisionShapeEntry>* GetOrBuildUnscaledCollisionShapesForMesh(MeshCollisionShapeCache& cache, StaticMesh* mesh)` | Nieskalowane kształty mesha, budowane raz i zapamiętane. Cache jest kluczowany **wyłącznie po meshu** — skale są per-instancja i w praktyce prawie zawsze różne, więc klucz ze skalą nigdy by nie trafiał. Zwraca **wskaźnik do wnętrza cache'a**: unieważnia go kolejna wstawka, więc konsumuj od razu i nie trzymaj między klatkami. |
-| `DynamicArray<MeshCollisionShapeEntry> GetOrBuildCollisionShapesForMesh(MeshCollisionShapeCache& cache, StaticMesh* mesh, Vec3 scale = Vec3(1.0f))` | Jak wyżej + skala nałożona przez `JPH::ScaledShape` (zamiast zapiekania w geometrię). Używaj wszędzie, gdzie budujesz wiele ciał pod rząd. Kształty, które nie potrafią wyrazić danej skali (Jolt dopuszcza tylko jednolitą na sferze), spadają na budowę wprost — geometria zawsze poprawna, tracony jest tylko cache. |
-| `PhysicsWorld::InvalidateMeshCollisionCache(StaticMesh* mesh = nullptr)` | Zrzuca zbudowane kształty dla mesha (`nullptr` = wszystkie). **Wołaj po każdej zmianie definicji kolizji assetu**, inaczej ciała dalej powstają ze starych kształtów. |
+| `void OnUpdate(float deltaTime, bool updateBodies)` | Rebuilds bodies queued since the last call (created deferred and inserted in one `AddBodiesPrepare`/`AddBodiesFinalize` batch per activation mode; a batch of 256+ bodies also runs `JPH::PhysicsSystem::OptimizeBroadPhase`), steps Jolt (only when `updateBodies`), writes back the transforms of the bodies that actually moved and packs debug geometry. The write-back is deliberately narrow: nothing at all when `updateBodies` is false (nothing was simulated), and otherwise only for bodies Jolt reports as active, plus one last pass for a body that has just fallen asleep (`PhysicsBody::WasActiveOnLastSync`). Writing a transform marks the object and its whole component subtree for world-matrix regeneration, so syncing bodies that cannot have moved made every static prop rebuild its matrices every frame — that alone was 10 ms of `RenderSnapshotBuilder::BatchStaticMeshes` on a 2000-component scene. Driven by the scene's `"PhysicsTick"` event, which `SceneWorld::TickScene` dispatches — so in the editor it only simulates in PIE. Outside PIE the editor calls `OnUpdate(dt, false)` itself (`SceneViewportPanel`, `StaticMeshViewportPanel`) to get rebuilds and debug drawing without simulation. |
+| `void RebuildObjectCollision(UInt64 objectUuid, bool deferAdd = false)` | Rebuilds the object's body right away. Normally not needed: component add/remove, collider shape changes and component transform changes queue a rebuild through events. Removes the body when the object is gone or no longer qualifies. `deferAdd` creates the body without inserting it; it goes in at the next batch flush inside `OnUpdate`. |
+| `void RebuildObjectsThatUseMesh(StaticMesh*)` | Editor-only. Rebuilds every body built from this mesh — call after changing the mesh's collision type. |
+| `RaycastHitInfo ShootRaycast(Vec3 start, Vec3 end, const DynamicArray<UInt64>& ignoredObjectUuids = {})` / `ShootRaycast(Vec3 start, Vec3 direction, float length, ignoredObjectUuids = {})` | Closest hit along the segment (`direction` is not normalised here), skipping the bodies of the listed objects (`JPH::IgnoreMultipleBodiesFilter`). No layer/channel filtering yet. Gameplay code goes through `SceneWorld::ShootRaycast` instead. |
+| `unsigned int GetNumOfBodies() const` | Body count in the Jolt system. Capped at `kMaxBodies` (65536) per world, statics included; past it body creation fails with a logged error. |
+| `PhysicsDebugRenderMode DebugRenderMode` / `Vec3 DebugLineColor` / `Vec3 DebugPointColor` | `NONE` / `POINTS` / `WIREFRAME`. Not persisted; a PIE world starts at `NONE`. |
 
-`struct MeshCollisionShapeEntry { JPH::ShapeRefC Shape; Vec3 LocalOffset; }`.
+**Raycasts** (`Gameplay/RaycastInfo.h`, `Gameplay/Scenes/SceneWorld.h`) — gameplay and Python cast rays through the scene, which dispatches `"Raycast"` with a `RaycastRequest` that the physics world fills in. Only bodies that exist are hit: an object spawned this frame gets its body at the next physics tick.
 
-`LocalOffset` jest w **konwencji sub-shape'a Jolta** — podaje się go wprost do `CompoundShapeSettings::AddShape`. Jolt sam dokłada `Shape::GetCenterOfMass()`, więc kształty o origin przesuniętym do COM (`ConvexHull`) mają `LocalOffset == 0`, a Box/Sphere środek bounding boxa. **Przy rysowaniu kształtu bezpośrednio** (debug wireframe/points — trójkąty wychodzą w przestrzeni COM-centered) trzeba dodać `Shape->GetCenterOfMass()` samemu, patrz `PhysicsWorld::…` edit-mode debug draw.
-
-Offset jest w przestrzeni mesha, już przeskalowany argumentem `scale`, ale **nieobrócony** — składając go z transformem komponentu trzeba go obrócić rotacją tego komponentu przed dodaniem do jego pozycji (`PhysicsCompoundShape::Init`).
-
-**Warstwy kolizji** (`Physics/PhysicsLayers.h`, `namespace Plu::CollisionLayers`) — stałe `STATIC = 0`, `DYNAMIC = 1`, `NUM_LAYERS = 2`. Reguły kolizji i filtry broadphase są w `Physics/PhysicsCollisionRules.h` (klasy infrastrukturalne Jolt, nie wołane bezpośrednio).
-
-**Kanały kolizji w stylu UE** (`Physics/CollisionChannels.h`, `namespace Plu`) — data-driven Block/Overlap/Ignore. `enum class CollisionResponse { Ignore, Overlap, Block }`. `struct CollisionProfile { String Name; UInt8 ObjectType; DynamicArray<CollisionResponse> ResponseTo; }` (preset = UE Collision Preset). `struct CollisionConfig { DynamicArray<String> ChannelNames; DynamicArray<CollisionProfile> Profiles; FindProfileIndex(name); NormalizeProfiles(); }`.
-
-| Funkcja | Działanie |
+| Function / type | Description |
 |---|---|
-| `CombineResponse(a, b)` | Słabszy z dwóch (`Ignore < Overlap < Block`). |
-| `ResolvePairResponse(cfg, profileA, profileB)` | Łączna reakcja pary po indeksach profili (z `CollisionGroup::GetGroupID()`); poza zakresem → `Block`. |
-| `BuildDefaultCollisionConfig()` | Wbudowane kanały/presety (WorldStatic, Pawn, Trigger, BlockAll, OverlapAll, NoCollision…). |
-| `SaveCollisionConfig(cfg) -> JSON` / `LoadCollisionConfig(JSON) -> CollisionConfig` | (De)serializacja (zapisywana z projektem / `ProjectDefaults.json`). |
-| `CollisionConfig& ActiveCollisionConfig()` | Procesowy aktywny config projektu. `PhysicsWorld` czyta go **na żywo**; edytor/runtime ustawiają go przy ładowaniu projektu, panel Project Settings edytuje w miejscu. |
+| `RaycastHitInfo SceneWorld::ShootRaycast(const Vec3& start, const Vec3& end, const DynamicArray<GameObject*>& ignoredObjects = {})` | Closest hit between two world-space points, skipping the bodies of `ignoredObjects` (null entries allowed; Python: a list, e.g. `[self]`). Jolt treats convex shapes as solid, so a ray starting inside the caster's own collider hits it at distance 0 — pass the caster here. `PLU_FUNCTION(PyExport)`. Never hits when the world has no physics world. |
+| `RaycastHitInfo SceneWorld::ShootRaycastInDirection(const Vec3& start, const Vec3& direction, float length, const DynamicArray<GameObject*>& ignoredObjects = {})` | Same, ending at `start + normalize(direction) * length`; a zero `direction` returns no hit. |
+| `RaycastHitInfo` | `PLU_STRUCT`: `bool Hit`, `Vec3 HitLocation`, `Vec3 HitNormal` (unit, world space), `float HitDistance` (metres from `TraceStart`), `float HitFraction` (0 at `TraceStart`, 1 at `TraceEnd`; 1 on a miss), `bool StartedInside` (ray began inside a convex shape — fraction 0, normal is of the nearest surface), `Vec3 TraceStart`/`TraceEnd` (always filled, even on a miss or with no physics world), `TUsePointer<GameObject> HitObject`, `TUsePointer<WorldComponent> HitWorldComponent`. Python: read-only fields plus `GetHitObject()` / `GetHitWorldComponent()`. `HitObject` owns the hit body; `HitWorldComponent` is the collider or `StaticMeshComponent` whose sub-shape was hit. |
 
-Filtrowanie nie używa `JPH::GroupFilter` (Jolt budowany bez C++ RTTI → nie linkuje) — odbywa się w `OverlapContactListener`: `OnContactValidate` odrzuca pary `Ignore`, `OnContactAdded/Persisted` ustawia `ContactSettings::mIsSensor` dla `Overlap` (event bez blokady). Kanał jest rozstrzygany **per sub-shape** z materiału (patrz niżej), z fallbackiem na `CollisionGroup::GroupID` ciała (mesh, brak materiału).
+**Bodies and colliders** (`Gameplay/Components/`) — a `GameObject` gets a body when it has a `PhysicsBodyComponent` **and** at least one collider: a `PhysicsColliderComponent` subclass or a `StaticMeshComponent` whose mesh has a collision type set. All of the object's colliders are merged into one `JPH::StaticCompoundShape`, placed with each component's `GetMatrixRelativeToGameObject()` (so attached components work) and scaled with `JPH::ScaledShape`. One body per object.
 
-**Materiał fizyczny per sub-shape** (`Physics/PluPhysicsMaterial.h`, `namespace Plu`) — friction/restitution/kanał są **własnością pod-kształtu, nie ciała** (jedno `JPH::Body` ma jedną wartość, a kształty komponentów są scalane w compound). `struct PhysicsMaterialData { float Friction; float Restitution; UInt32 CollisionProfileIndex; }`. Z tego samego powodu co `GroupFilter` **nie** subklasujemy `JPH::PhysicsMaterial` (brak RTTI → nie linkuje) — zamiast tego pakujemy dane do 64-bitowego `Shape::SetUserData` liścia (odczyt per sub-shape przez `Shape::GetSubShapeUserData`, Jolt forwarduje przez compound/scaled).
-
-| Funkcja | Działanie |
+| Class | Description |
 |---|---|
-| `PackPhysicsMaterial(data) -> UInt64` | Pakuje materiał do user-data kształtu. Layout: `present:1 (bit63) \| profileIndex:16 \| friction:16 \| restitution:16`, friction/restitution kwantyzowane przy 1e-4 (0..6.5535). |
-| `TryUnpackPhysicsMaterial(packed, out) -> bool` | Odpakowuje; `false` gdy brak bitu obecności (kształt bez materiału, np. mesh). |
+| `PhysicsBodyComponent` | `BodyType Type` (`Static` / `Dynamic` / `Kinematic`), `Friction`, `Restitution`, `Mass` (not reflected yet), `TUsePointer<PhysicsCollisionChannel> CollisionChannel` (dropdown, saved by name; `SetCollisionChannel` updates the live body's layer, a null channel falls back to `Default`). Methods (`PLU_FUNCTION`, Python): `Get/SetLinearVelocity`, `AddLinearVelocity`, `Get/SetAngularVelocity`, `Get/SetFriction`, `Get/SetRestitution`, `AddForce`, `AddTorque`, `AddImpulse`, `AddAngularImpulse`. Each one dispatches a component event that the physics world answers; without a body the getters return the component's own field. `SetBodyType` dispatches `"SetBodyType"`, which nothing handles yet. |
+| `PhysicsColliderComponent` | Abstract `WorldComponent`; `virtual JPH::ShapeRefC GetShape() = 0`. A subclass dispatches `"ShapeChanged"` from its setters to get the body rebuilt. |
+| `PhysicsBoxColliderComponent` | `Vec3 BoxSize` — passed straight to `JPH::BoxShape`, so it is the **half** extent (the default `{1,1,1}` is a 2 m box). |
+| `PhysicsSphereColliderComponent` | `float SphereRadius`. |
+| `PhysicsCylinderColliderComponent` | `float HalfHeight`, `float Radius`. |
 
-`PhysicsBodyComponent::MakeMaterialUserData()` buduje user-data z pól `Friction`/`Restitution`/`CollisionProfile` (każdy `GetShape()` woła `SetUserData` na liściu). `OverlapContactListener` łączy materiały pary per-kontakt: friction = `sqrt(fA*fB)`, restitution = `max(rA,rB)` (domyślne reguły Jolt), kanał = `CollisionProfileIndex` materiału lub fallback `GroupID`. **`GameObject::ActiveBody`** (per-obiekt, bo motion type dotyczy całego ciała) decyduje Dynamic/Static.
+Body transforms are world space: after each step the world calls `GameObject::SetObjectLocation/Rotation` for the bodies that moved (see `OnUpdate` above — static and sleeping bodies are skipped), and a guard flag stops the resulting `"LocationChange"`/`"RotationChange"` events from being pushed back into the body. Moving an object from code or the editor goes the other way through the same events. `WorldComponent::AttachTo` does not trigger a rebuild on its own.
 
-> Konwersje Jolt ↔ GLM (`ToJPH`, `ToGLM`, …) są w `PluEngine/Physics/PhysicsUtils.h` — patrz sekcja wyżej. Nie w `PluUtils.h`: włączanie Jolta z publicznego nagłówka PluCore zaciągałoby go do każdego modułu silnika.
-> `JoltShapeExtractor` (`Physics/JoltShapeExtractor.h`) ma `protected static` helpery
-> `ExtractTriangles` i `JoltToGlm` — dostępne tylko przez dziedziczenie, nie jako wolne API.
+**Static mesh collision** (`Physics/StaticMeshCollision.h`) — a `StaticMesh` stores the chosen collision as a type name, `String CollisionName`, and `TOwningPointer<IStaticMeshCollisionData> CollisionData` is constructed from `TypeRegistry` by that name when a body is built. Saved in the binary mesh file (version 3); version 2 files load with collision dropped and a warning — re-save the mesh.
+
+| Type | Shape |
+|---|---|
+| `StaticMeshPerVertexCollisionData` | `JPH::MeshShape` from every triangle (winding swapped back to CCW — the importer stores CW). Static bodies only in practice. |
+| `StaticMeshApproximateCollisionData` | `JPH::ConvexHullShape` from every vertex. |
+| `StaticMeshBoundingBoxCollisionData` | `JPH::BoxShape` of the mesh bounds; `GetOffset` = bounds centre × scale. |
+| `StaticMeshCollisionSphereCollisionData` | `JPH::SphereShape` enclosing the bounds; `GetOffset` = bounds centre × scale. |
+
+`IStaticMeshCollisionData`: `virtual JPH::ShapeRefC GetShape(StaticMesh*) = 0`, `virtual Vec3 GetOffset(StaticMesh*, Vec3 scale)` (default zero). New collision kinds are new `PLU_STRUCT` subclasses — the static mesh details panel lists every struct derived from `IStaticMeshCollisionData`.
+
+Built shapes are cached in function-local maps (per mesh UUID for per-vertex/convex hull, per size for box/sphere, per shape+scale for `ScaledShape`) and **never invalidated**: after re-importing or editing a mesh's geometry the old shape stays until restart.
+
+Jolt adds a sub-shape's `GetCenterOfMass()` itself when building a compound, so the offset passed to `CompoundShapeSettings::AddShape` must not include it (a convex hull's origin is already moved to its COM). The opposite applies when drawing a shape directly (`JoltShapeExtractor::ExtractTriangles` — triangles come out COM-centred): add `Shape->GetCenterOfMass()` yourself.
+
+**Collision layers** (`Physics/PhysicsLayers.h`, `namespace Plu::CollisionLayers`) — `STATIC = 0`, `DYNAMIC = 1`, `NUM_LAYERS = 2`; `Static` bodies go to `STATIC`, `Dynamic` and `Kinematic` to `DYNAMIC`. The broadphase filters in `Physics/PhysicsCollisionRules.h` are Jolt infrastructure, not called directly. Jolt from vcpkg is built without C++ RTTI, so `JPH::GroupFilter` and `JPH::PhysicsMaterial` cannot be subclassed (undefined typeinfo at link time) — per-pair filtering has to go through a `JPH::ContactListener`.
+
+**Overlap events** — `PluContactListener` (`Physics/PhysicsCollisionRules.h`) turns a contact into a sensor contact when `PhysicsChannelsManager::CanBlock` says the pair of channels does not block, and queues it. After each step `PhysicsWorld::OnUpdate` drains the queue on the main thread and calls `GameObject::OnOverlapBegin(component, otherObject, otherComponent)` / `OnOverlapEnd(...)` on both objects (`PyOverride`, so Python objects can handle them). Identification: a body's `mUserData` is its object's UUID (`PhysicsBody` ctor `UserData`), a compound sub-shape's `mUserData` is an index into `PhysicsWorld::mCollidersPerObject` (component UUIDs in `AddShape` order). A body with a single collider is not a compound at all — `StaticCompoundShapeSettings::Create` collapses one sub-shape into the shape itself (or a `RotatedTranslatedShape`) — so a non-compound body shape means collider index 0. Begin/end are counted per (object, component) pair, so a mesh collider touching with several triangles, or a body rebuilt mid-overlap (static body moved, collider changed), gives exactly one begin and one end. Gameplay only ever gets them in pairs: a begin dropped at dispatch (an earlier overlap callback in the same batch removed one of the components) drops its end too. An end still reaches the surviving object, with `otherObject`/`otherComponent` null when the other side was destroyed.
+
+**Debug drawing** — `DebugDrawAdapter` (`Gameplay/Debug/DebugDrawAdapter.h`), reached through `SceneWorld::GetDebugDraw()` (`PyExport`, returns `DebugDrawAdapter*`; in Python `world.GetDebugDraw().DrawDebugLine(...)`). The single entry point for debug geometry: gameplay, scripts, physics debug and editor gizmos all go through it into the world's per-frame buffers, which `RenderSnapshotBuilder` drains into the snapshot (`MULTITHREADING.md`, debug draw channel). Main thread only. Positions/sizes in metres, rotations as engine Euler **degrees**, cone angles in degrees. Every draw takes `Duration` (seconds): `0` = this frame only, `> 0` = kept that long (draws with the same duration in one frame share a batch). All methods are `PyExport`.
+
+| Function | Description |
+|---|---|
+| `DrawDebugLine(Start, End, Color, Duration = 0)` | Line segment. |
+| `DrawDebugPoint(Point, Color, Duration = 0)` | Point (GL_POINTS, `RenderSnapshot::DebugPointSize` px). |
+| `DrawDebugArrow(Start, End, Color, HeadSize = 0.2, Duration = 0)` | Line with a four-spoke head at `End`; the head is clamped to the arrow length. |
+| `DrawDebugBox(Center, HalfExtent, Color, Duration = 0)` | Axis-aligned box. |
+| `DrawDebugOrientedBox(Center, HalfExtent, Rotation, Color, Duration = 0)` | Box rotated around its centre. |
+| `DrawDebugBounds(Min, Max, Color, Duration = 0)` | Axis-aligned box from min/max corners (AABBs, particle bounds). |
+| `DrawDebugSphere(Center, Radius, Color, Duration = 0, Segments = 32)` | Three axis-aligned great circles (`AppendSphereWireframe`). |
+| `DrawDebugCircle(Center, Normal, Radius, Color, Duration = 0, Segments = 32)` | Circle in the plane perpendicular to `Normal`. |
+| `DrawDebugCone(Apex, Direction, Length, HalfAngleDegrees, Color, Duration = 0, Segments = 24)` | Cone (`AppendConeWireframe`), rim on the sphere of radius `Length`. Half angle clamped to `[0, 180]` — callers that need the spot-light limit clamp themselves (the spot gizmo clamps to 89° like `RenderSnapshotBuilder`). |
+| `DrawDebugCylinder(Start, End, Radius, Color, Duration = 0, Segments = 24)` | Cylinder between the centres of its caps. |
+| `DrawDebugCapsule(Center, HalfHeight, Radius, Rotation, Color, Duration = 0, Segments = 24)` | Capsule along its local Y; `HalfHeight` is half of the cylindrical part (Jolt convention). |
+| `DrawDebugAxes(Location, Rotation, Size = 1, Duration = 0)` | Local X/Y/Z as red/green/blue lines. |
+| `DrawDebugRaycast(const RaycastHitInfo& Hit, Duration = 0)` | Trace green up to the hit, red past it (all red on a miss), hit point + normal in yellow. |
+| `ClearPersistentDraws()` | Drops every draw still waiting out its duration. |
+| `EmitPersistentDraws(float DeltaTime)` | C++ only — called once per frame by `RenderSnapshotBuilder`; appends live persistent draws to the frame buffers and ages them. |
+| `GetFrameLineBuffer()` / `GetFramePointBuffer()` | C++ only — the raw per-frame buffers, for bulk packers (`PhysicsWorld`'s Jolt wireframe/point renderers). |
+
+A default-constructed adapter (e.g. one created from Python) is bound to no world and silently draws nothing.
+
+**Puppet spawn** (`Gameplay/Puppet.h`, `PLU_FUNCTION(PyOverride)`):
+
+| Function | Description |
+|---|---|
+| `virtual Vec3 Puppet::GetSpawnOffset() const` | Offset added to the `PlayerStart` location at spawn. Zero by default; `CharacterPuppet` returns `(0, CapsuleHalfHeight + CapsuleRadius, 0)`, so PlayerStart marks the floor rather than the capsule centre. (`CharacterPuppet::CheckGrounded` casts down from the object origin through `SceneWorld::ShootRaycastInDirection`, ignoring itself, `CapsuleHalfHeight + 0.1` m long — the collider is a cylinder, so its bottom sits `CapsuleHalfHeight` below the origin.) |
+
+> Jolt ↔ GLM conversions (`ToJPH`, `ToGLM`, …) live in `PluEngine/Physics/PhysicsUtils.h` — see the section above. Not in `PluUtils.h`: including Jolt from a public PluCore header would pull it into every engine module.
+> `JoltShapeExtractor` (`Physics/JoltShapeExtractor.h`) has `protected static` helpers
+> `ExtractTriangles` and `JoltToGlm` — reachable only by inheriting, not as free API.
 
 ## Reflection — `PluEngine/Reflection/` (`namespace Plu`)
 
@@ -1171,6 +1530,7 @@ Filtrowanie nie używa `JPH::GroupFilter` (Jolt budowany bez C++ RTTI → nie li
 | `registry->GetEnumByT<T>()` | `EnumInfo*` dla enuma `T`. |
 | `registry->GetObjectManager()` / `GetAssetManager()` | Dostęp do managerów z poziomu reflection. |
 | `registry->AddType(TypeInfo*)` / `AddEnum<T>(EnumInfo*)` | Rejestracja (zwykle wołane przez kod generowany). |
+| `registry->serializeForTypeInfo` / `deserializeForTypeInfo` | Hooks (`std::function`) that `TypeSerializer<T>` falls back to for a reflected struct/class `T` with no specialization of its own — e.g. a `ParticleClass` field inside a component. PluCore cannot call `TypeSerializer<TypeInfo*>` from `ReflectionBase.h`, so `Application::EngineInit` installs them for the editor and the runtime alike (the editor-only `editorControlForTypeInfo` is set in `PluEditor::OnInit`). Without them such fields log "NO TYPE (DE)SERIALIZATION". `deserializeForTypeInfo(dc, json, type, instance)` fills the existing field in place (`TypeSerializer<TypeInfo*>::Deserialize` 4-argument overload) — it must never construct a new object, the caller has nowhere to put it. |
 
 **`TypeInfo`** (`ReflectionBase.h`) — opis pojedynczego typu:
 
@@ -1204,12 +1564,24 @@ Filtrowanie nie używa `JPH::GroupFilter` (Jolt budowany bez C++ RTTI → nie li
 | `TypeInfo* GetTType() const` | `T::GetStaticClass()`. |
 | `operator TypeInfo*()` | Niejawna konwersja do `TypeInfo*`. |
 
+Serialized as the class name; an unset pointer round-trips as `null`. Deserializing a class that no
+longer exists or no longer derives from `T` logs a warning and keeps the field's default. In the
+editor the field shows a combo whose popup is the `TypeTree` picker below.
+
+**Reflection editor widgets** (PluCore, editor build only — `PLU_ENGINE_EDITOR_BUILD`):
+
+| Function | File | Description |
+|---|---|---|
+| `bool ImGuiWidgets::TypeTree(TypeInfo* root, TypeInfo** output, const char* confirmLabel = nullptr)` | `PluEngine/Core/Widgets/TypeTree.h` | Type picker: search box + tree of `root` and every reflected type derived from it (abstract types shown dimmed, not pickable), descendant counts, a refresh button that picks up newly registered Python classes. A click stores the type in `*output`; returns `true` when the pick is confirmed (the `confirmLabel` footer button, a double-click, or a click on the current selection). The hierarchy is cached across calls. |
+| `bool ClassPointerEditorControl(TypeInfo** type, TypeInfo* baseType, const String& name)` | `PluEngine/Core/Reflection/TypeTraits.h` | Combo with a `TypeTree` popup rooted at `baseType` — what `TypeSerializer<TClassPointer<T>>::EditorControl` draws. Writes `*type` and returns `true` only on a confirmed change. |
+
 **Inne:**
 
 | Funkcja | Opis |
 |---|---|
 | `void RegisterPluClass(pybind11::type)` | Rejestruje klasę zdefiniowaną w Pythonie (`PLU_FUNCTION`). |
 | `template<typename T> T FromString(const String&)` | Konwersja string → `T`; działa dla każdego `PLU_ENUM` (po nazwie wartości). |
+| `TUsePointer<T> UserFromPython(T* raw)` | `PluEngine/Scripting/PythonPointers.h`. Rebuilds a `TUsePointer` from a raw engine object Python handed over (via its handle and `TypeRegistry::GetObjectManager()`); null for null or a dead object. Generated bindings use it for `TUsePointer<T : EngineObject>` parameters — Python sees them as `T*`, and PyOverride trampolines pass Python `.GetRaw()`. `TOwningPointer` parameters of non-asset types are still not bound. |
 
 ## Serialization — `PluEngine/Reflection/TypeTraits.h` (`namespace Plu`)
 
@@ -1289,18 +1661,46 @@ Wołającym jest `SceneViewport` — kolejkuje nazwy z eventu `"NewPythonType"`
 z samego handlera: event leci ze środka `RegisterPluClass`, czyli w trakcie `RunProjectScripts`, gdy
 pozostałe moduły projektu są już wyrzucone z `sys.modules` i jeszcze nie zaimportowane.
 
+## ImGui widgets — `PluEngine/Core/Widgets/`
+
+In `PluCore` (namespace `Plu::ImGuiWidgets`), usable from every engine module and the editor (not gated
+on `PLU_ENGINE_EDITOR_BUILD`, unlike `TypeTree`). Reach for these before hand-rolling the same thing
+with raw ImGui — they exist because the pattern was copy-pasted across panels. Widgets that draw icons
+need the editor font (Font Awesome merged in); in the runtime the glyphs fall back to `?`.
+
+| Function | File | Description |
+|---|---|---|
+| `bool ImGuiWidgets::Combo(label, Int32* currentIndex, const DynamicArray<T>& items, getLabel, const char* noneLabel = nullptr, ImGuiComboFlags flags = 0, const char* emptyPreview = nullptr)` | `Combo.h` | Combo over a `DynamicArray`, picked by index (`-1` / out of range = nothing selected). `getLabel(const T&)` returns `const char*` or `String` (a temporary is fine). `noneLabel` adds a leading entry that sets the index to `-1` and is the preview while nothing is selected; `emptyPreview` sets that preview without adding an entry (e.g. `"No collision"` when there is nothing to reset to). Items are ID-scoped by index, so duplicate labels work. Returns `true` when the selection changes. Overload without `getLabel` for arrays of `String` / `const char*`. |
+| `bool ImGuiWidgets::ComboValue(label, T* value, const DynamicArray<T>& items, getLabel, const char* noneLabel = nullptr, ImGuiComboFlags flags = 0, const char* emptyPreview = nullptr)` | `Combo.h` | Same, picked by value: the current item is the first one `== *value`, a pick copies it into `*value`, the `noneLabel` entry resets `*value` to `T{}`. A value not in `items` shows `emptyPreview` / `noneLabel` as the preview. A label getter returning `.CStr()` of a temporary dangles — return the `String` itself instead. Overload without `getLabel` for `String` / `const char*` arrays. |
+
+```cpp
+ImGuiWidgets::ComboValue("Socket", &socketName, component->GetAttachPoints(), "(none)");
+ImGuiWidgets::Combo("Attach to", &index, components,
+                    [](const TUsePointer<WorldComponent>& c) { return c->GetComponentName(); });
+```
+
+| Function | File | Description |
+|---|---|---|
+| `bool SearchBar(const char* id, ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | Search field over an `ImGuiTextFilter` (case-insensitive, `a,b` = either, `-a` = exclude): magnifier on the left, clear button on the right while there is text, Ctrl+F focuses it while its window has focus. Rebuilds the filter itself; `width` as in `SetNextItemWidth`. Returns `true` when the text changes. Filter rows with `filter.PassFilter(name)`. |
+| `bool PopupSearchBar(ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | `SearchBar` for the top of a popup / combo dropdown: clears the filter and takes keyboard focus when the popup appears. Used by every searchable reflection combo (enums, asset/object pickers, `BoneRef`) and the node palette. |
+| `bool DragVector(const char* label, float* values, int components, float speed = 0.1f, float min = 0, float max = 0, const char* format = "%.3f", ImGuiSliderFlags flags = 0)` | `DragVector.h` | 1–4 `DragFloat`s on one line, each marked with its axis colour (bar on the left edge: X red, Y green, Z blue, W grey). `min == max` = unclamped. What every reflected `Vec2/Vec3/Vec4` (non-colour) and `Quaternion` (as Euler degrees) draws, plus the transform rows of the details panels. Wrappers `DragVec2/3/4(label, Vec*, ...)`. |
+| `bool IconButton(const char* label, const ImVec2& size = {}, const char* tooltip = nullptr, EIconButtonTone tone = Neutral)` | `Buttons.h` | Frameless button: transparent until hovered. `EIconButtonTone::Danger` hovers red (close/delete). For toolbar / title-bar icon clusters and controls over a viewport image. Text colour is the caller's (`PushStyleColor(ImGuiCol_Text, ...)`). |
+| `bool ToggleButton(const char* label, bool active, const ImVec2& size = {}, const char* tooltip = nullptr)` / `SmallToggleButton(label, active, tooltip)` | `Buttons.h` | Button filled with the theme accent while `active` — tool pickers (gizmo move/rotate/scale). Returns `true` on click; flipping the state is the caller's job. The small variant matches `SmallButton`. |
+| `bool PrimaryButton(const char* label, const ImVec2& size = {})` | `Buttons.h` | Accent-filled button for the main action of a dialog (Save All, Open, Create). |
+| `ImVec4 GetAccentColor()` / `GetAccentColorHovered()` / `GetAccentColorActive()` | `Buttons.h` | The theme accent (`ImGuiCol_CheckMark`) and its hover/press variants, for custom widgets that fill with it. |
+| `struct InlineRenameState { char Buffer[128]; bool FocusPending; void Begin(const char* currentName); }` + `bool InlineRenameField(InlineRenameState*, const char* id = "##rename")` | `InlineRename.h` | Rename in place of a list row. The panel keeps one state plus "which row is being renamed"; `Begin` copies the name and focuses the field on its next draw. Draw `InlineRenameField` instead of the row while renaming; it returns `true` when editing ends (Enter / click outside / Esc — Esc restores the old text, so a commit that ignores unchanged names writes nothing). Used by Structure, Animation Graph Variables, Particle Emitters/Parameters. |
+| `void TextCentered(const char* text)` / `void TextCenteredBoth(const char* text)` | `Text.h` | Text centred horizontally (both: and vertically) in the content region left from the cursor. |
+| `void EmptyState(const char* text, const char* icon = nullptr)` | `Text.h` | Placeholder for a panel with nothing to show ("No ParticleSystem asset loaded"): dimmed, wrapped text centred in the remaining region with an optional large icon above. Draw it instead of the panel's content. |
+
 ## Editor — `Editor/Utils/`
 
 | Funkcja | Plik | Opis |
 |---|---|---|
-| `bool RGBTransformDrag3(label, p_data, components, v_speed, p_min, p_max, format, flags)` | `RGBTransformDragger.h` | Wieloskładnikowy `DragScalar` z kolorowaniem osi R/G/B (transform widget w ImGui). |
 | `void DrawMoveToWindowMenu(currentWindowID, kindFilter, newWindowTitle, onMove)` | `EditorWindows/EditorWindowMoveMenu.h` | Podmenu „Move To Window" — „Move to New Window" + lista istniejących okien (bez bieżącego i bez `SinglePanel`, które są jednomiejscowe). Wołaj zaraz po `ImGui::Begin()` w `BeginPopupContextItem()` — ImGui ustawia wtedy „last item" na tab docka, czyli to jest dokładnie PPM na tabie. `onMove` dostaje docelowy `windowID`, już utworzony przy wyborze nowego okna. |
 | `String StripImGuiIDFromName(const String& imguiName)` | `EditorWindows/EditorWindowsManager.h` | Ucina id ImGui z nazwy okna (`"Details##SceneViewport"` → `"Details"`, `"###Id"` → `"Id"`). Używaj wszędzie, gdzie nazwa okna ImGui trafia do paska tytułu okna systemowego. |
 | `void DrawWindowControls(const TUsePointer<IWindow>& window, ImVec2 buttonDimensions)` | `EditorInterface.h` | Klaster minimalizuj/maksymalizuj/zamknij paska tytułu. Zamknięcie okna 0 idzie przez `OnRequestedWindowClose` (potwierdzenie niezapisanych assetów), okna wtórnego przez `EditorWindowsManager::CloseEditorWindow`. |
 | `float DrawAttachPointMarker(ImDrawList*, const Matrix4& world, float axisLength, bool selected, const std::function<bool(const Vec3&, ImVec2&)>& project, ImVec2 mouse)` | `AttachPointOverlay.h` | Rysuje marker attach pointa szkieletu (romb + kikuty osi RGB pokazujące rotację) w podglądzie 3D. `project` mapuje świat→piksele (`false` = za kamerą). Zwraca kwadrat odległości kursora od markera (`FLT_MAX` poza ekranem) do klikania. |
 | `void MarkSkeletonAssetDirty(TUsePointer<EngineAssetManager>, const Skeleton*)` | `AttachPointOverlay.h` | Brudzi asset Skeleton (po jego `Uuid`). **Do każdej edycji attach pointa zamiast `PanelChangedAsset()`** — SkeletalMesh trzyma szkielet tylko przez UUID, więc zabrudzenie assetu viewportu oznaczyłoby mesh i zmiana nigdy nie trafiłaby na dysk. |
-| `void TextCentered(const char* text)` | `CenteredText.h` | `ImGui::Text` wyśrodkowany w poziomie względem szerokości bieżącego okna. |
-| `void TextCenteredBoth(const char* text)` | `CenteredText.h` | `ImGui::Text` wyśrodkowany w poziomie i pionie względem rozmiaru bieżącego okna. |
 | `void GenerateRandomLocations(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe lokacje w prostopadłościanie `[min, max]`. |
 | `void GenerateRandomRotations(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe rotacje w **stopniach** (pitch=X, yaw=Y, roll=Z), per-oś z `[min, max]`. |
 | `void GenerateRandomScales(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe skale niejednorodne, per-oś z `[min, max]`. |
@@ -1312,6 +1712,39 @@ nie jest powtarzalny; każdy inny seed daje ten sam wynik przy tych samych argum
 `nullptr` w `out` jest ignorowany, odwrócone limity (`min > max`) są normalizowane.
 
 ---
+
+## Particle system asset — `PluEngine/Effects/Particles/`, `PluEngine/AssetTypes/Curves/` (`namespace Plu`)
+
+Particle rework: asset + node modules + parameters + loader, compiler + CPU executor, spawner component + render-thread simulation, sprite and ribbon renderers.
+
+Example assets in `EngineAssets/Particles/` (constants `EngineAssets::PS_*`, textures `Particles/Textures/T_Particle_*`): `PS_MuzzleFlash` (one-shot, 3 emitters, `FlashTint` parameter), `PS_Tracer` (sprite + per-particle ribbon, `TracerColor` / `TracerSpeed` parameters), `PS_BulletImpact` (sparks with trails + Kill When Slow, sub-UV dust, flash; forward = surface normal), `PS_MagicTrail` (per-emitter ribbon — use Preview → Orbit; sparkle colour sampled from a gradient over Seed), `PS_SubUVShowcase` (numbered atlas by frame rate vs by lifetime), `PS_Fountain` (Math Multiply feeding a pin, Size By Speed, box mist), `PS_Snowfall` (18k particles, untextured soft discs).
+
+| Helper | Purpose |
+|---|---|
+| `Curve` / `ColorGradient` (`Curves/Curve.h`) | Generic scalar curve / RGBA gradient. `Evaluate(t)`, `BakeLUT(inMin, inMax, out)` (64 samples, 128 for cubic), `SortKeys()`, `Curve::Constant/Ramp`, `ColorGradient::Constant`. Reflected structs, serialized by the generic serializer. |
+| `ParticleSystem` (`ParticleSystem.h`) | Asset: `Emitters` (each a `ParticleEmitter : NodeGraph`) + `Parameters`. `AddEmitter`, `FindEmitter`, `FindParameter`, `AddParameterNode`, `ResolveParameterReferences` / `SyncParameterNodeNames` (call after load / before save). `CompileRevision` bumps on any graph or layout edit; `ParametersRevision` only on parameter layout changes — never for a value edit. |
+| `ParticleParameterFactory::RegisterBuiltInTypes()` | Float/Integer/Boolean/Vec3/Color. Called from `Application::EngineInit()` — must stay there, not in the editor. |
+| `ParticleParameter<T>` / `IParticleParameter` | User parameter; `CopyValueTo` (pin read), `GetFloatCount` / `WriteFloats` (flat per-spawner value block). |
+| `ParticleParamFloat/Vec3/Color` (`ParticleParam.h`) | Authored module value: Constant / RandomRange / CurveOverSource. A data pin on the same property overrides it. `ParticleParamColor` has its own editor control (`ParticleParamColorEditorControl`, via `TypeSerializer<ParticleParamColor>`; JSON unchanged): mode combo, then a colour picker, Min/Max pickers, or gradient + source attribute. Color-type parameters (`ParticleParameter<Vec4>`) draw a picker too. |
+| `ParticleModuleNode` (`Nodes/ParticleModuleNode.h`) | Base of emitter-graph nodes; `AddParticleInput/Output` (Flow "Particle"), `AddParamPin`. |
+| `ParticleSystemAssetLoader` | Loader/saver; JSON: `parameters[]` + `emitters[]` (fields + nodes/links). |
+| `ParticleSystemInstance` / `ParticleParameterStore` | Per-component live parameter values (asset defaults + gameplay overrides). `BindTo(system)` (cheap unless `ParametersRevision` moved), Python `SetFloat/SetInt/SetBool/SetVec3/SetColor` (+ getters, `HasParameter`, `GetParameterNames`), `WriteValueBlock`, editor `GetLiveInstances(systemUuid)`. Reach it via `ParticleSpawnerComponent::GetSystemInstance()`. Value edits: `MarkValueChanged()` only, never dirty the asset. |
+| `ParticleSpawnerComponent` lifecycle | `ParticleSystemAsset`, `AutoActivate`, `AutoDestroyWhenFinished`, `Play` (restart) / `Deactivate` (soft) / `Stop` (hard clear) / `Pause` / `Resume`, `IsPlaying`, `IsFinished`, `GetAliveParticles`. No asset = legacy point spawner. |
+| `SceneWorld::SpawnParticleSystem(asset, location, rotation, lifetime = 0)` | Fire-and-forget effect without a GameObject (Python too). Rotation in Euler degrees. `lifetime` > 0: after that many seconds the effect deactivates itself (soft — live particles finish); 0 = no limit. Returns an effect id (0 = no asset) for `DeactivateParticleSystem(id)` (soft) / `DestroyParticleSystem(id)` (hard); unknown or finished ids are ignored. Default parameters, does not move, destroyed on the render thread when finished — a looping effect without a lifetime lives until deactivated/destroyed or the world unloads. Main thread only. |
+| `PushParticleSpawnCommand` / `PushParticleCommand` / `DrainParticleCommands` (`Render/RenderParticleCommands.h`) | Main -> render FIFO behind `SpawnParticleSystem` (exactly-once, outside the `TripleBuffer`). The spawn push attaches the compiled program only for a revision not sent yet. Drained by `Renderer::ProcessParticleCommands`. |
+| `ReadParticleLiveness` / `PublishParticleLiveness` (`Render/RenderParticleLiveness.h`) | Render -> main spawner feedback (alive count, emitting emitters, monotonic `CompletedActivationVersion`). Always on, O(spawners). Main consumes it via `SceneWorld::UpdateParticleLiveness()`. |
+| `Curve` / `ColorGradient` widgets (`Curves/Curve.h`) | `CurveEditorControl`, `GradientEditorControl` (draggable keys/stops, right-click add/remove, Interp combo, selected key fields; return true on change). The curve view has a stable scale: always at least [0, 1], grown in whole grid steps, labelled grid lines, frozen while a key is dragged, time/value tooltip on the key under the cursor, `DrawCurveThumbnail` / `DrawGradientThumbnail(w, h)` for node bodies. `TypeSerializer<Curve/ColorGradient>::EditorControl` routes here, so any reflected `Curve` property gets the widget. Keys live in normalised [0,1] time. |
+| `ParticleSystemCompiler` (`ParticleSystemCompiler.h`) | **Main thread only.** `Compile(system, out)`, cached `GetCompiled(system)` (uuid + `CompileRevision`; the reference is valid until the next call), `Invalidate`. Walks each emitter's chain from the Output node backwards, calls `ParticleModuleNode::Compile(ctx)`. Folds constant pin subtrees via `EvaluateDataOutput` once; a direct Parameter/Attribute wire becomes an operand; a deeper expression reaching them warns and uses the authored value. |
+| `ParticleCompileContext` | What `Compile()` writes into: `EmitSpawn/EmitUpdate`, `Require(column)`, `Constant/Random/BakeCurve/BakeGradient/AttributeOperand`, `ResolveFloat/Vec3/Color`, `ResolveFloatProperty/Vec3Property`, `ResolveConstantFloat/Int` (plain-number properties: rate, thresholds). |
+| `CompiledParticleSystem` / `CompiledEmitter` (`CompiledParticleSystem.h`) | Flat program (ops, constants, curve LUTs, `ParameterLayout` + `ParameterDefaults`, `ParticleRenderParams` slots `Sprite` + `Ribbon`). 32 SoA columns max (`EParticleColumn`, `UsedAttributes` bit mask) — **all 32 are taken** (the last spare became `RotationRate`); a new per-particle value has to free a column, or derive from `Seed` like the random SubUV start frame (`HashSeed` with its own salt in the executor). `kParticleBlockSize = 4096`. |
+| `ParticleBlockStorage` | SoA store (`AllocateRange`, `CompactDead`). Dense = swap-remove; Ordered (ribbon emitters) = stable compaction, `[0, Alive())` stays in spawn order, oldest first. Optional per-particle history (`History()`, `HistoryFloats()`) moved along on compaction — per-particle ribbon trails. Mode derived from the program: `ParticleProgramNeedsOrderedStorage` / `ParticleProgramHistorySamples` (`ParticleEmitterInstance.h`). |
+| `ParticleBlockExecutor::RunSpawn / RunUpdate` | Blocks -> ops -> particles; operands resolved before the inner loop. Never calls the graph evaluator. `MulCurve` has an AVX2 gather path. |
+| `ParticleEmitterInstance` | `SetProgram` (copies the program; restarts only if layout/cap changed), `Tick(ParticleTickParams)`, `Reset`, `ComputeBounds`, `SetProfileOps` + `GetOpTimings` (per-op time, also recorded to the Profiler as `Particles/<emitter>/<spawn|update> <i> <Op>`). |
+| Scene gizmo (`SceneViewport::DrawSelectedParticleSpawnerGizmos`) | Selected asset spawner: per enabled emitter the spawn shape (point marker / sphere / oriented box / Cone sector, plus offset) and the launch cone of Init Velocity, read from the compiled program — the last `SpawnPosition` and the `SpawnVelocity` op — so it matches what the executor spawns. Legacy spawners keep the `ParticleClass` launch cone. |
+| Debug Particles panel (View → Debug) | Both spawner kinds. Asset spawners: effect name, Play / Deactivate / Stop / Pause / Resume, lifecycle main vs render side by side, parameter values, a tree per emitter (renderers, storage, memory, op count, bounds) and optional per-op timings; per-emitter bounds boxes in the viewport. |
+| `ParticleInstanceBuffer` / `ParticleInstanceGPU` (`Render/ParticleInstanceBuffer.h`) | Per-emitter sprite instances on the GPU: SSBO on `kParticleInstanceBinding` (7), 48 B std430 instance (position + rotation, half size + view-space motion, RGBA8 colour, sub-UV frame). Copyable handle: `Upload` (orphans + grows x2), `Bind`, `Destroy` exactly once. Render thread only. |
+| `Renderer::RenderTransparentParticles` | Transparent pass after the grid. Sprites: `ParticleSpriteProgram` (`ParticleSprite.vert/.frag`), attribute-less VAO + `glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)`. Ribbons: `ParticleRibbonProgram` (`ParticleRibbon.vert/.frag`), camera-facing strips — PerEmitter = one `glDrawArrays(GL_TRIANGLE_STRIP, 0, 2n)` through the live particles in spawn order, PerParticle = `glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 2 * samples, n)` over the trail SSBO (binding 8, `ParticleRibbonHistoryBuffer`; a sample every `kRibbonHistorySampleInterval` = 1/60 s, trails thin and fade to the tail). Ribbon width = `RibbonRendererModule::Width` metres x size / size at birth (Size Over Life tapers it); texture u = normalised age (0 at the head). An emitter may carry one Sprite and one Ribbon renderer at once (`CompiledEmitter::Sprite` / `Ribbon` slots, `HasSprite()` / `HasRibbon()`), drawn from the same particles — Sprite + PerParticle Ribbon = a sprite head with a trail. Emitters are sorted back to front (emitters, not particles), an emitter's ribbon before its sprites; Additive = `SRC_ALPHA, ONE`, AlphaBlend = `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`, both with destination alpha kept (`glBlendFuncSeparate(..., ZERO, ONE)`); depth test on, writes off, culling off — all restored afterwards. Untextured sprites draw a soft disc. Loose uniforms (`uFacingMode`, `uStretchFactor`, `uSubUVColumns/Rows`, `uHasTexture`) are set by the renderer: if a Material asset ever points at these shaders they must move to a UBO or onto `engineOnlyUniforms` in `ShaderCodeParser.py`. |
+
 
 ## Utrzymanie
 

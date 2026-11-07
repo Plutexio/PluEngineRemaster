@@ -1,94 +1,83 @@
 //
-// Created by Plutex on 2026-03-08.
+// Created by Plutex on 9/4/26.
 //
 
 #ifndef PLUENGINE_PHYSICSBODYCOMPONENT_H
 #define PLUENGINE_PHYSICSBODYCOMPONENT_H
+
 #include "PluEngine/Core.h"
-#include "PluEngine/Gameplay/WorldComponent.h"
+#include "PluEngine/Gameplay/GameObjectComponent.h"
 #include "PhysicsBodyComponent.generated.h"
-#include "PluEngine/Physics/PhysicsBody.h"
-#include "PluEngine/Core/CollisionChannels.h"
-#include "PluEngine/Physics/PluPhysicsMaterial.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu
 {
-	PLU_CLASS(Abstract, PyExport)
-	class PLUGAMEPLAY_API PhysicsBodyComponent : public WorldComponent
-	{
-		REFLECTION_BODY_PHYSICSBODYCOMPONENT()
-	public:
-		PhysicsBodyComponent();
-		virtual ~PhysicsBodyComponent() override = default;
+    PLU_ENUM(PyExport, PyNamespace=Plu)
+    enum class PhysicsBodyType {
+        Static,
+        Dynamic,
+        Kinematic
+    };
 
-		virtual JPH::ShapeRefC GetShape() = 0;
+    PLU_CLASS(PyExport)
+    class PLUGAMEPLAY_API PhysicsBodyComponent : public GameObjectComponent
+    {
+        REFLECTION_BODY_PHYSICSBODYCOMPONENT()
+    public:
+        PhysicsBodyComponent() = default;
+        virtual ~PhysicsBodyComponent() override = default;
 
-	protected:
-		// Packs this component's Friction/Restitution and resolved collision profile into a value to
-		// store in the leaf shape's user data (Shape::SetUserData). See PluPhysicsMaterial.h.
-		UInt64 MakeMaterialUserData();
+        PLU_PROPERTY(Getter=GetLinearVelocity, Setter=SetLinearVelocity, PyExport);
+        Vec3 LinearVelocity = {0.0f, 0.0f, 0.0f};
+        PLU_PROPERTY(Getter=GetAngularVelocity, Setter=SetAngularVelocity, PyExport);
+        Vec3 AngularVelocity = {0.0f, 0.0f, 0.0f};
+        PLU_PROPERTY(Getter=GetFriction, Setter=SetFriction, PyExport);
+        float Friction = 1;
+        PLU_PROPERTY(Getter=GetRestitution, Setter=SetRestitution, PyExport);
+        float Restitution = 0;
+        PLU_PROPERTY(Setter=SetBodyType, PyExport)
+        PhysicsBodyType Type = PhysicsBodyType::Dynamic;
+        PLU_PROPERTY(Setter=SetCollisionChannel)
+        TUsePointer<PhysicsCollisionChannel> CollisionChannel = PhysicsChannelsManager::GetInstance()->GetDefaultChannel();
 
-		// Rebuilds the owning game object's body so a baked-in material change takes effect.
-		void RebuildOwnerBody();
+        float Mass = 10.0f;
 
-		// This component's relative transform is baked into the compound shape as its sub-shape
-		// offset, so any change to it has to be pushed into the body.
-		void OnRelativeTransformChanged() override;
-	public:
+        void SetBodyType(PhysicsBodyType newType);
 
-		PLU_FUNCTION(PyExport)
-		Vec3 GetLinearVelocity();
-		PLU_FUNCTION(PyExport)
-		void SetLinearVelocity(const Vec3& velocity);
-		PLU_FUNCTION(PyExport)
-		void AddLinearVelocity(const Vec3& velocity);
+        PLU_FUNCTION(PyExport)
+        void SetCollisionChannel(TUsePointer<PhysicsCollisionChannel> newChannel);
 
-		PLU_FUNCTION(PyExport)
-		Vec3 GetAngularVelocity();
-		PLU_FUNCTION(PyExport)
-		void SetAngularVelocity(const Vec3& angularVelocity);
+        PLU_FUNCTION()
+        [[nodiscard]] Vec3 GetLinearVelocity() const;
+        PLU_FUNCTION()
+        void SetLinearVelocity(const Vec3& Velocity) const;
+        PLU_FUNCTION()
+        void AddLinearVelocity(const Vec3& Velocity) const;
 
-		PLU_FUNCTION(PyExport)
-		void AddForce(const Vec3& force);
-		PLU_FUNCTION(PyExport)
-		void AddTorque(const Vec3& torque);
-		PLU_FUNCTION(PyExport)
-		void AddImpulse(const Vec3& impulse);
-		PLU_FUNCTION(PyExport)
-		void AddAngularImpulse(const Vec3& impulse);
+        PLU_FUNCTION()
+        [[nodiscard]] Vec3 GetAngularVelocity() const;
+        PLU_FUNCTION()
+        void SetAngularVelocity(const Vec3& AngularVelocity) const;
 
-		PLU_FUNCTION(PyExport)
-		float GetFriction();
-		PLU_FUNCTION(PyExport)
-		void SetFriction(float friction);
+        PLU_FUNCTION()
+        [[nodiscard]] float GetFriction() const;
+        PLU_FUNCTION()
+        void  SetFriction(float Friction) const;
 
-		PLU_FUNCTION(PyExport)
-		float GetRestitution();
-		PLU_FUNCTION(PyExport)
-		void SetRestitution(float restitution);
+        PLU_FUNCTION()
+        [[nodiscard]] float GetRestitution() const;
+        PLU_FUNCTION()
+        void  SetRestitution(float Restitution) const;
 
-		// Set the UE-style collision preset by name (see the generated CollisionProfiles class in
-		// the project's <ProjectName>.py). Needed for components spawned from Python, which never
-		// run scene deserialization and would otherwise keep the default "Default" preset. If a
-		// body already exists (runtime), it is rebuilt so the new profile takes effect immediately.
-		PLU_FUNCTION(PyExport)
-		void SetCollisionProfile(const String& profileName);
-		PLU_FUNCTION(PyExport)
-		String GetCollisionProfile();
-
-		// UE-style collision preset; resolved against the project's CollisionConfig at body
-		// build time (PhysicsWorld::ResolveCollisionProfileIndex). Edited via a preset dropdown
-		// in the editor; unknown names fall back to profile 0 ("Default").
-		// (Not PyExport: CollisionProfileRef has no pybind caster — exposing would break bindings.)
-		PLU_PROPERTY()
-		CollisionProfileRef CollisionProfile;
-
-		PLU_PROPERTY(PyExport)
-		float Friction = 0.2f;
-
-		PLU_PROPERTY(PyExport)
-		float Restitution = 0.0f;
-	};
+        PLU_FUNCTION()
+        void AddForce(const Vec3& Force) const;
+        PLU_FUNCTION()
+        void AddTorque(const Vec3& Torque) const;
+        PLU_FUNCTION()
+        void AddImpulse(const Vec3& Impulse) const;
+        PLU_FUNCTION()
+        void AddAngularImpulse(const Vec3& Impulse) const;
+    };
 }
 
 #endif //PLUENGINE_PHYSICSBODYCOMPONENT_H

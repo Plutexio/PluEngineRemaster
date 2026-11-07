@@ -14,10 +14,9 @@ namespace Plu
 	// is both an editable parameter (details panel) and, via BuildDataPinsFromReflection(), a bool data
 	// input pin — so it is normally driven by a Boolean graph variable or a comparison node.
 	//
-	// The switch is instant. A timed cross-fade (UE's "Blend Poses by bool" blend time) needs per
-	// instance state that survives between evaluations, and graph evaluation is stateless by design —
-	// every call rebuilds the pose from AnimEvalContext::TimeSeconds alone. Blend an AnimBlendNode with
-	// a driven Alpha when a smooth transition is what you want.
+	// The switch is instant. A timed cross-fade (UE's "Blend Poses by bool" blend time) would need
+	// per-instance state (AnimGraphInstance::GetNodeState, see AnimBlendSpaceNode) — not implemented
+	// yet. Blend an AnimBlendNode with a driven Alpha when a smooth transition is what you want.
 	PLU_STRUCT()
 	struct PLUASSETTYPES_API AnimBlendByBoolNode : AnimGraphNode
 	{

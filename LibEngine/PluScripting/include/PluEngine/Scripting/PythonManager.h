@@ -6,9 +6,9 @@
 #define PLUENGINE_PYTHONMANAGER_H
 
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PythonManager.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 
 namespace Plu

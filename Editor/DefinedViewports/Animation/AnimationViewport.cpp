@@ -3,6 +3,7 @@
 //
 
 #include "AnimationViewport.h"
+#include "PluEngine/FrameDemand.h"
 
 #include <cmath>
 #include "glm/common.hpp"
@@ -86,6 +87,8 @@ void Plu::AnimationViewport::OnUpdate(float deltaTime)
 		TUsePointer<Animation> animation = gApplicationInfo->AppAssetManager->GetAssetData(GetAssetDescriptor());
 		if (animation && IsPlaying && animation->FramesAmount > 0 && animation->FramesPerSecond > 0.0f)
 		{
+			// Playback advances without input; under power saving it has to ask for its frames.
+			RequestContinuousRedraw();
 			const double durationTicks = static_cast<double>(animation->FramesAmount);
 			PlaybackTimeTicks += static_cast<double>(deltaTime) *
 				static_cast<double>(animation->FramesPerSecond) * static_cast<double>(PlaybackSpeed);

@@ -1,0 +1,16 @@
+#!/bin/sh
+# llvm-rc with an explicit code page, used as CMAKE_RC_COMPILER by WindowsCrossClangCL.cmake.
+#
+# MSVC's toolchain passes /c65001 through CMAKE_RC_FLAGS, but CMake also feeds those flags to the
+# clang-cl preprocessor, and on a Linux host clang-cl takes an unknown /option for a file path. The
+# code page is therefore added here, where only llvm-rc sees it. Without one llvm-rc rejects any
+# non-ASCII character.
+#
+# UTF-8 first; if that fails, Windows-1252 — some resource scripts are Latin-1 (assimp's version
+# resource has a single-byte copyright sign), which MSVC's rc.exe tolerates and llvm-rc does not.
+# Those are the only two code pages llvm-rc supports.
+#
+# The file name has to keep containing "llvm-rc": that is how CMake recognises llvm-rc and switches
+# to its preprocess-then-compile rule.
+llvm-rc /C 65001 "$@" 2>/dev/null && exit 0
+exec llvm-rc /C 1252 "$@"

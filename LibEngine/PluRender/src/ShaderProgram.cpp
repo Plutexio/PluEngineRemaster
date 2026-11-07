@@ -73,6 +73,23 @@ Plu::TUsePointer<Plu::IShaderCode> Plu::ShaderProgram::GetFragmentShader()
 	return mFragmentShader;
 }
 
+namespace
+{
+	// Uniformy, które ustawia silnik (raz na klatkę dla globalnych, per draw dla reszty) i których
+	// materiał nie ma prawa nadpisać. Lustro listy engineOnlyUniforms z PythonTools/
+	// ShaderCodeParser.py — parser nie wypisuje ich do parametrów NOWEGO materiału, ale materiały
+	// zapisane wcześniej wiozą je dalej w swoim JSON-ie, a wtedy RenderFromMaterial nadpisywał
+	// wartość silnikową martwą wartością z assetu. Najdroższy przypadek: `time` = 0 w materiale
+	// zatrzymywał animację wierzchołków (wiatr) na fazie zero, a `instanceBaseIndex` = 0 rysowałby
+	// cały batch instancji z transformem pierwszej.
+	bool IsEngineManagedUniform(const Plu::String& name)
+	{
+		return name == "model" || name == "normalMatrix" || name == "view" || name == "projection"
+			|| name == "cameraPos" || name == "time" || name == "dirLightColor" || name == "dirLightDir"
+			|| name == "shadowCascades" || name == "instanceBaseIndex" || name == "paletteBaseIndex";
+	}
+}
+
 void Plu::ShaderProgram::RenderFromMaterial(MaterialInfo *materialInfo, TUsePointer<RenderingManager> renderingManager)
 {
 	// Startujemy od slotu zarezerwowanego przez silnik (np. mapy cieni kaskad zajmują 0..mSlotsUsed-1).
@@ -82,6 +99,17 @@ void Plu::ShaderProgram::RenderFromMaterial(MaterialInfo *materialInfo, TUsePoin
 		TUsePointer<IShaderUniform> uniform = materialInfo->MaterialParameters.At(i);
 		if (!uniform) continue;
 		if (uniform->ArraySize != 0) continue;
+		if (IsEngineManagedUniform(uniform->Name)) {
+			// Raz na materiał na sesję — wpis jest martwy, ale widać go w panelu materiału, więc
+			// warto powiedzieć, co go zignorowało.
+			static HashSet<UInt64> warnedMaterials;
+			if (warnedMaterials.Insert(materialInfo->Uuid.getUUID())) {
+				PLU_CORE_WARN("Material {} carries a parameter named '{}', which is set by the engine — ignoring it. "
+							  "Re-save the material to drop the stale entry.",
+							  materialInfo->Uuid.getUUID(), uniform->Name.CStr());
+			}
+			continue;
+		}
 		// Kolejność porównań wg częstości w typowych materiałach (PBR: sampler2D/bool/float/vec3)
 		// — dispatch to łańcuch porównań Stringów robiony per uniform per batch per klatkę.
 		if (uniform->Type == "sampler2D") {
@@ -283,6 +311,7 @@ void Plu::ShaderProgram::UnloadProgram()
 	mProgramID = 0;
 	mHasBoneMatricesBlock = -1;
 	mHasInstanceDataBlock = -1;
+	mHasVisibleIndexBlock = -1;
 }
 
 bool Plu::ShaderProgram::HasBoneMatricesBlock()
@@ -303,6 +332,16 @@ bool Plu::ShaderProgram::HasInstanceDataBlock()
 			glGetProgramResourceIndex(mProgramID, GL_SHADER_STORAGE_BLOCK, "InstanceMatrices") != GL_INVALID_INDEX ? 1 : 0;
 	}
 	return mHasInstanceDataBlock == 1;
+}
+
+bool Plu::ShaderProgram::HasVisibleIndexBlock()
+{
+	if (!IsLoaded()) return false;
+	if (mHasVisibleIndexBlock < 0) {
+		mHasVisibleIndexBlock =
+			glGetProgramResourceIndex(mProgramID, GL_SHADER_STORAGE_BLOCK, "VisibleInstanceIndices") != GL_INVALID_INDEX ? 1 : 0;
+	}
+	return mHasVisibleIndexBlock == 1;
 }
 
 bool Plu::ShaderProgram::BinaryExists() const
@@ -349,5 +388,6 @@ void Plu::ShaderProgram::LoadFromBinary()
 	mProgramID = program;
 	mHasBoneMatricesBlock = -1;
 	mHasInstanceDataBlock = -1;
+	mHasVisibleIndexBlock = -1;
 	PLU_CORE_INFO("Loaded program with UUID {} from binary with new ID {}", Uuid.getUUID(), mProgramID);
 }

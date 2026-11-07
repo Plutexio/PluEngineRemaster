@@ -3,6 +3,7 @@
 //
 
 #include "EditorShaderManager.h"
+#include "PluEngine/FrameDemand.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 
 #include <filesystem>
@@ -244,6 +245,8 @@ void Plu::EditorShaderManager::CheckForShaderChanges()
 {
 	std::lock_guard lock(shadersToRecompileMutex);
 	if (shadersToRecompile.IsEmpty()) return;
+	// May be running from the idle tick (power saving): the recompiled shader needs frames to show.
+	RequestRedraw();
 	DynamicArray<TUsePointer<EditorShaderCode>> shaderCodes;
 	for (auto path : shadersToRecompile) {
 		for (auto code : mShaderCodes) {

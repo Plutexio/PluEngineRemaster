@@ -12,16 +12,11 @@
 
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PhysicsBody.generated.h"
+#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu
 {
-	PLU_ENUM(PyNamespace=Plu)
-	enum class BodyType {
-		Static,
-		Dynamic,
-		Kinematic
-	};
-
 	PLU_CLASS(Abstract)
 	class PLUPHYSICS_API PhysicsBody : public EngineObject
 	{
@@ -37,16 +32,27 @@ namespace Plu
 			JPH::ShapeRefC      Shape,
 			const JPH::RVec3&   Position,
 			const JPH::Quat&    Rotation    = JPH::Quat::sIdentity(),
-			BodyType            Type        = BodyType::Static,
+			PhysicsBodyType            Type        = PhysicsBodyType::Static,
+			TUsePointer<PhysicsCollisionChannel> Channel = PhysicsChannelsManager::GetInstance()->GetChannel("Default"),
+			UInt64 UserData = 0,
 			float               Friction    = 0.2f,
 			float               Restitution = 0.0f,
-			UInt32              CollisionProfileIndex = 0,
-			bool                DeferAdd    = false
+			float				Mass         = 10.0f,
+			bool                DeferAdd     = false
 		);
 
 		// Whether this body wants EActivation::Activate when it is added (non-static bodies do).
 		// The batch add takes one activation mode per batch, so the caller partitions on this.
 		[[nodiscard]] bool NeedsActivation() const { return mNeedsActivation; }
+
+		PhysicsBodyType GetBodyType() const { return mBodyType; }
+
+		void SetCollisionChannel(PhysicsCollisionChannel* Channel) const;
+
+		// Whether the body was still active at the previous transform sync (PhysicsWorld::OnUpdate).
+		// Jolt deactivates a body at the end of the step that brought it to rest, so the sync needs
+		// one more pass after that to hand the final transform to the GameObject.
+		bool WasActiveOnLastSync = false;
 		~PhysicsBody();
 
 		PhysicsBody(const PhysicsBody&) = delete;
@@ -83,8 +89,10 @@ namespace Plu
 		JPH::BodyID         mBodyID;
 		bool                mNeedsActivation = false;
 
-		static JPH::EMotionType ToJoltMotionType(BodyType Type);
-		static JPH::ObjectLayer ToJoltLayer(BodyType Type);
+		PhysicsBodyType mBodyType;
+
+		static JPH::EMotionType ToJoltMotionType(PhysicsBodyType Type);
+		static JPH::ObjectLayer ToJoltLayer(PhysicsCollisionChannel* channel, PhysicsBodyType Type);
 	};
 }
 

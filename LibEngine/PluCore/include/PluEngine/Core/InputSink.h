@@ -16,7 +16,7 @@ namespace Plu
     // The backends live in the platform layer, below gameplay, so they must not know that a player
     // exists. InputManager fills these in with calls onto the active local player; until it does,
     // every callback is empty and a backend simply drops the notification.
-    struct PLUCORE_API InputSink
+    struct InputSink
     {
         std::function<void(Key, ButtonState)> OnKeyboardKey;
         std::function<void(MouseButton, ButtonState)> OnMouseKey;

@@ -3,6 +3,7 @@
 //
 
 #include "EngineStatsPanel.h"
+#include "PluEngine/FrameDemand.h"
 
 #include <iostream>
 
@@ -30,6 +31,8 @@ void Plu::EngineStatsPanel::OnUpdate(float deltaTime)
 		ImGui::ShowDemoWindow(&showDemoWindow);
 	}
 	if (BeginPanel()) {
+		// Live numbers, no input behind them: keep them ticking under power saving.
+		RequestRedrawAfter(kStatsRefreshSeconds);
 		//static String buildInfo = "Build Info: " + String(PLU_BUILD_TIME);
 		//ImGui::Text("%s",buildInfo.CStr());
 		ImGui::Checkbox("Demo Window", &showDemoWindow);

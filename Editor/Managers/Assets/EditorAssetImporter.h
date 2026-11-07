@@ -21,10 +21,10 @@ namespace Plu
         Path mTargetDirectory;
 
         //Multi type asset handling
-        GameHashMap<String, DynamicArray<Path>> mAssetPathsPerType;
-        GameHashMap<String, TypeInfo*> mAssetImportSettingsPerType;
-        GameHashMap<String, void*> mAssetImportSettingsPerTypeData;
-        GameHashMap<String, TUsePointer<IAssetLoader>> mAssetLoaderPerType;
+        HashMap<String, DynamicArray<Path>> mAssetPathsPerType;
+        HashMap<String, TypeInfo*> mAssetImportSettingsPerType;
+        HashMap<String, void*> mAssetImportSettingsPerTypeData;
+        HashMap<String, TUsePointer<IAssetLoader>> mAssetLoaderPerType;
     public:
         EditorAssetImporter() = default;
         virtual ~EditorAssetImporter() override = default;

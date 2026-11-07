@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_EDITORSETTINGSPANEL_H
 #define PLUENGINE_EDITORSETTINGSPANEL_H
 #include "Panels/EditorPanel.h"
-#include "Array/Array.h"
+#include "PluSTL/Array/Array.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/Platform/Window.h"
 #include "EditorSettingsPanel.generated.h"

@@ -20,6 +20,8 @@
 #include "PluEngine/Platform/Window.h"
 #include "UI/IconsFontAwesome7.h"
 #include "Utils/RandomTransformUtils.h"
+#include "PluEngine/Core/Widgets/DragVector.h"
+#include "PluEngine/Core/Widgets/TypeTree.h"
 
 extern Plu::EditorAppContext* gEditorAppContext;
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
@@ -207,14 +209,14 @@ namespace
 		depths->Reserve(count);
 
 		// Row index per object, so a parent pointer can be turned back into a row.
-		Plu::GameHashMap<UInt64, UInt64> rowByObject;
+		Plu::HashMap<UInt64, UInt64> rowByObject;
 		for (UInt64 i = 0; i < count; ++i) {
 			if (objects->At(i)) {
 				rowByObject.Insert(reinterpret_cast<UInt64>(objects->At(i).GetRaw()), i);
 			}
 		}
 
-		Plu::GameHashMap<UInt64, DynamicArray<UInt64>> childRows;
+		Plu::HashMap<UInt64, DynamicArray<UInt64>> childRows;
 		DynamicArray<UInt64> rootRows;
 		for (UInt64 i = 0; i < count; ++i) {
 			Plu::TUsePointer<Plu::GameObject> object = objects->At(i);
@@ -373,8 +375,8 @@ void Plu::SceneStructurePanel::SyncSelection(const DynamicArray<TUsePointer<Game
 
 	// Obiekt kasowany w trakcie zmiany nazwy zostawiłby panel w trybie edycji na zawsze.
 	if (mRenamingObject.failed == false && !gEngineObjectManager->IsValid(mRenamingObject)) {
-		mRenamingObject     = EngineObjectHandle();
-		mRenameFocusPending = false;
+		mRenamingObject      = EngineObjectHandle();
+		mRename.FocusPending = false;
 	}
 
 	// Wyrzuć obiekty, których już nie ma (usunięte Deletem, przeładowana scena).
@@ -452,25 +454,21 @@ void Plu::SceneStructurePanel::SelectRangeTo(const DynamicArray<TUsePointer<Game
 
 void Plu::SceneStructurePanel::BeginRename(const EngineObjectHandle& handle, const String& currentName)
 {
-	mRenamingObject     = handle;
-	mRenameFocusPending = true;
-	const UInt64 length = currentName.Length() < sizeof(mRenameBuffer) - 1 ? currentName.Length()
-	                                                                      : sizeof(mRenameBuffer) - 1;
-	memcpy(mRenameBuffer, currentName.CStr(), length);
-	mRenameBuffer[length] = '\0';
+	mRenamingObject = handle;
+	mRename.Begin(currentName.CStr());
 }
 
 void Plu::SceneStructurePanel::CommitRename(const TUsePointer<GameObject>& object)
 {
-	const String newName(mRenameBuffer);
+	const String newName(mRename.Buffer);
 	if (object && !newName.IsEmpty() && newName != object->GetObjectName()) {
 		object->SetObjectName(newName);
 		PanelChangedAsset();
 		// Nazwa jest kluczem sortowania, więc lista musi się przebudować.
 		mListDirty = true;
 	}
-	mRenamingObject     = EngineObjectHandle();
-	mRenameFocusPending = false;
+	mRenamingObject      = EngineObjectHandle();
+	mRename.FocusPending = false;
 }
 
 void Plu::SceneStructurePanel::DeleteSelectedObjects()
@@ -602,8 +600,8 @@ void Plu::SceneStructurePanel::DrawRandomizeWindow()
 	ImGui::Checkbox("Location", &s.RandomizeLocation);
 	if (s.RandomizeLocation) {
 		ImGui::Indent();
-		ImGui::DragFloat3("Min##loc", glm::value_ptr(s.LocationMin), 0.1f);
-		ImGui::DragFloat3("Max##loc", glm::value_ptr(s.LocationMax), 0.1f);
+		ImGuiWidgets::DragVector("Min##loc", glm::value_ptr(s.LocationMin), 3, 0.1f);
+		ImGuiWidgets::DragVector("Max##loc", glm::value_ptr(s.LocationMax), 3, 0.1f);
 		ImGui::Checkbox("Relative to current location", &s.LocationRelative);
 		if (ImGui::IsItemHovered()) {
 			ImGui::SetTooltip("On: the random value is an offset added to the current position.\n"
@@ -616,8 +614,8 @@ void Plu::SceneStructurePanel::DrawRandomizeWindow()
 	ImGui::Checkbox("Rotation", &s.RandomizeRotation);
 	if (s.RandomizeRotation) {
 		ImGui::Indent();
-		ImGui::DragFloat3("Min##rot", glm::value_ptr(s.RotationMin), 1.0f);
-		ImGui::DragFloat3("Max##rot", glm::value_ptr(s.RotationMax), 1.0f);
+		ImGuiWidgets::DragVector("Min##rot", glm::value_ptr(s.RotationMin), 3, 1.0f);
+		ImGuiWidgets::DragVector("Max##rot", glm::value_ptr(s.RotationMax), 3, 1.0f);
 		ImGui::TextDisabled("Degrees: pitch=X, yaw=Y, roll=Z");
 		ImGui::Unindent();
 	}
@@ -631,8 +629,8 @@ void Plu::SceneStructurePanel::DrawRandomizeWindow()
 			ImGui::DragFloat("Min##uscale", &s.UniformScaleMin, 0.01f);
 			ImGui::DragFloat("Max##uscale", &s.UniformScaleMax, 0.01f);
 		} else {
-			ImGui::DragFloat3("Min##scale", glm::value_ptr(s.ScaleMin), 0.01f);
-			ImGui::DragFloat3("Max##scale", glm::value_ptr(s.ScaleMax), 0.01f);
+			ImGuiWidgets::DragVector("Min##scale", glm::value_ptr(s.ScaleMin), 3, 0.01f);
+			ImGuiWidgets::DragVector("Max##scale", glm::value_ptr(s.ScaleMax), 3, 0.01f);
 		}
 		ImGui::Unindent();
 	}
@@ -657,8 +655,6 @@ void Plu::SceneStructurePanel::DrawRandomizeWindow()
 	ImGui::BeginDisabled(nothingToDo);
 	if (ImGui::Button("Apply", ImVec2(120, 0))) {
 		ApplyRandomTransforms();
-		// Okno zostaje otwarte — przy losowym seedzie kolejne kliknięcia pozwalają
-		// "przerzucać" układ aż do skutku.
 	}
 	ImGui::EndDisabled();
 	if (nothingToDo && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -687,27 +683,11 @@ void Plu::SceneStructurePanel::OnUpdate(float deltaTime)
 			TUsePointer<SceneWorld> sceneWorld = gEditorAppContext->EditorScenesManager->GetCurrentWorld();
 			if (ImGui::BeginMenu(ICON_FA_PLUS " Spawn Game Object"))
 			{
-				static DynamicArray<TypeInfo*> componentTypes;
-				if (componentTypes.IsEmpty()) {
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObject::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				if (ImGui::Button("Refresh")) {
-					componentTypes.Clear();
-					for (auto type : *TypeRegistry::GetInstance()->GetTypeMap()) {
-						if (type.second->IsDerivedOfOrSame(GameObject::GetStaticClass()) && !type.second->IsAbstract) {
-							componentTypes.PushBack(type.second);
-						}
-					}
-				}
-				ImGui::Separator();
-				for (auto type : componentTypes) {
-					if (ImGui::Button(type->TypeName.CStr())) {
-						sceneWorld->SpawnGameObject(type);
-					}
+				static TypeInfo* selected = nullptr;
+				if (ImGuiWidgets::TypeTree(GameObject::GetStaticClass(), &selected, ICON_FA_PLUS " Spawn")) {
+					gEditorAppContext->EditorScenesManager->GetCurrentWorld()->SpawnGameObject(selected);
+					ImGui::CloseCurrentPopup();
+					selected = nullptr;
 				}
 				ImGui::EndMenu();
 			}
@@ -765,16 +745,8 @@ void Plu::SceneStructurePanel::OnUpdate(float deltaTime)
 				}
 
 				if (mRenamingObject == handle) {
-					if (mRenameFocusPending) {
-						ImGui::SetKeyboardFocusHere();
-						mRenameFocusPending = false;
-					}
-					ImGui::SetNextItemWidth(-FLT_MIN);
-					const bool submitted = ImGui::InputText("##rename", mRenameBuffer, sizeof(mRenameBuffer),
-					                                        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-					// IsItemDeactivated łapie i Esc, i klik poza polem. Esc przywraca starą
-					// wartość do bufora, więc CommitRename i tak nic wtedy nie zapisze.
-					if (submitted || ImGui::IsItemDeactivated()) {
+					// Esc restores the old text into the buffer, so CommitRename then writes nothing.
+					if (ImGuiWidgets::InlineRenameField(&mRename)) {
 						CommitRename(object);
 					}
 					if (depth > 0) {

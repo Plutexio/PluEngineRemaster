@@ -8,7 +8,8 @@
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Events/EventDispatcher.h"
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
-#include "Array/Array.h"
+#include "PluEngine/Core/Widgets/InlineRename.h"
+#include "PluSTL/Array/Array.h"
 #include "SceneStructurePanel.generated.h"
 
 namespace Plu
@@ -108,8 +109,7 @@ namespace Plu
 
 		DynamicArray<EngineObjectHandle> mSelectedObjects;
 		EngineObjectHandle               mRenamingObject;
-		bool                             mRenameFocusPending   = false;
-		char                             mRenameBuffer[128]    = {};
+		ImGuiWidgets::InlineRenameState mRename;
 		Int64                            mSelectionAnchor      = -1;
 		bool                             mShowRandomizeWindow  = false;
 		/** Stan zadokowania z poprzedniej klatki — obwódkę trzeba wypchnąć przed Begin(). */

@@ -86,7 +86,7 @@ namespace Plu
 
 		// Preview meshes hung off attach points, keyed by attach point name. Entries are created by
 		// the details panel and dropped when the named attach point disappears from the skeleton.
-		GameHashMap<String, AttachPointPreview> AttachPointPreviews;
+		HashMap<String, AttachPointPreview> AttachPointPreviews;
 
 		// Material the preview meshes render with. Separate from `Material` on purpose: that one is
 		// a *skeletal* material (its vertex shader reads the bone SSBO) and would draw a static mesh

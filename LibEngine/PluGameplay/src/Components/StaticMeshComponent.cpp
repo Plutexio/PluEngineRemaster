@@ -16,20 +16,15 @@ void Plu::StaticMeshComponent::SetStaticMesh(TUsePointer<StaticMesh> staticMesh)
 {
 	StaticMeshToDisplay = staticMesh;
 	MeshBoundingBoxComputed = false;
+	mWorldBoundsVersion = 0;
 	if (staticMesh && staticMesh->IsLoaded) {
-		MeshBoundingBox = Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw());
-		MeshBoundingBoxComputed = true;
+		SetMeshBoundingBox(Plu::CreateBoundingBoxForStaticMesh(staticMesh.GetRaw()));
 	}
-	// The mesh's collision shapes are baked into the owning object's compound shape, so swapping the
-	// mesh changes the collision geometry just like moving the component does. Unconditional: the
-	// old mesh may have had collision even when the new one has none.
-	MarkOwnerCollisionDirty();
+	DispatchEvent("StaticMeshChanged", nullptr);
 }
 
 void Plu::StaticMeshComponent::OnRelativeTransformChanged()
 {
-	if (!StaticMeshToDisplay || StaticMeshToDisplay->CollisionShapes.IsEmpty()) return;
-	MarkOwnerCollisionDirty();
 }
 
 Plu::TUsePointer<Plu::MaterialInfo> Plu::StaticMeshComponent::GetMaterial()
@@ -45,4 +40,25 @@ void Plu::StaticMeshComponent::SetMaterial(TUsePointer<MaterialInfo> material)
 Matrix4 Plu::StaticMeshComponent::GetRenderMatrix()
 {
 	return GetWorldMatrix();
+}
+
+void Plu::StaticMeshComponent::GetWorldBoundingSphere(Vec3 &outCenter, float &outRadius)
+{
+	const UInt32 transformVersion = GetTransformVersion();
+	if (mWorldBoundsVersion != transformVersion) {
+		const Matrix4& worldMatrix = GetWorldMatrixRef();
+		mWorldBoundsCenter = Vec3(worldMatrix * Vec4(MeshBoundingBox.GetCenter(), 1.0f));
+		// Sphere, not a box: invariant under rotation, so only the scale of the extent matters.
+		mWorldBoundsRadius = glm::length(MeshBoundingBox.GetExtent() * glm::abs(GetWorldScale()));
+		mWorldBoundsVersion = transformVersion;
+	}
+	outCenter = mWorldBoundsCenter;
+	outRadius = mWorldBoundsRadius;
+}
+
+void Plu::StaticMeshComponent::SetMeshBoundingBox(const BoundingBox &boundingBox)
+{
+	MeshBoundingBox = boundingBox;
+	MeshBoundingBoxComputed = true;
+	mWorldBoundsVersion = 0;
 }

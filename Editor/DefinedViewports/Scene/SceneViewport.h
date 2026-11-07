@@ -46,6 +46,9 @@ namespace Plu
 		// because the panel is drawn once per hosting window, and the cone must be appended
 		// exactly once per frame or it would stack up in the buffer.
 		void DrawSelectedSpotLightGizmo();
+		// Launch cone of every ParticleSpawnerComponent on the selected object, into the same
+		// channel and for the same once-per-frame reason as DrawSelectedSpotLightGizmo.
+		void DrawSelectedParticleSpawnerGizmos();
 	public:
 		SceneViewport() = default;
 		virtual ~SceneViewport() override = default;

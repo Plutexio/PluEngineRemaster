@@ -23,7 +23,7 @@ namespace Plu
 		void OnBeginPlay() override;
 		void OnEndPlay() override;
 
-		PLU_PROPERTY()
+		PLU_PROPERTY(PyExport)
 		CameraOptions Options;
 
 		Vec3 GetCameraLocation() override;

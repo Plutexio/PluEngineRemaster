@@ -5,15 +5,20 @@
 #include "PluEngine/Gameplay/Objects/CharacterPuppet.h"
 
 #include "PluEngine/Gameplay/Components/CameraComponent.h"
-#include "PluEngine/Gameplay/Components/PhysicsCapsuleComponent.h"
 #include "PluEngine/Gameplay/Controller.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
 #include "PluEngine/PluUtils.h"
+#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Gameplay/Components/PhysicsCylinderColliderComponent.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 
 Plu::TUsePointer<Plu::CameraComponent> Plu::CharacterPuppet::GetCamera()
 {
 	return Camera;
+}
+
+bool Plu::CharacterPuppet::CanSprint()
+{
+	return true;
 }
 
 bool Plu::CharacterPuppet::IsGrounded() const
@@ -36,10 +41,12 @@ void Plu::CharacterPuppet::OnSetupComponents()
 	Camera = AddComponent(CameraComponent::GetStaticClass(), "CharacterCamera");
 	Camera->SetRelativeLocation(Vec3(0.f, CameraHeightOffset, 0.f));
 
-	mCapsule = AddComponent(PhysicsCapsuleComponent::GetStaticClass(), "CharacterCapsule");
+	mCapsule = AddComponent(PhysicsCylinderColliderComponent::GetStaticClass(), "CharacterCapsule");
 	ActiveBody = true; // simulate this character's body (now a per-object property)
-	mCapsule->CapsuleRadius = CapsuleRadius;
-	mCapsule->CapsuleHalfHeight = CapsuleHalfHeight;
+	mCapsule->SetRadius(CapsuleRadius);
+	mCapsule->SetHalfHeight(CapsuleHalfHeight);
+
+	mBodyComponent = AddComponent(PhysicsBodyComponent::GetStaticClass(), "CharacterPhysicsBody");
 
 	GetInputHandler()->AddActionOnHold(Key::W, [this]()
 	{
@@ -67,12 +74,19 @@ void Plu::CharacterPuppet::OnBeginPlay()
 
 bool Plu::CharacterPuppet::CheckGrounded()
 {
-	// The ray starts in the middle of our own capsule, so the body has to be filtered out — Jolt
-	// treats convex shapes as solid and would report a hit at fraction 0 on ourselves.
-	float checkDist = CapsuleHalfHeight + CapsuleRadius + 0.15f;
-	RaycastHit hit = GetWorld()->GetPhysicsWorld()->Raycast(
-		GetObjectLocation(), Vec3(0.f, -1.f, 0.f), checkDist, RaycastDebugSettings(), { this });
-	return hit.Hit && hit.HitObject != nullptr;
+	// How far below the bottom of the collider the floor still counts as ground.
+	constexpr float kGroundTolerance = 0.1f;
+
+	TUsePointer<SceneWorld> world = GetWorld();
+	if (!world) return false;
+
+	// The collider is a cylinder (JPH::CylinderShape) centred on the object origin, so its bottom
+	// is CapsuleHalfHeight below it. The ray starts inside our own body, so the body has to be
+	// filtered out — Jolt treats convex shapes as solid and would report a hit at fraction 0 on ourselves.
+	const float checkDist = CapsuleHalfHeight + kGroundTolerance;
+	const RaycastHitInfo hit = world->ShootRaycastInDirection(
+		GetObjectLocation(), Vec3(0.f, -1.f, 0.f), checkDist, { this });
+	return hit.Hit;
 }
 
 void Plu::CharacterPuppet::OnUpdate(float deltaTime)
@@ -89,7 +103,7 @@ void Plu::CharacterPuppet::OnUpdate(float deltaTime)
 
 	mIsGrounded = CheckGrounded();
 
-	Vec3 currentVel = mCapsule->GetLinearVelocity();
+	Vec3 currentVel = mBodyComponent->GetLinearVelocity();
 
 	Vec3 hVel = Vec3(0.f);
 	mIsSprinting = false;
@@ -97,14 +111,13 @@ void Plu::CharacterPuppet::OnUpdate(float deltaTime)
 	if (mIsMoving)
 	{
 		mIsSprinting = mSprinting && (!SprintForwardOnly || mMovingForward);
-		float speed = WalkSpeed * (mIsSprinting ? SprintSpeedMultiplier : 1.f)
-			* (mIsGrounded ? 1.f : AirControl);
+		float speed = (mIsSprinting && CanSprint() ? SprintSpeed : WalkSpeed) * (mIsGrounded ? 1.f : AirControl);
 		hVel = glm::normalize(mMoveInput) * speed;
 	}
 
 	float yVel = (mWantsJump && mIsGrounded) ? JumpForce : currentVel.y;
-	mCapsule->SetLinearVelocity(Vec3(hVel.x, yVel, hVel.z));
-	mCapsule->SetAngularVelocity(Vec3(0.f));
+	mBodyComponent->SetLinearVelocity(Vec3(hVel.x, yVel, hVel.z));
+	mBodyComponent->SetAngularVelocity(Vec3(0.f));
 
 	mMoveInput = Vec3(0.f);
 	mSprinting = false;

@@ -28,8 +28,8 @@ namespace Plu
     {
         REFLECTION_BODY_RUNTIMESHADERMANAGER()
     private:
-        GameHashMap<UInt64, TOwningPointer<RuntimeShaderCode>> mShaderCodes;
-        GameHashMap<UInt64, TOwningPointer<ShaderProgram>> mShaderPrograms;
+        HashMap<UInt64, TOwningPointer<RuntimeShaderCode>> mShaderCodes;
+        HashMap<UInt64, TOwningPointer<ShaderProgram>> mShaderPrograms;
         DynamicArray<TUsePointer<ShaderProgram>> mShaderProgramsUsers;
 
         TUsePointer<EngineAssetManager> mAssetManager;

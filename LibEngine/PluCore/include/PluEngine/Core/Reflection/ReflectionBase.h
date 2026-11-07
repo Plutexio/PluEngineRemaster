@@ -7,19 +7,17 @@
 
 #include <functional>
 
+// Spelled out rather than left to the engine PCH: targets without it (PluRuntime) include this too.
+#include <pybind11/pybind11.h>
 #include "imgui.h"
-#include "json.hpp"
-#include "json_fwd.hpp"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"
-#include "PluEngine/Log.h"
-#pragma warning(push, 0)
-#include "pybind11/pybind11.h"
-#pragma warning(pop)
+#include "PluBase/Log.h"
 
 #include "ReflectionBase.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Events/EventDispatcher.h"
+#include "PluEngine/Core/Widgets/SearchBar.h"
 
 namespace Plu
 {
@@ -134,7 +132,7 @@ namespace Plu
 		// comparisons. Rebuilt whenever any type gains a property — a base type gaining one changes
 		// the flattened set of every type below it, so the validity stamp is registry-global rather
 		// than per-type.
-		GameHashMap<String, PropertyInfo*> PropertiesByName;
+		HashMap<String, PropertyInfo*> PropertiesByName;
 		UInt64 PropertiesByNameGeneration = 0;
 
 		ConstructorFunc Constructor = [this]()->void* {
@@ -196,8 +194,8 @@ namespace Plu
 
 	class PLUCORE_API TypeRegistry
 	{
-		GameHashMap<String, TypeInfo*> mTypeMap;
-		GameHashMap<String, EnumInfo*> mEnumMap;
+		HashMap<String, TypeInfo*> mTypeMap;
+		HashMap<String, EnumInfo*> mEnumMap;
 		// The two subsystems reflection itself needs, held directly rather than through
 		// ApplicationInfo: that struct lives in the application layer, above everything, so naming
 		// its type here would make the bottom of the stack depend on the top. Application sets both.
@@ -219,14 +217,17 @@ namespace Plu
 		// changed, same contract as every other EditorControl, so nested struct/class edits still
 		// propagate "changed" up to callers that dirty-mark assets on it.
 		std::function<bool(TypeInfo*, void*)> editorControlForTypeInfo;
-		std::function<void*(DeserializationContext*, JSON, TypeInfo*)> deserializeForTypeInfo;
+		// Deserializes INTO the existing instance (the field inside the owning object). It must not
+		// construct a new one: TypeSerializer<T>::Deserialize only has the field's address, so a
+		// returned object could never reach the field — it was silently dropped and leaked.
+		std::function<void(DeserializationContext*, const JSON&, TypeInfo*, void*)> deserializeForTypeInfo;
 		std::function<JSON(TypeInfo*, void*)> serializeForTypeInfo;
 		TUsePointer<EngineObjectManager> GetObjectManager();
 		TUsePointer<EngineAssetManager> GetAssetManager();
 		static TypeRegistry* GetInstance();
 		void AddType(TypeInfo* typeInfo);
 		TypeInfo* GetTypeOfName(const String& typeName);
-		GameHashMap<String, TypeInfo*>* GetTypeMap();
+		HashMap<String, TypeInfo*>* GetTypeMap();
 
 		EventDispatcher TypeRegistryEventDispatcher;
 
@@ -313,7 +314,7 @@ namespace Plu
 				}
 			} else {
 				if (TypeRegistry::GetInstance()->deserializeForTypeInfo) {
-					outValue = TypeRegistry::GetInstance()->deserializeForTypeInfo(deserializationContext, json, T::GetStaticClass());
+					TypeRegistry::GetInstance()->deserializeForTypeInfo(deserializationContext, json, T::GetStaticClass(), outValue);
 				} else {
 					PLU_CORE_ERROR("NO TYPE DESERIALIZATION! ({})", T::GetStaticClass()->TypeName.CStr());
 				}
@@ -354,13 +355,7 @@ namespace Plu
 					if (ImGui::BeginCombo(name.CStr(), previewLabel, ImGuiComboFlags_WidthFitPreview))
 					{
 						static ImGuiTextFilter filter;
-						if (ImGui::IsWindowAppearing())
-						{
-							ImGui::SetKeyboardFocusHere();
-							filter.Clear();
-						}
-						ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-						filter.Draw("##Filter", -FLT_MIN);
+						ImGuiWidgets::PopupSearchBar(&filter);
 
 						bool changed = false;
 

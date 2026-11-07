@@ -3,9 +3,13 @@
 //
 
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "HashSet/HashSet.h"
+#include "PluEngine/Render/RenderParticleLiveness.h"
+#include "PluEngine/Render/RenderParticleCommands.h"
+#include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
 #include "PluEngine/Timer.h"
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluSTL/HashSet/HashSet.h"
+#include "PluEngine/Timer.h"
+#include "../../include/PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
 #include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
 #include "PluEngine/Gameplay/Components/InstancedStaticMeshComponent.h"
 #include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
@@ -20,7 +24,6 @@
 #include "PluEngine/Gameplay/WorldComponent.h"
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Gameplay/PhysicsWorld.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "PluEngine/Render/RenderingInterfaces.h"
 
@@ -34,9 +37,6 @@ namespace Plu
 	{
 		mEngineObjectManager = engineObjectManager;
 		mClient = client;
-		EngineObjectHandle physicsWorldUser = mEngineObjectManager->CreateObject<PhysicsWorld>();
-		mPhysicsWorld = mEngineObjectManager->GetObjectAsOwner<PhysicsWorld>(physicsWorldUser);
-		mPhysicsWorld->Init(mEngineObjectManager->GetObjectAsUser<SceneWorld>(*GetEngineObjectHandle()), mEngineObjectManager);
 	}
 
 	void SceneWorld::LoadGameObjects()
@@ -50,7 +50,6 @@ namespace Plu
 			mGameObjects[gObj.first]->OnEndPlay();
 		}
 		mGameMode = nullptr;
-		mPhysicsWorld->Shutdown();
 		mControllers.Clear();
 		mObjectsToDestroy.Clear();
 		mObjectsToBegin.Clear();
@@ -59,25 +58,25 @@ namespace Plu
 			DeleteGameObject(*gObj.second->GetEngineObjectHandle(), false);
 		}
 		HandleDestroy();
-		mEngineObjectManager->DestroyObject(*mPhysicsWorld->GetEngineObjectHandle());
 		mPhysicsWorld = nullptr;
 		mGameObjects.Clear();
+
+		// Behind every spawn this world queued, so no detached effect outlives it on the render thread.
+		ParticleCommand releaseCommand;
+		releaseCommand.Type = EParticleCommandType::ReleaseWorld;
+		releaseCommand.SceneHandle = GetObjectHandle();
+		PushParticleCommand(std::move(releaseCommand));
 	}
 
 	void SceneWorld::Play()
 	{
 		mGameMode = SpawnGameObject(GameModeClass.GetRawType());
 		HandleBeginPlay();
-		mPhysicsWorld->Play();
 		mIsPlaying = true;
 	}
 
 	void SceneWorld::HandleBeginPlay()
 	{
-		// Objects spawned during play need their physics body before OnBeginPlay runs, since
-		// begin-play code may already read velocity / move the body. Before Play() the whole
-		// batch is built by PhysicsWorld::Play() instead.
-		if (mIsPlaying) mPhysicsWorld->FlushPendingBodies();
 		// Move the batch aside first: OnBeginPlay may spawn objects, which pushes into
 		// mObjectsToBegin and would reallocate the array we are iterating. Those objects begin
 		// play on the next pass.
@@ -141,7 +140,11 @@ namespace Plu
 			if (mSpotLights.Contains(object->GetObjectUUID())) {
 				mSpotLights.Remove(object->GetObjectUUID());
 			}
-			mPhysicsWorld->RemoveGameObjectBodies(object.GetRaw());
+			// Spawners are keyed by component UUID, not object UUID. Removing them here is what makes
+			// the render thread destroy their particle spawners.
+			for (const auto& spawner : object->GetAllComponentsByClass(TClassPointer<GameObjectComponent>(ParticleSpawnerComponent::GetStaticClass()))) {
+				if (spawner) mParticleSpawnerComponents.Remove(spawner->Uuid);
+			}
 			object->Cleanup();
 			mGameObjects.Remove(object->mUuid);
 			mEngineObjectManager->DestroyObject(*object->GetEngineObjectHandle());
@@ -152,7 +155,6 @@ namespace Plu
 		if (destroyedSmth) mGameObjectsPerClassCache.Clear();
 #ifdef PLU_ENGINE_EDITOR_BUILD
 		if (destroyedSmth) {
-			PLU_CORE_WARN("Destroyed {} objects!", batch.Size());
 			GetObjectEventDispatcher()->Dispatch("GameObjectsChanged", nullptr);
 		}
 #endif
@@ -182,11 +184,7 @@ namespace Plu
 
 	void SceneWorld::TickScene(float deltaTime)
 	{
-		// Picks up bodies for components added outside of a spawn (e.g. AddComponent from a tick).
-		mPhysicsWorld->FlushPendingBodies();
-		PLU_TIMER_START("Physics Update");
-		mPhysicsWorld->Update(deltaTime);
-		PLU_TIMER_END("Physics Update");
+		DispatchEvent("PhysicsTick", &deltaTime);
 		PLU_TIMER_START("GameObjects Ticks");
 		// A tick may spawn objects; while this flag is up SpawnGameObject parks them in
 		// mPendingSpawns instead of inserting into the map we are iterating. They join the map
@@ -202,12 +200,34 @@ namespace Plu
 		HandleBeginPlay();
 	}
 
+	RaycastHitInfo SceneWorld::ShootRaycast(const Vec3& Start, const Vec3& End, const DynamicArray<GameObject*>& IgnoredObjects)
+	{
+		PLU_PROFILE_SCOPE("SceneWorld ShootRaycast");
+		RaycastRequest request{Start, End, {}, {}};
+		// Pre-filled so a world without a physics world (nobody answers the event) still reports the segment.
+		request.Result.TraceStart = Start;
+		request.Result.TraceEnd = End;
+		request.IgnoredObjectUuids.Reserve(IgnoredObjects.Size());
+		for (GameObject* ignored : IgnoredObjects) {
+			if (ignored) request.IgnoredObjectUuids.PushBack(ignored->GetObjectUUID());
+		}
+		DispatchEvent("Raycast", &request);
+		return request.Result;
+	}
+
+	RaycastHitInfo SceneWorld::ShootRaycastInDirection(const Vec3& Start, const Vec3& Direction, float Length, const DynamicArray<GameObject*>& IgnoredObjects)
+	{
+		if (glm::length(Direction) <= 0.0f) return {};
+		return ShootRaycast(Start, Start + glm::normalize(Direction) * Length, IgnoredObjects);
+	}
+
 	void SceneWorld::NewGameObjectComponent(const TOwningPointer<GameObjectComponent>& component)
 	{
 		component->OnSetupComponent();
-		if (component->GetClass()->IsDerivedOfOrSame(PhysicsBodyComponent::GetStaticClass())) {
-			mPhysicsWorld->NewPhysicsComponent(component);
-		}
+
+		TUsePointer<GameObjectComponent> newComponent = component;
+		DispatchEvent("NewComponent", &newComponent);
+
 		if (component->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())) {
 			if (mStaticMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID())) {
 				mStaticMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].PushBack(component);
@@ -232,17 +252,84 @@ namespace Plu
 
 		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
 			mParticleSpawnerComponents[component->Uuid] = component;
-			mParticleSpawnersToInitialize.Insert(component->Uuid);
 		}
+	}
+
+	void SceneWorld::UpdateParticleLiveness()
+	{
+		PLU_PROFILE_SCOPE("Particle Liveness");
+		if (mParticleSpawnerComponents.IsEmpty()) return;
+
+		ParticleLivenessFrame frame;
+		ReadParticleLiveness(frame);
+		// The channel carries the world the render thread ticked last. Anything else says nothing about
+		// this world, and "no entry" must never be read as "finished".
+		if (frame.SceneHandle != GetObjectHandle()) return;
+
+		HashMap<UInt64, const ParticleSpawnerLiveness*> byUuid;
+		for (const ParticleSpawnerLiveness& entry : frame.Spawners) byUuid.InsertOrAssign(entry.SpawnerUuid, &entry);
+
+		for (auto& entry : mParticleSpawnerComponents) {
+			ParticleSpawnerComponent* component = entry.second.GetRaw();
+			if (!component) continue;
+			const ParticleSpawnerLiveness* const* found = byUuid.Find(component->Uuid.getUUID());
+			if (!found) continue;
+
+			component->ApplyLiveness((*found)->AliveParticles, (*found)->CompletedActivationVersion);
+			if (component->AutoDestroyWhenFinished && component->IsFinished()) {
+				TUsePointer<GameObject> owner = component->GetParentGameObject();
+				// Deferred: DeleteGameObject queues the destroy for the next scene update.
+				if (owner) DeleteGameObject(owner->GetObjectHandle());
+			}
+		}
+	}
+
+	UInt64 SceneWorld::SpawnParticleSystem(TUsePointer<ParticleSystem> Asset, const Vec3& Location, const Vec3& Rotation, float Lifetime)
+	{
+		PLU_PROFILE_SCOPE("SceneWorld::SpawnParticleSystem");
+		ParticleSystem* system = Asset.GetRaw();
+		if (!system) {
+			PLU_CORE_WARN("SpawnParticleSystem: no particle system asset given");
+			return 0;
+		}
+
+		const UInt64 effectId = PluUUID().getUUID(); // never 0, and cannot collide with a component UUID in practice
+		ParticleCommand command;
+		command.SceneHandle = GetObjectHandle();
+		command.EffectId = effectId;
+		command.Location = Location;
+		command.Rotation = Quaternion(glm::radians(Rotation));
+		command.Lifetime = Lifetime > 0.0f ? Lifetime : 0.0f;
+		// Compiling is main-thread work (cached per CompileRevision); the queue attaches a copy only when the
+		// render thread has not been sent this revision yet.
+		PushParticleSpawnCommand(std::move(command), ParticleSystemCompiler::GetCompiled(*system));
+		return effectId;
+	}
+
+	void SceneWorld::DeactivateParticleSystem(UInt64 EffectId)
+	{
+		if (EffectId == 0) return;
+		ParticleCommand command;
+		command.Type = EParticleCommandType::Deactivate;
+		command.SceneHandle = GetObjectHandle();
+		command.EffectId = EffectId;
+		PushParticleCommand(std::move(command));
+	}
+
+	void SceneWorld::DestroyParticleSystem(UInt64 EffectId)
+	{
+		if (EffectId == 0) return;
+		ParticleCommand command;
+		command.Type = EParticleCommandType::Destroy;
+		command.SceneHandle = GetObjectHandle();
+		command.EffectId = EffectId;
+		PushParticleCommand(std::move(command));
 	}
 
 	void SceneWorld::DeleteGameObjectComponent(const TOwningPointer<GameObjectComponent> &component)
 	{
-		//Physics
-		if (component->GetClass()->IsDerivedOfOrSame(PhysicsBodyComponent::GetStaticClass())) {
-			mPhysicsWorld->MarkGameObjectShapeDirty(component->GetParentGameObject().GetRaw());
-			return;
-		}
+		TUsePointer<GameObjectComponent> oldComponent = component;
+		DispatchEvent("DestroyComponent", &oldComponent);
 
 		if (mStaticMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID()) &&
 			component->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())) {
@@ -261,30 +348,10 @@ namespace Plu
 		}
 
 		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
-			mParticleSpawnersToDestroy.Insert(component->Uuid);
+			// Dropping it from the map is the whole destroy: the next snapshot no longer lists it,
+			// and the render thread destroys the spawner.
+			mParticleSpawnerComponents.Remove(component->Uuid);
 		}
-	}
-
-	void SceneWorld::SpawnParticlesForComponent(TUsePointer<ParticleSpawnerComponent> component, int numOfParticles)
-	{
-		if (!mParticleSpawnerComponents.Contains(component->Uuid)) return;
-		mParticleSpawnersToSpawnParticles.Insert(component->Uuid, numOfParticles);
-	}
-
-	void SceneWorld::OnGameObjectScaleChanged(GameObject* gameObject)
-	{
-		if (!mIsPlaying || !gameObject) return;
-		// Only objects that already have a physics body need their colliders rebuilt.
-		if (!mEngineObjectManager->IsValid(gameObject->mPhysicsBodyHandle)) return;
-		mPhysicsWorld->RebuildGameObjectBody(gameObject);
-	}
-
-	void SceneWorld::OnComponentTransformChanged(GameObject* gameObject)
-	{
-		if (!mIsPlaying || !gameObject) return;
-		// Deferred, unlike the scale path above: transform setters are called per frame while a
-		// value is dragged in the editor, and a rebuild per call would be wasteful.
-		mPhysicsWorld->MarkGameObjectShapeDirty(gameObject);
 	}
 
 	TUsePointer<GameObject> SceneWorld::SpawnGameObject(TClassPointer<GameObject> objectClass)
@@ -524,11 +591,6 @@ namespace Plu
 		}
 
 		controller->Possess(puppet);
-	}
-
-	PhysicsWorld * SceneWorld::GetPhysicsWorld() const
-	{
-		return mPhysicsWorld.GetRaw();
 	}
 
 }

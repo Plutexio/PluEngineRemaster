@@ -8,11 +8,11 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "RenderingManager.generated.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Render/ImGuiRenderState.h"
 #include "PluEngine/Render/OpenGLRenderState.h"
 #include "PluEngine/Core/Threading/TripleBuffer.h"
-#include "Concurrent/ConcurrentQueue.h"
+#include "PluSTL/Concurrent/ConcurrentQueue.h"
 
 #include <mutex>
 #include <condition_variable>
@@ -43,9 +43,9 @@ namespace Plu
 	private:
 		ApplicationInfo* mApplicationInfo;
 
-		GameHashMap<UInt64, TOwningPointer<Texture>> mTextures;
-		GameHashMap<UInt64, int> mTextureFramesWithNoUse;
-		GameHashMap<UInt64, int> mTextureUsePerFrame;
+		HashMap<UInt64, TOwningPointer<Texture>> mTextures;
+		HashMap<UInt64, int> mTextureFramesWithNoUse;
+		HashMap<UInt64, int> mTextureUsePerFrame;
 
 		// The texture maps above (and the GL texture objects they own) belong to the render thread:
 		// they are created/uploaded and destroyed with the GL context current, and the per-frame
@@ -81,13 +81,13 @@ namespace Plu
 		// lock: SaveTexture only touches the texture object it is handed.
 		void ProcessPendingTextureSaves();
 
-		GameHashMap<UInt64, TUsePointer<StaticMesh>> mStaticMeshes;
-		GameHashMap<UInt64, int> mStaticMeshUsePerFrame;
-		GameHashMap<UInt64, int> mStaticMeshFramesWithNoUse;
+		HashMap<UInt64, TUsePointer<StaticMesh>> mStaticMeshes;
+		HashMap<UInt64, int> mStaticMeshUsePerFrame;
+		HashMap<UInt64, int> mStaticMeshFramesWithNoUse;
 
-		GameHashMap<UInt64, TUsePointer<SkeletalMesh>> mSkeletalMeshes;
-		GameHashMap<UInt64, int> mSkeletalMeshUsePerFrame;
-		GameHashMap<UInt64, int> mSkeletalMeshFramesWithNoUse;
+		HashMap<UInt64, TUsePointer<SkeletalMesh>> mSkeletalMeshes;
+		HashMap<UInt64, int> mSkeletalMeshUsePerFrame;
+		HashMap<UInt64, int> mSkeletalMeshFramesWithNoUse;
 
 		TOwningPointer<std::thread> mRenderThread;
 		std::atomic<bool> mIsRendererRunning = false;
@@ -106,7 +106,7 @@ namespace Plu
 			TUsePointer<IWindow> Window;
 		};
 		// Heap entries, so the render thread may hold one while working outside the mutex.
-		GameHashMap<UInt32, WindowImGuiState*> mImGuiStates;
+		HashMap<UInt32, WindowImGuiState*> mImGuiStates;
 		std::mutex mImGuiStatesMutex;
 
 		// Window lifecycle handshake with the render thread. An ImGui context's renderer backend
@@ -120,7 +120,7 @@ namespace Plu
 		DynamicArray<UInt32> mWindowsToTearDownGL;
 		DynamicArray<UInt32> mWindowsSafeToDestroy;
 		// Entries the render thread is done with, waiting for Main to destroy the ImGui context.
-		GameHashMap<UInt32, WindowImGuiState*> mPendingDestroyStates;
+		HashMap<UInt32, WindowImGuiState*> mPendingDestroyStates;
 
 		OpenGLRenderState mGLState;
 
@@ -155,8 +155,17 @@ namespace Plu
 		bool mImGuiPassDone = false;      // Render -> Main: that pass is complete.
 		bool mImGuiRenderParked = false;  // Render -> Main: parked, not touching the atlas.
 
+		// Power saving (FrameDemand.h): where the render thread sleeps after an iteration that had
+		// nothing to present. mFrameWorkPending is guarded by the mutex and set by
+		// NotifyFrameAvailable(), so a notify that lands just before the wait is not lost.
+		std::mutex mFrameWorkMtx;
+		std::condition_variable mFrameWorkCv;
+		bool mFrameWorkPending = false;
+		void WaitForFrameWork();
+
 		void RenderThreadEnter();
-		void RenderThreadLoop();
+		// Returns false when the iteration presented nothing (power saving, nothing new).
+		bool RenderThreadLoop();
 		void RenderThreadExit();
 
 		friend PLURENDER_API void DrawStaticMesh(const StaticMesh* staticMesh, RenderingManager* renderingManager);
@@ -212,6 +221,12 @@ namespace Plu
 		void BeginImGuiFrameSubmit();
 		void SubmitImGuiDrawData(UInt32 windowID, ImDrawData* drawData);
 		void EndImGuiFrameSubmit();
+
+		// Any thread. Tells a render thread that is asleep under power saving that there is
+		// something for it: a published snapshot (scene or ImGui) or a queued Request*. Callers
+		// that publish through this manager already do it; call it after publishing a
+		// RenderSnapshot, which the manager does not see.
+		void NotifyFrameAvailable();
 
 		void SetImGuiRenderingIgnorance(bool ignore);
 		bool IsImGuiRenderingIgnored() const;

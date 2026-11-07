@@ -1,4 +1,4 @@
-# L5 — GameObject, components, scenes, the physics world and the snapshot builder.
+# L3 — particle data and the particle spawner (simulated on the render thread).
 plu_add_engine_module(PluEffects
         DEPENDS PluCore PluAssetTypes)
 

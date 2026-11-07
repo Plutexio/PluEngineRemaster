@@ -7,11 +7,11 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
-#include "Array/Array.h"
-#include "HashMap/HashMapV2.h"
-#include "Pointers/TOwningPointer.h"
-#include "Pointers/TUsePointer.h"
-#include "String/String.h"
+#include "PluSTL/Array/Array.h"
+#include "PluSTL/HashMap/HashMap.h"
+#include "PluSTL/Pointers/TOwningPointer.h"
+#include "PluSTL/Pointers/TUsePointer.h"
+#include "PluSTL/String/String.h"
 
 namespace Plu
 {
@@ -80,7 +80,7 @@ namespace Plu
 
 	private:
 		DynamicArray<TOwningPointer<IAnimationGraphVariable>> mVariables;
-		GameHashMap<String, UInt64> mNameToIndex;
+		HashMap<String, UInt64> mNameToIndex;
 		UInt32 mValueRevision = 0;
 	};
 }

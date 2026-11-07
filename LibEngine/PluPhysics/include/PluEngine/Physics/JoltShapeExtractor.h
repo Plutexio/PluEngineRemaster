@@ -9,7 +9,7 @@
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Geometry/AABox.h>
 #include <glm/glm.hpp>
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu
 {

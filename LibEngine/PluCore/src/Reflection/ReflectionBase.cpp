@@ -4,7 +4,7 @@
 
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
 
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 
 namespace Plu
@@ -200,7 +200,7 @@ namespace Plu
 		return nullptr;
 	}
 
-	GameHashMap<String, TypeInfo*> * TypeRegistry::GetTypeMap()
+	HashMap<String, TypeInfo*> * TypeRegistry::GetTypeMap()
 	{
 		return &mTypeMap;
 	}

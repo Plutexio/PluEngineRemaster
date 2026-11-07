@@ -3,8 +3,8 @@
 //
 
 #include "PluEngine/Physics/PhysicsBody.h"
-#include <Jolt/Physics/Body/Body.h> // CreateBody hands back a Body*, we only need its ID
-#include "PluEngine/Physics/PhysicsLayers.h"
+#include <Jolt/Physics/Body/Body.h>
+#include "PluBase/Log.h"
 
 using namespace Plu;
 
@@ -13,19 +13,23 @@ PhysicsBody::PhysicsBody(
     JPH::ShapeRefC      Shape,
     const JPH::RVec3&   Position,
     const JPH::Quat&    Rotation,
-    BodyType            Type,
+    PhysicsBodyType            Type,
+    TUsePointer<PhysicsCollisionChannel> Channel,
+    UInt64 UserData,
     float               Friction,
     float               Restitution,
-    UInt32              CollisionProfileIndex,
+    float               Mass,
     bool                DeferAdd)
     : mBodyInterface(BodyInterface)
 {
+    PLU_CORE_ASSERT(Channel, "Channel cannot be null!");
+
     JPH::BodyCreationSettings Settings(
         Shape,
         Position,
         Rotation,
         ToJoltMotionType(Type),
-        ToJoltLayer(Type)
+        ToJoltLayer(Channel.GetRaw(),Type)
     );
 
     Settings.mAllowedDOFs = JPH::EAllowedDOFs::All;
@@ -35,26 +39,47 @@ PhysicsBody::PhysicsBody(
     Settings.mFriction = Friction;
     Settings.mRestitution = Restitution;
 
+    JPH::MassProperties massProperties;
+    massProperties.mMass = Mass;
+    Settings.mMassPropertiesOverride = massProperties;
+    Settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+
+    double x = 0.0f;
+    int y = static_cast<int>(x);
+
+    Settings.mUserData = UserData;
+
     // UE-style channels: the profile index is read back by the contact listener via
     // CollisionGroup::GetGroupID(). No group filter is attached (see PhysicsCollisionRules.h).
-    Settings.mCollisionGroup = JPH::CollisionGroup(nullptr, CollisionProfileIndex, 0);
+    //Settings.mCollisionGroup = JPH::CollisionGroup(nullptr, CollisionProfileIndex, 0); TODO
 
-    mNeedsActivation = Type != BodyType::Static;
+    mNeedsActivation = Type != PhysicsBodyType::Static;
 
     if (DeferAdd) {
         // Created but not inserted — the caller adds this in a batch. Until then the body exists
         // (it has an ID) but is invisible to simulation and queries.
         JPH::Body* body = mBodyInterface.CreateBody(Settings);
         mBodyID = body ? body->GetID() : JPH::BodyID();
-        return;
+    } else {
+        mBodyID = mBodyInterface.CreateAndAddBody(
+            Settings,
+            mNeedsActivation
+                ? JPH::EActivation::Activate
+                : JPH::EActivation::DontActivate
+        );
     }
 
-    mBodyID = mBodyInterface.CreateAndAddBody(
-        Settings,
-        mNeedsActivation
-            ? JPH::EActivation::Activate
-            : JPH::EActivation::DontActivate
-    );
+    mBodyType = Type;
+
+    // Jolt hands back no body once PhysicsWorld's kMaxBodies is reached.
+    if (mBodyID.IsInvalid()) {
+        PLU_CORE_ERROR("Failed to create physics body — the physics system is out of bodies");
+    }
+}
+
+void PhysicsBody::SetCollisionChannel(PhysicsCollisionChannel *Channel) const
+{
+    mBodyInterface.SetObjectLayer(mBodyID, ToJoltLayer(Channel, mBodyType));
 }
 
 PhysicsBody::~PhysicsBody() {
@@ -136,16 +161,17 @@ void PhysicsBody::AddAngularImpulse(const JPH::Vec3& Impulse) {
     mBodyInterface.AddAngularImpulse(mBodyID, Impulse);
 }
 
-JPH::EMotionType PhysicsBody::ToJoltMotionType(BodyType Type) {
+JPH::EMotionType PhysicsBody::ToJoltMotionType(PhysicsBodyType Type) {
     switch (Type) {
-        case BodyType::Dynamic:   return JPH::EMotionType::Dynamic;
-        case BodyType::Kinematic: return JPH::EMotionType::Kinematic;
+        case PhysicsBodyType::Dynamic:   return JPH::EMotionType::Dynamic;
+        case PhysicsBodyType::Kinematic: return JPH::EMotionType::Kinematic;
         default:                   return JPH::EMotionType::Static;
     }
 }
 
-JPH::ObjectLayer PhysicsBody::ToJoltLayer(BodyType Type) {
-    return Type == BodyType::Static
-        ? CollisionLayers::STATIC
-        : CollisionLayers::DYNAMIC;
+JPH::ObjectLayer PhysicsBody::ToJoltLayer(PhysicsCollisionChannel *channel, PhysicsBodyType Type)
+{
+    UInt16 layer = PhysicsChannelsManager::GetInstance()->GetChannelId(channel);
+    layer = layer << 1 | (Type != PhysicsBodyType::Static);
+    return layer;
 }

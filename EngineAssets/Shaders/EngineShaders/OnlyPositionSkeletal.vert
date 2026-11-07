@@ -17,7 +17,10 @@ layout (location = 6) in vec4  boneWeights;
 uniform int paletteBaseIndex;
 
 uniform mat4 model;
-uniform mat4 lightSpaceMatrix;
+// Osobno, nie premnożone — patrz komentarz w OnlyPositionInstanced.vert. Kolejność mnożeń jak
+// w BasicVertSkeletal.vert.
+uniform mat4 view;
+uniform mat4 projection;
 
 void main() {
     mat4 skinMatrix =
@@ -26,5 +29,6 @@ void main() {
         + boneWeights.z * finalBoneMatrix[paletteBaseIndex + boneIDs.z]
         + boneWeights.w * finalBoneMatrix[paletteBaseIndex + boneIDs.w];
 
-    gl_Position = lightSpaceMatrix * model * skinMatrix * vec4(aPos, 1.0);
+    vec4 skinnedPos = skinMatrix * vec4(aPos, 1.0);
+    gl_Position = projection * view * model * skinnedPos;
 }

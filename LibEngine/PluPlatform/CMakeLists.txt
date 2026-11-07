@@ -5,5 +5,5 @@ target_link_libraries(PluPlatform PUBLIC glad imgui::imgui)
 if (NOT WIN32)
     target_link_libraries(PluPlatform PRIVATE SDL3::SDL3)
 else ()
-    target_link_libraries(PluPlatform PRIVATE dwmapi ole32 shell32 uuid)
+    target_link_libraries(PluPlatform PRIVATE OpenGL::GL dwmapi ole32 shell32 uuid)  # OpenGL::GL: wgl*
 endif ()

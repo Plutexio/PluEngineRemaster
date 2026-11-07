@@ -14,6 +14,7 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/CollisionChannels.h"
+#include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "Python/RuntimePythonRunner.h"
@@ -40,6 +41,11 @@ bool Plu::RuntimeApp::OnInit()
     if (!std::filesystem::exists(projectPath.CStr())) {
         return false;
     }
+    // Written by EditorProjectManager::BuildProjectForShipment. Loaded before any world exists so
+    // bodies are built against the project's channels.
+    PathW physicsChannelsPath = selfPath.GetParentPath();
+    physicsChannelsPath /= L"PhysicsChannels.bin";
+    PhysicsChannelsManager::GetInstance()->LoadFromBinaryFile(physicsChannelsPath);
     StringW exeName = selfPath.GetStem();
     windowProperties.Title = exeName.ToNarrow();
     mApplicationInfo.AppWindow = IWindow::PlutexCreateWindow(windowProperties, mObjectManager, &mApplicationInfo);

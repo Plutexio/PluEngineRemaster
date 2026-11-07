@@ -12,30 +12,7 @@
 
 namespace Plu
 {
-    class RenderingManager;
-
-    enum class StaticMeshCollisionType
-    {
-        Approximate,
-        PerVertex
-    };
-
-    enum class ApproximateCollisionMode
-    {
-        BoundingBox,
-        ConvexHull,
-        Sphere
-    };
-
-    struct StaticMeshCollisionDef
-    {
-        StaticMeshCollisionType Type = StaticMeshCollisionType::Approximate;
-        ApproximateCollisionMode ApproxMode = ApproximateCollisionMode::ConvexHull;
-    };
-}
-
-namespace Plu
-{
+    struct IStaticMeshCollisionData;
     // NoVirtualClass: POD wierzchołka wysyłany surowo na GPU (offsetof/sizeof) —
     // nie może dostać vtable, więc GetClass() zostaje niewirtualne.
     PLU_STRUCT(NoVirtualClass)
@@ -68,7 +45,8 @@ namespace Plu
         PLU_PROPERTY()
         MeshData StaticMeshData; //This we load
 
-        DynamicArray<StaticMeshCollisionDef> CollisionShapes;
+        TOwningPointer<IStaticMeshCollisionData> CollisionData;
+        String CollisionName;
 
         //This we do when needed
         PLU_PROPERTY()

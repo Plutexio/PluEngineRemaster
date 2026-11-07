@@ -57,17 +57,27 @@ set_target_properties(PluRuntime PROPERTIES
 
 # Engine is an INTERFACE target now, so there is no single $<TARGET_FILE:Engine> to copy: every
 # module is its own shared library and all of them have to sit next to the executable, which is
-# what the $ORIGIN RPATH expects to find. glad is shared for the same reason (one function-pointer
-# table for the whole process) and travels with them.
-foreach (PLU_MODULE IN LISTS PLU_MODULES)
+# what the $ORIGIN RPATH expects to find. glad and spdlog are shared for the same reason (one
+# function-pointer table / logger registry for the whole process) and travel with them.
+foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
     add_custom_command(TARGET PluRuntime POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:${PLU_MODULE}>
             $<TARGET_FILE_DIR:PluRuntime>
     )
 endforeach ()
-add_custom_command(TARGET PluRuntime POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:glad>
-        $<TARGET_FILE_DIR:PluRuntime>
-)
+
+
+# =====================================================================================
+#  Runtime distribution (target: DistributeRuntime)
+#
+#  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Runtime presets).
+#  Assembles PluRuntime(.exe), the engine libraries, their vcpkg dependencies and the engine
+#  resources into PLU_DIST_DIR — plus, for the Linux -> Windows cross build, the embeddable Python.
+#  The game project itself (scenes, assets, Scripts/) is not part of it: RuntimeApp loads the project
+#  from the directory next to the executable, so it is copied in on top.
+# =====================================================================================
+if(PLU_DISTRIBUTION)
+    set(PLU_DIST_DIR "${CMAKE_SOURCE_DIR}/RuntimeDist" CACHE PATH "Where DistributeRuntime assembles the runtime")
+    plu_add_distribute_target(DistributeRuntime PluRuntime "${PLU_DIST_DIR}")
+endif()

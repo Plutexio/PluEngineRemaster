@@ -6,7 +6,7 @@
 #define PLUENGINE_RENDERUSAGESTATS_H
 
 #include "PluEngine/Core.h"
-#include "PluSTL_FWD.h"
+#include "PluSTL/PluSTL_FWD.h"
 
 namespace Plu {
 
@@ -40,9 +40,9 @@ namespace Plu {
         void RecordTexture(UInt64 textureUuid, UInt32 count = 1);
 
         // Bezpośredni dostęp do rejestrów (odczyt na tym samym wątku co zapis — MAIN).
-        const GameHashMap<UInt64, AssetUsageEntry>& GetMeshUsage() const { return mMeshes; }
-        const GameHashMap<UInt64, AssetUsageEntry>& GetSkeletalMeshUsage() const { return mSkeletalMeshes; }
-        const GameHashMap<UInt64, AssetUsageEntry>& GetTextureUsage() const { return mTextures; }
+        const HashMap<UInt64, AssetUsageEntry>& GetMeshUsage() const { return mMeshes; }
+        const HashMap<UInt64, AssetUsageEntry>& GetSkeletalMeshUsage() const { return mSkeletalMeshes; }
+        const HashMap<UInt64, AssetUsageEntry>& GetTextureUsage() const { return mTextures; }
 
         // Zeruje wszystkie zebrane liczniki.
         void Clear();
@@ -50,9 +50,9 @@ namespace Plu {
     private:
         RenderUsageStats() = default;
 
-        GameHashMap<UInt64, AssetUsageEntry> mMeshes;
-        GameHashMap<UInt64, AssetUsageEntry> mSkeletalMeshes;
-        GameHashMap<UInt64, AssetUsageEntry> mTextures;
+        HashMap<UInt64, AssetUsageEntry> mMeshes;
+        HashMap<UInt64, AssetUsageEntry> mSkeletalMeshes;
+        HashMap<UInt64, AssetUsageEntry> mTextures;
     };
 
 

@@ -26,9 +26,9 @@ out mat3 TBN;
 uniform int paletteBaseIndex;
 
 uniform mat4 model;
-// Macierz normalnych policzona na CPU (transpose(inverse(model)), ustawiana przez Renderer
-// razem z "model") — bez per-wierzchołkowego inverse() na GPU. Jak dotąd liczona z samego
-// modelu (rotacja skinningu celowo/na razie nieuwzględniana — zachowanie bez zmian).
+// Normal matrix computed on the CPU (transpose(inverse(model)), set by the Renderer
+// alongside "model") — no per-vertex inverse() on the GPU. Covers only the model transform;
+// the skinning rotation is applied separately in main().
 uniform mat4 normalMatrix;
 uniform mat4 view;
 uniform mat4 projection;
@@ -47,8 +47,14 @@ void main()
 
     mat3 nMat = mat3(normalMatrix);
 
-    vec3 N = normalize(nMat * aNormal);
-    vec3 T = normalize(nMat * aTangent.xyz);
+    // Normals and tangents must follow the skinning rotation too — otherwise they stay in
+    // bind-pose mesh space. On rigs whose bones carry an axis conversion (Mixamo/Blender
+    // Z-up -> Y-up) that is a constant 90 deg error, not just a missing animation rotation.
+    // The palette is rigid + uniform scale, so its 3x3 works for normals; normalize() drops the scale.
+    mat3 skin3 = mat3(skinMatrix);
+
+    vec3 N = normalize(nMat * (skin3 * aNormal));
+    vec3 T = normalize(nMat * (skin3 * aTangent.xyz));
     // Re-ortogonalizacja Grama-Schmidta (T może nie być prostopadłe do N po interpolacji/skalowaniu).
     T = normalize(T - dot(T, N) * N);
     // Handedness z w decyduje o kierunku bitangentu (mirrored UV).

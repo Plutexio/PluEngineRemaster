@@ -10,10 +10,13 @@
 #include "PluEngine/Gameplay/Controller.h"
 #include "PluEngine/Gameplay/GameMode.h"
 #include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
+#include "PluEngine/Gameplay/RaycastInfo.h"
+#include "PluEngine/Gameplay/Debug/DebugDrawAdapter.h"
 
 namespace Plu
 {
 	class ParticleSpawnerComponent;
+	struct ParticleSystem;
 	class CameraComponent;
 	class DirectionalLight;
 	class SpotLight;
@@ -31,8 +34,8 @@ namespace Plu
 	{
 		REFLECTION_BODY_SCENEWORLD()
 	protected:
-		GameHashMap<UInt64, TOwningPointer<GameObject>> mGameObjects;
-		GameHashMap<UInt16, TUsePointer<Controller>> mControllers;
+		HashMap<UInt64, TOwningPointer<GameObject>> mGameObjects;
+		HashMap<UInt16, TUsePointer<Controller>> mControllers;
 		DynamicArray<TUsePointer<GameObject>> mObjectsToBegin;
 		// Objects spawned while the tick loop below is running. Inserting into mGameObjects
 		// mid-iteration rehashes the map and invalidates the iterator, so they wait here until the
@@ -48,27 +51,33 @@ namespace Plu
 		TUsePointer<GameMode> mGameMode;
 
 		//Renderables
-		GameHashMap<UInt64, DynamicArray<TOwningPointer<StaticMeshComponent>>> mStaticMeshRenderables;
-		GameHashMap<UInt64, DynamicArray<TOwningPointer<InstancedStaticMeshComponent>>> mInstancedMeshRenderables;
-		GameHashMap<UInt64, DynamicArray<TOwningPointer<SkeletalMeshComponent>>> mSkeletalMeshRenderables;
+		HashMap<UInt64, DynamicArray<TOwningPointer<StaticMeshComponent>>> mStaticMeshRenderables;
+		HashMap<UInt64, DynamicArray<TOwningPointer<InstancedStaticMeshComponent>>> mInstancedMeshRenderables;
+		HashMap<UInt64, DynamicArray<TOwningPointer<SkeletalMeshComponent>>> mSkeletalMeshRenderables;
 		TOwningPointer<DirectionalLight> mDirectionalLight;
 		// Keyed by object UUID, like the renderable maps above. Unlike mDirectionalLight there is
 		// no uniqueness assert — a scene may hold any number of spot lights; the shadow-slot
 		// budget is resolved per frame on the render thread, not by limiting how many can exist.
-		GameHashMap<UInt64, TOwningPointer<SpotLight>> mSpotLights;
+		HashMap<UInt64, TOwningPointer<SpotLight>> mSpotLights;
 
 		bool mIsPlaying = false;
 		bool mNewGameObjectSpawned = false;
 
 		// Per-world cache for GetAllGameObjectsOfClass. Was a function-local static
 		// (globally shared across worlds + not thread-safe); kept per-world here.
-		GameHashMap<String, DynamicArray<TUsePointer<GameObject>>> mGameObjectsPerClassCache;
+		HashMap<String, DynamicArray<TUsePointer<GameObject>>> mGameObjectsPerClassCache;
 
-		//Particles
-		HashSet<UInt64> mParticleSpawnersToInitialize;
-		GameHashMap<UInt64, int> mParticleSpawnersToSpawnParticles;
-		HashSet<UInt64> mParticleSpawnersToDestroy;
-		GameHashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>> mParticleSpawnerComponents;
+		// Live particle spawner components by UUID. RenderSnapshotBuilder packs the full state of
+		// each into every snapshot; the render thread creates/destroys its spawners to match.
+		HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>> mParticleSpawnerComponents;
+
+		//Debug
+		DynamicArray<float> mDebugLineVerts;   // GL_LINES,  6 floatów / wierzchołek
+		DynamicArray<float> mDebugPointVerts;  // GL_POINTS, 6 floatów / wierzchołek
+		float mDebugPointSize = 10.0f;
+		// Every debug draw goes through this adapter into the two buffers above. Declared after
+		// them, so it binds to fully constructed arrays.
+		DebugDrawAdapter mDebugDraw{&mDebugLineVerts, &mDebugPointVerts};
 
 		friend void Controller::Possess(TUsePointer<Puppet> puppet);
 		friend void Controller::Unpossess();
@@ -96,16 +105,41 @@ namespace Plu
 		// as ShadowData::DebugVisualizeCascades.
 		bool ShowShadowCascades = false;
 
-#ifdef PLU_ENGINE_EDITOR_BUILD
-		// Per-frame editor debug lines (interleaved pos(3)+color(3), GL_LINES). Same view-only,
-		// main-owned ownership as ShowEditorGrid: the editor tick appends, RenderSnapshotBuilder
-		// drains it into the snapshot and clears it. Not serialized.
-		//
-		// Ordering is what makes the drain safe: the editor's OnTick runs before
-		// BuildSnapshotAndPublish (Application.cpp), so whatever a panel appended this frame is
-		// already here when the builder looks.
-		DynamicArray<float> EditorDebugLineVerts;
-#endif
+		// Live particle spawner components (main thread). Their particles are simulated on the
+		// render thread — read those through GetParticleDebugStats (RenderParticleStats.h).
+		[[nodiscard]] const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& GetParticleSpawnerComponents() const { return mParticleSpawnerComponents; }
+
+		// Reads the render thread's particle liveness ONCE for the whole world (not per component) and
+		// applies it: latches each spawner as seen, mirrors its alive count, and deletes objects whose
+		// AutoDestroyWhenFinished run completed. Runs every frame right before the snapshot is built.
+		void UpdateParticleLiveness();
+
+		// Fire-and-forget particle effect: spawns Asset at a world Location / Rotation (Euler degrees, like
+		// GetWorldRotation) without a GameObject or component. Main thread only. The request goes straight to
+		// the render thread through a FIFO command queue (RenderParticleCommands.h), never through the
+		// snapshot, so it is executed exactly once. The effect plays with the asset's default parameters,
+		// does not follow anything, and is destroyed on the render thread once its run has no work left —
+		// a looping one lives until DestroyParticleSystem / DeactivateParticleSystem, until its Lifetime runs
+		// out, or until this world is unloaded. Lifetime > 0: after that many seconds the effect deactivates
+		// itself (soft — live particles finish); 0 = no limit. Returns the effect's id for Deactivate/Destroy;
+		// 0 when Asset is null.
+		PLU_FUNCTION(PyExport)
+		UInt64 SpawnParticleSystem(TUsePointer<ParticleSystem> Asset, const Vec3& Location, const Vec3& Rotation, float Lifetime = 0.0f);
+		// Soft stop of a SpawnParticleSystem effect: no new particles, live ones finish. Unknown or already
+		// finished ids are ignored.
+		PLU_FUNCTION(PyExport)
+		void DeactivateParticleSystem(UInt64 EffectId);
+		// Hard stop of a SpawnParticleSystem effect: it disappears with its particles. Unknown or already
+		// finished ids are ignored.
+		PLU_FUNCTION(PyExport)
+		void DestroyParticleSystem(UInt64 EffectId);
+
+		// Debug drawing for this world (lines, shapes, raycasts; per frame or with a duration).
+		// Main thread only. Editor gizmos draw through it too: the editor's OnTick runs before
+		// BuildSnapshotAndPublish (Application.cpp), so what a panel draws this frame is already
+		// in the buffers when the builder drains them.
+		PLU_FUNCTION(PyExport)
+		DebugDrawAdapter* GetDebugDraw() { return &mDebugDraw; }
 
 		PLU_PROPERTY()
 		TClassPointer<GameMode> GameModeClass = TClassPointer<GameMode>(GameMode::GetStaticClass());
@@ -129,17 +163,6 @@ namespace Plu
 
 		void NewGameObjectComponent(const TOwningPointer<GameObjectComponent>& component);
 		void DeleteGameObjectComponent(const TOwningPointer<GameObjectComponent>& component);
-
-		void SpawnParticlesForComponent(TUsePointer<ParticleSpawnerComponent> component, int numOfParticles);
-
-		// Called when a game object's scale changes. While playing, this rebuilds the object's
-		// physics body so its colliders match the new scale (Jolt shapes can't be scaled in place).
-		void OnGameObjectScaleChanged(GameObject* gameObject);
-
-		// Called when a world component's relative transform changes. While playing, the owning
-		// object's body is queued for a rebuild — sub-shape offsets are baked into the compound
-		// shape, so moving a collider component otherwise has no effect on physics.
-		void OnComponentTransformChanged(GameObject* gameObject);
 
 		PLU_FUNCTION(PyExport)
 		TUsePointer<GameObject> SpawnGameObject(TClassPointer<GameObject> objectClass);
@@ -209,10 +232,18 @@ namespace Plu
 		PLU_FUNCTION(PyExport)
 		DynamicArray<TUsePointer<GameObject>> GetAllGameObjectsOfClass(TClassPointer<GameObject> gameObjectClass);
 
-		void JoinPlayerLocally(UInt16 playerID);
-
+		// Casts a ray against this world's physics bodies and reports the closest hit. Answered by
+		// the physics world through the "Raycast" event; without one (no physics module) it never hits.
+		// Bodies only exist once the physics tick has built them, so objects spawned this frame are
+		// not hit yet. Start/End are world-space, in metres. The bodies of IgnoredObjects are skipped
+		// (null entries are fine) — pass the caster itself when the ray starts inside its own collider.
 		PLU_FUNCTION(PyExport)
-		PhysicsWorld* GetPhysicsWorld() const;
+		RaycastHitInfo ShootRaycast(const Vec3& Start, const Vec3& End, const DynamicArray<GameObject*>& IgnoredObjects = DynamicArray<GameObject*>{});
+		// Same as ShootRaycast, with the end point at Start + normalize(Direction) * Length.
+		PLU_FUNCTION(PyExport)
+		RaycastHitInfo ShootRaycastInDirection(const Vec3& Start, const Vec3& Direction, float Length, const DynamicArray<GameObject*>& IgnoredObjects = DynamicArray<GameObject*>{});
+
+		void JoinPlayerLocally(UInt16 playerID);
 	};
 }
 

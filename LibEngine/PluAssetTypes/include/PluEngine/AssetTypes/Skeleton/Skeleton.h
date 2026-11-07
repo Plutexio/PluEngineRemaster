@@ -83,7 +83,7 @@ namespace Plu
         DynamicArray<Matrix4> LocalMatrix;   // bind-pose local as authored
         DynamicArray<Matrix4> OffsetMatrix;  // inverse bind; identity where BoneSlot < 0
         DynamicArray<String>  NodeName;      // diagnostics and name->index binding only
-        GameHashMap<String, Int32> NameToIndex;
+        HashMap<String, Int32> NameToIndex;
         UInt32 BoneCount = 0;
 
         // LocalMatrix decomposed once at build time — the reference (bind) pose in the form
@@ -176,7 +176,7 @@ namespace Plu
         void InvalidatePoseLayout() const;
 
         //Attach points
-        GameHashMap<String, TOwningPointer<SkeletonAttachPoint>> AttachPoints;
+        HashMap<String, TOwningPointer<SkeletonAttachPoint>> AttachPoints;
 
     private:
         mutable SkeletonPoseLayout mPoseLayout;

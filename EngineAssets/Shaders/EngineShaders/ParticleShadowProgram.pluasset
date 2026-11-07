@@ -1,0 +1,18 @@
+{
+    "fields": [
+        {
+            "name": "Uuid",
+            "value": 2656317180834486064
+        },
+        {
+            "name": "VertexShaderUuid",
+            "value": 5858849430935642869
+        },
+        {
+            "name": "FragmentShaderUuid",
+            "value": 12915924613962758801
+        }
+    ],
+    "uuid": 2656317180834486064,
+    "typeName": "ShaderProgramInfo"
+}

@@ -10,8 +10,9 @@
 
 namespace Plu
 {
+	class PhysicsBodyComponent;
+	class PhysicsCylinderColliderComponent;
 	class CameraComponent;
-	class PhysicsCapsuleComponent;
 
 	PLU_CLASS(PyExport, PyDerive)
 	class PLUGAMEPLAY_API CharacterPuppet : public Puppet
@@ -26,7 +27,8 @@ namespace Plu
 		bool mIsMoving = false;
 		bool mMovingForward = false;
 
-		TUsePointer<PhysicsCapsuleComponent> mCapsule;
+		TUsePointer<PhysicsCylinderColliderComponent> mCapsule;
+		TUsePointer<PhysicsBodyComponent> mBodyComponent;
 
 		bool CheckGrounded();
 
@@ -38,7 +40,7 @@ namespace Plu
 		float WalkSpeed = 5.f;
 
 		PLU_PROPERTY(PyExport)
-		float SprintSpeedMultiplier = 2.f;
+		float SprintSpeed = 8.f;
 
 		PLU_PROPERTY(PyExport)
 		float JumpForce = 8.f;
@@ -65,6 +67,9 @@ namespace Plu
 
 		PLU_FUNCTION(PyExport)
 		TUsePointer<CameraComponent> GetCamera();
+
+		PLU_FUNCTION(PyExport, PyOverride)
+		virtual bool CanSprint();
 
 		// Cached result of the last CheckGrounded() done in OnUpdate().
 		PLU_FUNCTION(PyExport)

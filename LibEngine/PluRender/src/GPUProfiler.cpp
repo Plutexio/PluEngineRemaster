@@ -24,9 +24,9 @@ namespace Plu {
             int NextSlot = 0;
         };
 
-        GameHashMap<String, QueryPool>& GetPools()
+        HashMap<String, QueryPool>& GetPools()
         {
-            static GameHashMap<String, QueryPool> pools;
+            static HashMap<String, QueryPool> pools;
             return pools;
         }
 

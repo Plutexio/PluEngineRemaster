@@ -1,97 +1,30 @@
 cmake_minimum_required(VERSION 4.0.2)
-# Minimalna wymagana wersja vcpkg (data bazując na commicie/roku)
-set(VCPKG_MIN_VERSION "2024-01-01")
+# vcpkg: pinned checkout in vcpkg/, synced and bootstrapped on every configure. Must run before
+# project(), which loads the toolchain file it sets.
+include("${CMAKE_SOURCE_DIR}/cmake/PluVcpkg.cmake")
 
-# --- Sprawdzenie wersji systemowego vcpkg ---
-function(check_vcpkg_version vcpkg_exe out_ok)
-    execute_process(
-            COMMAND ${vcpkg_exe} version
-            OUTPUT_VARIABLE _vcpkg_ver_output
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    string(REGEX MATCH "[0-9]{4}-[0-9]{2}-[0-9]{2}" _vcpkg_date "${_vcpkg_ver_output}")
-    if(_vcpkg_date STREQUAL "")
-        set(${out_ok} FALSE PARENT_SCOPE)
-        return()
-    endif()
-    if(_vcpkg_date STRLESS "${VCPKG_MIN_VERSION}")
-        message(STATUS "System vcpkg (${_vcpkg_date}) is too old (required >= ${VCPKG_MIN_VERSION})")
-        set(${out_ok} FALSE PARENT_SCOPE)
-    else()
-        message(STATUS "System vcpkg (${_vcpkg_date}) meets requirements (>= ${VCPKG_MIN_VERSION})")
-        set(${out_ok} TRUE PARENT_SCOPE)
-    endif()
-endfunction()
-
-# --- Ustal ścieżkę do vcpkg ---
-set(VCPKG_PATH "")
-
-if(DEFINED ENV{VCPKG_ROOT})
-    set(_sys_vcpkg_exe "$ENV{VCPKG_ROOT}/vcpkg")
-    check_vcpkg_version("${_sys_vcpkg_exe}" _sys_vcpkg_ok)
-    if(_sys_vcpkg_ok)
-        set(VCPKG_PATH "$ENV{VCPKG_ROOT}")
-        message(STATUS "Using system vcpkg (VCPKG_ROOT): ${VCPKG_PATH}")
-    endif()
-endif()
-
-if(VCPKG_PATH STREQUAL "" AND EXISTS "${CMAKE_SOURCE_DIR}/vcpkg/.vcpkg-root")
-    set(_local_vcpkg_exe "${CMAKE_SOURCE_DIR}/vcpkg/vcpkg")
-    check_vcpkg_version("${_local_vcpkg_exe}" _local_vcpkg_ok)
-    if(_local_vcpkg_ok)
-        set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-        message(STATUS "Using local vcpkg copy: ${VCPKG_PATH}")
-    else()
-        message(STATUS "Local vcpkg copy is too old — updating...")
-        execute_process(
-                COMMAND git -C "${CMAKE_SOURCE_DIR}/vcpkg" pull
-                RESULT_VARIABLE _git_pull_result
-        )
-        if(_git_pull_result EQUAL 0)
-            set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-            message(STATUS "Local vcpkg updated successfully.")
-        else()
-            message(WARNING "Failed to update local vcpkg.")
-        endif()
-    endif()
-endif()
-
-if(VCPKG_PATH STREQUAL "")
-    message(STATUS "No suitable vcpkg found. Cloning into ${CMAKE_SOURCE_DIR}/vcpkg...")
-    set(VCPKG_PATH "${CMAKE_SOURCE_DIR}/vcpkg")
-    execute_process(COMMAND git clone https://github.com/microsoft/vcpkg.git ${VCPKG_PATH})
-    message(STATUS "vcpkg cloned successfully!")
-
-    if(WIN32)
-        execute_process(COMMAND ${VCPKG_PATH}/bootstrap-vcpkg.bat)
-    else()
-        execute_process(COMMAND ${VCPKG_PATH}/bootstrap-vcpkg.sh -disableMetrics)
-    endif()
-endif()
-
-# --- Load toolchain ---
-if(EXISTS "${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake")
-    set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/vcpkg-overlays" CACHE STRING "")
-    # x64-linux-plu lives here: stock x64-linux with Jolt built shared (see the triplet file).
-    set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/vcpkg-triplets" CACHE STRING "")
-    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
-    include("${VCPKG_PATH}/scripts/buildsystems/vcpkg.cmake")
-endif()
-
-set(VCPKG_MANIFEST_MODE ON CACHE BOOL "")
 project(PluEngine)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# The engine uses no C++20 modules. With scanning on, every TU gets an extra dependency-scan step
+# and -fmodules-ts/-fmodule-mapper flags, which ccache refuses to cache.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# Multi-config generators (Visual Studio) only. Distribution builds are Release + PLU_DISTRIBUTION,
+# not a configuration of their own.
 set(CMAKE_CONFIGURATION_TYPES
         Debug
         Release
-        Distribution
+        RelWithDebInfo
         CACHE STRING "" FORCE
 )
+
+# Reconfigure when a `git pull` changes what vcpkg installs: vcpkg.json is tracked by the vcpkg
+# toolchain itself and cmake/PluVcpkg.cmake (the pin) by include(), but overlay ports are not.
+file(GLOB_RECURSE PLU_VCPKG_OVERLAY_FILES "${CMAKE_SOURCE_DIR}/vcpkg-overlays/*" "${CMAKE_SOURCE_DIR}/vcpkg-triplets/*")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PLU_VCPKG_OVERLAY_FILES})
 
 
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
@@ -104,7 +37,9 @@ message(STATUS "CXX compiler: ${CMAKE_CXX_COMPILER}")
 # --- 2. KONFIGURACJA PYTHON VENV ---
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-if(WIN32)
+# The venv runs the build-time tools (reflection generator, PyArmor), so it follows the host, not the
+# target: a Linux -> Windows cross build still uses venv-linux.
+if(CMAKE_HOST_WIN32)
     set(VENV_NAME "venv-windows")
     set(VENV_BIN "Scripts")
     set(PYTHON_EXE "python.exe")
@@ -128,11 +63,24 @@ endif()
 if(EXISTS "${REQ_FILE}")
     if("${REQ_FILE}" IS_NEWER_THAN "${STAMP_FILE}")
         message(STATUS "Aktualizacja pakietów Python...")
-        execute_process(COMMAND "${VENV_PATH}/${VENV_BIN}/pip" install -r "${REQ_FILE}")
-        file(WRITE "${STAMP_FILE}" "")
+        execute_process(COMMAND "${VENV_PATH}/${VENV_BIN}/pip" install -r "${REQ_FILE}"
+                        RESULT_VARIABLE PIP_RESULT)
+        # Stamp only on success, so a failed install is retried on the next configure.
+        if(PIP_RESULT EQUAL 0)
+            file(WRITE "${STAMP_FILE}" "")
+        else()
+            message(WARNING "pip install -r ${REQ_FILE} failed (exit code ${PIP_RESULT}).")
+        endif()
     endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${REQ_FILE}")
 endif()
 
+
+# Linux -> Windows cross build (PluDistWindowsCross-* presets): Windows headers + import library for
+# the embedded Python, which the host cannot provide.
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    include("${CMAKE_SOURCE_DIR}/cmake/PluWindowsCrossPython.cmake")
+endif()
 
 if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_definitions(
@@ -153,9 +101,24 @@ endif()
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
-    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
-    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    # Without this sloppiness ccache will not cache anything compiled against a precompiled header.
+    set(PLU_CCACHE_LAUNCHER ${CCACHE_PROGRAM} sloppiness=pch_defines,time_macros,include_file_mtime,include_file_ctime)
+    set(CMAKE_C_COMPILER_LAUNCHER ${PLU_CCACHE_LAUNCHER})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${PLU_CCACHE_LAUNCHER})
 endif()
+
+# Faster linker than the default GNU ld: mold if installed, otherwise lld. A -DCMAKE_LINKER_TYPE=...
+# on the command line wins.
+if(NOT MSVC AND NOT DEFINED CMAKE_LINKER_TYPE)
+    find_program(PLU_MOLD_PROGRAM mold)
+    find_program(PLU_LLD_PROGRAM ld.lld)
+    if(PLU_MOLD_PROGRAM)
+        set(CMAKE_LINKER_TYPE MOLD)
+    elseif(PLU_LLD_PROGRAM)
+        set(CMAKE_LINKER_TYPE LLD)
+    endif()
+endif()
+message(STATUS "Linker type: ${CMAKE_LINKER_TYPE}")
 
 option(PLU_BUILD_EDITOR "Build with editor support" OFF)
 option(PLU_DISTRIBUTION "Build a standalone distributable (resources resolved next to the exe)" OFF)
@@ -163,10 +126,35 @@ option(PLU_BUILD_TESTS "Build PluSTL tests" OFF)
 # Tests-only configure: skips LibEngine/Editor/Runtime entirely, so the container tests can be
 # built and run without a full engine build. Implies PLU_BUILD_TESTS.
 option(PLU_TESTS_ONLY "Configure only the test targets (no engine)" OFF)
+# ThreadSanitizer build of the tests. Opt-in, because TSan roughly halves the speed and needs its
+# own binary.
+option(PLU_TESTS_TSAN "Build the tests with ThreadSanitizer" OFF)
 
 if(PLU_TESTS_ONLY)
     set(PLU_BUILD_TESTS ON)
 endif()
+
+# PluSTL is its own repository (github.com/Plutexio/PluSTL), checked out here as a git submodule.
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluSTL/CMakeLists.txt")
+    message(FATAL_ERROR "PluSTL/ is empty — the submodule is not checked out. Run:\n"
+            "  git submodule update --init")
+endif()
+# PluBase is too (github.com/Plutexio/PluBase). LibEngine adds it once the third-party targets it
+# links exist; the check is here because the tests include its headers as well.
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluBase/CMakeLists.txt")
+    message(FATAL_ERROR "PluBase/ is empty — the submodule is not checked out. Run:\n"
+            "  git submodule update --init")
+endif()
+set(PLUSTL_BUILD_TESTS ${PLU_BUILD_TESTS} CACHE BOOL "" FORCE)
+set(PLUSTL_TESTS_TSAN ${PLU_TESTS_TSAN} CACHE BOOL "" FORCE)
+add_subdirectory(PluSTL)
+
+if(PLU_BUILD_TESTS)
+    # At the top level, so ctest run from the build directory picks up every test.
+    enable_testing()
+endif()
+
+include("${CMAKE_SOURCE_DIR}/cmake/PluDistributeTarget.cmake")
 
 if(NOT PLU_TESTS_ONLY)
     add_subdirectory(LibEngine)
@@ -176,7 +164,6 @@ if(NOT PLU_TESTS_ONLY)
         add_subdirectory(Runtime)
     endif ()
 endif()
-add_subdirectory(PluSTL)
 
 if(PLU_BUILD_TESTS)
     add_subdirectory(Tests)

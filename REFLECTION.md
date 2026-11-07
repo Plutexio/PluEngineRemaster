@@ -129,6 +129,7 @@ Oznacza pole (member variable) do refleksji. Umieszcza się bezpośrednio nad de
 | `PyExport` | Eksportuje pole do Pythona (getter + setter) |
 | `PyReadOnly` | Pole dostępne z Pythona tylko do odczytu (tylko getter) |
 | `UuidFor=ClassName` | Pole musi być typu `PluUUID`; informuje edytor, że UUID odnosi się do danej klasy (picker UI) |
+| `Getter=Method` / `Setter=Method` | Access the field through these methods instead of `offsetof`: the generator emits `PropertyInfo::GetterPtr`/`SetterPtr` (used by the editor and serialization) and a pybind `def_property`. Either one may be given alone — the missing side falls back to reading/assigning the field directly (e.g. `PLU_PROPERTY(Setter=SetBodyType)` so an edit dispatches an event, while reads stay plain). |
 
 ```cpp
 PLU_PROPERTY(PyExport)
@@ -179,16 +180,20 @@ void SetVelocity(Vec3 Velocity);
 - **Wartości domyślne** trafiają do `py::arg("x") = ...`, ale tylko gdy pybind11 na pewno je
   skonwertuje przy rejestracji modułu: literały (`1000.0f`, `true`, `nullptr`, `"str"`), puste
   kontenery PluSTL (`DynamicArray<T>{}`) oraz konstrukcje/wartości typów i enumów wystawionych do
-  Pythona (`RaycastDebugSettings()`, `CollisionResponse::Block`). Enumy są rejestrowane w module
+  Pythona (e.g. `CollisionResponse::Block`). Enumy są rejestrowane w module
   przed klasami właśnie po to, żeby mogły być domyślnymi argumentami. Typy matematyczne
   (`Vec3()`, `Matrix4{}`) idą jeszcze przed enumami — patrz niżej.
 - Parametry, które w bindingach zmieniają typ (`TClassPointer<T>` → `py::object`,
   `std::function<>` → `py::function`), domyślnej wartości **nie dostają** — po stronie Pythona
   pozostają wymagane.
-- Parametr `TUsePointer<T>` / `TOwningPointer<T>` dla `T` **niebędącego assetem** dyskwalifikuje całą
-  funkcję z bindingów (nie ma castera, a smart pointera nie da się odtworzyć z surowego wskaźnika).
-  Taka metoda działa w C++ i w refleksji, ale w Pythonie jej nie ma — również jako `PyOverride`.
-  Jeśli ma być dostępna z Pythona, przyjmij `T*` zamiast smart pointera.
+- Smart-pointer parameters have no pybind11 caster, so Python always sees raw pointers:
+  - `TUsePointer<T>` for an asset `T` → `IAssetData*`, recovered with `GetAssetUserAsRaw`.
+  - `TUsePointer<T>` for an `EngineObject` `T` (e.g. `GameObject::OnOverlapBegin`) → `T*`, recovered
+    from the object's handle with `UserFromPython` (`PythonPointers.h`); null or a dead object gives
+    a null pointer. PyOverride trampolines call the Python override with `.GetRaw()`.
+  - Any other `TUsePointer<T>`, and `TOwningPointer<T>` for a non-asset `T`, still drop the whole
+    function from the bindings — it works in C++ and reflection, but not in Python (also not as
+    `PyOverride`). Take `T*` instead if it has to be reachable from Python.
 
 ### Funkcja globalna (poza klasą)
 

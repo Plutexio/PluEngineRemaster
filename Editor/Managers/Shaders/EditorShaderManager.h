@@ -38,9 +38,9 @@ namespace Plu
 	{
 		REFLECTION_BODY_EDITORSHADERMANAGER()
 	private:
-		GameHashMap<UInt64, TOwningPointer<ShaderProgram>> mShaderPrograms;
+		HashMap<UInt64, TOwningPointer<ShaderProgram>> mShaderPrograms;
 		DynamicArray<TUsePointer<ShaderProgram>> mInitializedShaderPrograms;
-		GameHashMap<UInt64, TOwningPointer<EditorShaderCode>> mShaderCodes;
+		HashMap<UInt64, TOwningPointer<EditorShaderCode>> mShaderCodes;
 
 		efsw::WatchID mEngineShadersWatchId;
 		efsw::WatchID mProjectShadersWatchId;

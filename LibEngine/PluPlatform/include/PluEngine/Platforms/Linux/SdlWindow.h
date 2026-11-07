@@ -24,6 +24,11 @@ namespace Plu
 	public:
 		static void InitSDL();
 		static void HandleSDLEvents();
+		// Power saving (FrameDemand.h). Blocks the calling (main) thread until an event is queued
+		// or the timeout runs out; the event stays queued for HandleSDLEvents().
+		static void WaitForEvents(float timeoutSeconds);
+		// Any thread. Breaks WaitForEvents() out of its wait.
+		static void WakeEventLoop();
 		void SetCursorVisibility(bool visible) override;
 
 		explicit SDLWindow();

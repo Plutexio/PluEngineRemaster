@@ -16,7 +16,7 @@
 #include <sstream>
 
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/PluUUID.h"
+#include "PluBase/PluUUID.h"
 #include "PluEngine/Core/IAssetData.h"
 
 namespace Plu
@@ -69,7 +69,7 @@ namespace Plu
 		TUsePointer<IShaderCode> mVertexShader;
 		TUsePointer<IShaderCode> mFragmentShader;
 
-		GameHashMap<String, int> mUniformLocationCache;
+		HashMap<String, int> mUniformLocationCache;
 
 		// Liczba jednostek teksturujących zarezerwowanych przez silnik (np. mapy cieni kaskad)
 		// zanim materiał zacznie bindować swoje tekstury. RenderFromMaterial startuje od tej wartości.
@@ -88,6 +88,12 @@ namespace Plu
 		// dla aktualnie zlinkowanego programu. Resetowane przy każdej zmianie mProgramID (patrz
 		// UnloadProgram) — inaczej hot-reload zostaje ze starą odpowiedzią.
 		int mHasInstanceDataBlock = -1;
+
+		// To samo dla bloku "VisibleInstanceIndices" — shader adresujący instancje przez indirekcję
+		// widocznych indeksów obsługuje WSZYSTKIE passy (patrz BasicVertInstanced.vert). Shader
+		// instancingowy bez tego bloku to starsza konwencja: rysuje się go jak dotąd, a pass głębi
+		// zostaje przy silnikowym shaderze.
+		int mHasVisibleIndexBlock = -1;
 
 		// Jeden lookup w mUniformLocationCache (Find zamiast Contains + operator[] ×2);
 		// na miss pyta GL i cache'uje wynik (także -1 — nieobecne uniformy nie pytają GL co klatkę).
@@ -153,6 +159,11 @@ namespace Plu
 		// Czy zlinkowany program deklaruje blok SSBO "InstanceMatrices" (instancing static meshy).
 		// Wołać z wątku renderu po IsLoaded(); wynik GL query jest cache'owany per link.
 		[[nodiscard]] bool HasInstanceDataBlock();
+
+		// Czy zlinkowany program adresuje instancje przez blok "VisibleInstanceIndices" (konwencja
+		// wspólna dla passa głównego, prepassu i map cieni — patrz BasicVertInstanced.vert).
+		// Wołać z wątku renderu po IsLoaded(); wynik GL query jest cache'owany per link.
+		[[nodiscard]] bool HasVisibleIndexBlock();
 	};
 }
 

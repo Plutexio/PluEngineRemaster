@@ -14,7 +14,7 @@
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/AssetCore/AssetLoader.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
-#include "PluEngine/Log.h"
+#include "PluBase/Log.h"
 #include "Managers/Project/EditorProjectManager.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/PluUtils.h"

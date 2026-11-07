@@ -11,7 +11,10 @@
 #include "GLSamplerObject.h"
 #include "GLShaderStorageBuffer.h"
 #include "GLUniformBuffer.h"
-#include "HashSet/HashSet.h"
+#include "ParticlePointBuffer.h"
+#include "ParticleInstanceBuffer.h"
+#include "PluEngine/Effects/Particles/ParticleEmitterInstance.h"
+#include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
@@ -21,7 +24,10 @@
 namespace Plu
 {
     class ParticleSpawner;
+    struct ParticleDebugStats;
+    struct ParticleSystemSpawnerDebugStats;
     class ShaderProgram;
+    struct MaterialInfo;
     struct RenderSnapshot;
     struct StaticMesh;
     struct SkeletalMesh;
@@ -47,10 +53,12 @@ namespace Plu
         // bound framebuffer is a feedback loop — undefined by spec and rejected outright by some
         // drivers.
         //
-        // It deliberately does NOT feed early-Z. The depth shaders and the material shaders build
-        // gl_Position from differently grouped multiplications, so their results differ by a few
-        // ulp; a lighting pass testing GL_LEQUAL against this depth drops the losing fragments to
-        // the background. See RenderDepthPrepass for the full reasoning.
+        // It does NOT feed early-Z yet, though the reason has shrunk: the pass now draws with the
+        // materials' own vertex shaders (see Renderer::ResolveDepthProgram), so both passes build
+        // gl_Position from the same expression. What is still missing is `invariant gl_Position`
+        // in the shaders — without it the spec allows two programs compiled from the same source
+        // to differ by an ulp — plus sharing this depth with the main framebuffer. See
+        // RenderDepthPrepass.
         //
         // FrameBufferType::DepthOnly, i.e. a D32F texture — precision the contact-shadow ray uses
         // directly, since it linearises this value at every sample.
@@ -71,7 +79,9 @@ namespace Plu
         // Pass 0: scene depth only, camera frustum. Runs after the shadow passes because it
         // shares their visible-index SSBO (binding 3) — the camera is simply the last frustum in
         // CullShadowCasters' sweep.
-        void RenderDepthPrepass(RenderSnapshot* snapshot, const Matrix4& viewProj);
+        // view and projection go in separately, not premultiplied: the shaders that draw this pass
+        // are material vertex shaders, which take the two the way the lighting pass sets them.
+        void RenderDepthPrepass(RenderSnapshot* snapshot, const Matrix4& view, const Matrix4& projection);
         // Same feedback-loop and ImGui reasons as UnbindShadowTexture — see there.
         void UnbindSceneDepthTexture();
 
@@ -203,6 +213,11 @@ namespace Plu
         // projection. Both empty = no spot shadows this frame.
         DynamicArray<Int32>   mSpotShadowSlotOwners;
         DynamicArray<Matrix4> mSpotShadowMatrices;
+        // The view and projection mSpotShadowMatrices[slot] is the product of. Kept for the same
+        // reason ShadowCascadeData::View/Proj are: the depth pass hands them to the shader as its
+        // own "view"/"projection" uniforms instead of a premultiplied matrix.
+        DynamicArray<Matrix4> mSpotShadowViews;
+        DynamicArray<Matrix4> mSpotShadowProjs;
         // Per-slot caster counts for the stats panel, mirroring mCascadeCasterCounts.
         DynamicArray<UInt32>  mSpotShadowCasterCounts;
 
@@ -238,6 +253,44 @@ namespace Plu
         TUsePointer<ShaderProgram> mDepthShader;
         TUsePointer<ShaderProgram> mSkeletalDepthShader;
         bool mSkeletalDepthReady = false;
+        // Particle shadow caster program (ParticleShadowProgram), resolved alongside the two above.
+        // Independent of them: not ready yet only means no particle shadows this frame.
+        TUsePointer<ShaderProgram> mParticleShadowShader;
+        bool mParticleShadowReady = false;
+
+        // Depth-pass variants of material shaders: the material's OWN vertex shader linked with
+        // the engine's empty fragment shader. The depth prepass and the shadow maps draw with
+        // these instead of mDepthShader, so whatever a material does to gl_Position — wind, any
+        // vertex animation — lands in the depth buffer exactly as it lands on screen. Without
+        // this a waving grass blade was drawn displaced but shadowed (and contact-shadowed) from
+        // its rest pose.
+        //
+        // Keyed by VERTEX SHADER uuid, not by material or program: every material sharing a
+        // vertex shader shares one variant, so a scene with thirty materials on
+        // BasicVertInstanced.vert compiles one depth program.
+        HashMap<UInt64, TOwningPointer<ShaderProgram>> mDepthVariants;
+        // Programs already warned about being instanced without the VisibleInstanceIndices block
+        // (the pre-variant convention) — one line per program, not one per frame.
+        HashSet<UInt64> mWarnedLegacyInstancedPrograms;
+        // The variant for this material's program, or null when the material has no usable one
+        // (unknown program, not compiled yet, or an instanced shader still on the pre-
+        // VisibleInstanceIndices convention) — the caller then falls back to mDepthShader.
+        TUsePointer<ShaderProgram> ResolveDepthProgram(MaterialInfo* materialInfo);
+        // Drops every depth variant, unregistering it from the shader manager's renderable list
+        // first. Render thread only — these own GL programs.
+        void DestroyDepthVariants();
+
+        // Draws the static batches of ONE depth frustum (a cascade, a spot slot, or the camera
+        // for the prepass), reading that frustum's slice of mShadowDrawRanges. Shared by all three
+        // depth passes so they cannot drift apart: each batch draws with its material's depth
+        // variant when there is one, with the engine depth shader otherwise, and the frustum's
+        // view/projection go in as the shader's own uniforms.
+        void DrawStaticDepthBatches(RenderSnapshot* snapshot, UInt32 frustumIndex,
+                                    const Matrix4& view, const Matrix4& projection);
+        // The skeletal counterpart, one object at a time — the callers keep their own culling and
+        // CastsShadow rules, which differ per pass.
+        void DrawSkeletalDepthObject(RenderSnapshot* snapshot, UInt32 objectIndex,
+                                     const Matrix4& view, const Matrix4& projection);
         // Resolves both, requesting a lazy compile on the render thread when needed. Returns
         // false when the static depth shader is not ready — without it there is no depth pass at
         // all, so every shadow of the frame is skipped (skeletal readiness only skips skinned
@@ -384,9 +437,128 @@ namespace Plu
         // warning raz, nie per klatkę (analogicznie do mWarnedNonSkeletalPrograms).
         HashSet<UInt64> mWarnedNonInstancedPrograms;
 
-        GameHashMap<EngineObjectHandle, GameHashMap<UInt64, TOwningPointer<ParticleSpawner>>> mParticleSpawners;
-        void HandleParticleRequests(RenderSnapshot* snapshot);
+        // GPU side of one emitter of an asset-driven spawner. Which buffers are filled follows the emitter's
+        // renderer modules: Sprite -> SpriteInstances; Ribbon -> RibbonInstances (+ History for per-particle
+        // trails); both may be in use at once; neither -> Points. The two instance buffers hold the same
+        // particles with different field meanings (ParticleInstanceGPU). Plain handles, freed by
+        // DestroyRenderParticleSpawner.
+        struct RenderParticleEmitterGPU
+        {
+            ParticlePointBuffer Points;
+            ParticleInstanceBuffer SpriteInstances;
+            ParticleInstanceBuffer RibbonInstances;
+            ParticleRibbonHistoryBuffer History;
+            // Mean position of the live particles, from the packing loop: sorting key of the transparent pass.
+            Vec3 Centroid = Vec3(0.0f);
+            void Destroy() { Points.Destroy(); SpriteInstances.Destroy(); RibbonInstances.Destroy(); History.Destroy(); }
+            void ClearCounts() { Points.Count = 0; SpriteInstances.Count = 0; RibbonInstances.Count = 0; History.Particles = 0; }
+        };
+
+        // Render-side state of one spawner driven by a ParticleSystem asset. Lives on the heap behind a
+        // TOwningPointer: the spawner map is rehashed and copied by value, and the particle columns
+        // (tens of MB) must not move with it. Emitters are matched to the asset's by emitter UUID.
+        struct RenderParticleSystem
+        {
+            UInt64 SystemUuid = 0;
+            UInt32 Revision = 0;
+            DynamicArray<TOwningPointer<ParticleEmitterInstance>> Emitters;
+            DynamicArray<RenderParticleEmitterGPU> EmitterBuffers; // parallel to Emitters
+            DynamicArray<float> PointScratch;                      // interleaved xyz, reused every frame
+            DynamicArray<ParticleInstanceGPU> InstanceScratch;     // sprite instances, reused every frame
+            DynamicArray<float> ParameterDefaults;                 // copied from the program on adoption
+            DynamicArray<CompiledParameterSlot> ParameterLayout;   // same, for the Debug Particles panel only
+
+            // Last values synced from the snapshot (see ParticleSpawnerRenderObject).
+            UInt32 SyncedActivation = 0;
+            UInt32 SyncedClear = 0;
+            UInt64 SyncedRequested = 0;
+            UInt32 CompletedActivation = 0;
+
+            // This frame's inputs, filled by SyncParticleSpawners, consumed by TickParticleSpawners.
+            EParticleEmissionState State = EParticleEmissionState::Stopped;
+            Vec3 Location = Vec3(0.0f);
+            Quaternion Rotation = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);
+            DynamicArray<float> ParameterValues;
+            UInt32 PendingExtraSpawn = 0;
+
+            // Spawned by a ParticleCommand (SceneWorld::SpawnParticleSystem), not by a component: no snapshot
+            // lists it, so reconciliation leaves it alone. DetachedState stands in for the snapshot entry —
+            // ProcessParticleCommands writes it, SyncParticleSpawners feeds it to SyncParticleSystemSpawner
+            // every frame, and the tick destroys the system once its run has no work left.
+            bool Detached = false;
+            ParticleSpawnerRenderObject DetachedState;
+            // Detached only: seconds of simulation left before the system deactivates itself; 0 = no limit.
+            float RemainingLifetime = 0.0f;
+        };
+
+        // A simulated spawner plus the GL buffer its particles are drawn from: either the legacy
+        // ParticleSpawner (System is null) or an asset-driven RenderParticleSystem (Spawner is null). The
+        // buffer is a plain handle (copied on rehash) — DestroyRenderParticleSpawner frees both, exactly once.
+        struct RenderParticleSpawner
+        {
+            TOwningPointer<ParticleSpawner> Spawner;
+            ParticlePointBuffer PointBuffer;
+            TOwningPointer<RenderParticleSystem> System;
+        };
+        HashMap<EngineObjectHandle, HashMap<UInt64, RenderParticleSpawner>> mParticleSpawners;
+        void SyncParticleSystemSpawner(const ParticleSpawnerRenderObject& state,
+                                       const CompiledParticleSystem& program,
+                                       const DynamicArray<float>& snapshotParameterValues, RenderParticleSpawner& spawner);
+        // Reconciles mParticleSpawners[snapshot->SceneHandle] with snapshot->ParticleSpawners. Detached
+        // systems are never reconciled away; they are synced from their DetachedState instead.
+        void SyncParticleSpawners(RenderSnapshot* snapshot);
+        // Drains the main -> render ParticleCommand queue (RenderParticleCommands.h): creates, deactivates and
+        // destroys detached systems in whichever world each command names.
+        void ProcessParticleCommands();
+        // Programs of the detached systems by system uuid, filled from the commands that carry one. Never
+        // pruned — mirrors the sent-revision map on the main side, which assumes the cache keeps everything.
+        HashMap<UInt64, CompiledParticleSystem> mDetachedParticlePrograms;
+        void DestroyRenderParticleSpawner(RenderParticleSpawner& spawner);
         void DestroyParticleSpawners();
+        // Ticks the spawners of snapshot's world and uploads their positions / sprite instances. Runs
+        // before the shadow passes, which draw the same buffers. view projects the velocity-stretch
+        // direction of sprite instances.
+        void TickParticleSpawners(RenderSnapshot* snapshot, float deltaTime, const Matrix4& view);
+        // Draws the spawners of snapshot's world as points (ParticlePointProgram) into the bound
+        // main buffer. Not editor-only: particles are a gameplay effect.
+        // Also darkens the spawners whose ParticleClass receives shadows, from the directional
+        // cascades already bound for the main pass.
+        void RenderParticles(RenderSnapshot* snapshot, const Matrix4& view, const Matrix4& viewProj);
+        // Transparent pass of the asset-driven emitters: sprites (ParticleSpriteProgram, instanced quads)
+        // and ribbons (ParticleRibbonProgram, triangle strips), all from the emitters' SSBOs. Depth test on,
+        // depth writes off; Additive or AlphaBlend per emitter, emitters of both kinds sorted back to front
+        // together (never per particle). Sets and RESTORES the blend function and depth mask — the editor
+        // grid, debug lines and ImGui inherit them. Neither casts nor receives shadows, and both stay out of
+        // the depth prepass.
+        void RenderTransparentParticles(RenderSnapshot* snapshot, const Matrix4& view, const Matrix4& projection);
+        // Empty VAO for the attribute-less sprite / ribbon draws (core profile requires one bound).
+        unsigned int mParticleSpriteVao = 0;
+        // Draw list of RenderTransparentParticles, reused every frame.
+        // One renderer of one emitter: an emitter with both a ribbon and sprites gives two entries.
+        struct ParticleSpriteDraw
+        {
+            const RenderParticleEmitterGPU* Buffers = nullptr;
+            const ParticleRenderParams* Params = nullptr;
+            float DistanceSq = 0.0f;
+            // Tie-break within one emitter (same centroid): the ribbon (0) under its sprites (1).
+            UInt8 Layer = 0;
+        };
+        DynamicArray<ParticleSpriteDraw> mParticleSpriteDraws;
+        // Draws the shadow-casting spawners of snapshot's world into the bound depth target (one
+        // cascade or spot slot) with mParticleShadowShader. projection and resolution size each
+        // particle's shadow square to ParticleClass::ShadowSize metres. The caller owns the GL
+        // state: GL_PROGRAM_POINT_SIZE, and a scissor when the target is a region of an atlas —
+        // wide points are not clipped to the viewport.
+        void DrawParticleShadowCasters(RenderSnapshot* snapshot, const Matrix4& viewProj,
+                                       const Matrix4& projection, Int32 resolution);
+        // Debug Particles panel: copies the state of every spawner (see RenderParticleStats.h).
+        [[nodiscard]] ParticleDebugStats GatherParticleDebugStats(RenderSnapshot* snapshot, float deltaTime) const;
+        // One asset-driven spawner's part of it: lifecycle, parameter block, per-emitter rows. Walks the live
+        // particles (bounds), so it runs only on request like the rest of the gather.
+        [[nodiscard]] ParticleSystemSpawnerDebugStats GatherParticleSystemDebugStats(UInt64 spawnerUuid, const RenderParticleSystem& system) const;
+        // Seconds since the last Debug Particles publish (throttle, see RenderSnapshot).
+        float mParticleDebugStatsTimer = 0.0f;
+        EngineObjectHandle mLastFrameSceneHandle;
     public:
         Renderer() = default;
         ~Renderer() = default;

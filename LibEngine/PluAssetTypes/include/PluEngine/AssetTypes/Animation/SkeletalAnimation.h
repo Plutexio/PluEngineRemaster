@@ -9,6 +9,7 @@
 #include "PluEngine/Core/IAssetData.h"
 #include "SkeletalAnimation.generated.h"
 #include "PluEngine/PluTypes.h"
+#include "PluEngine/AssetTypes/Animation/BoneTransform.h" // Pose
 
 namespace Plu
 {
@@ -68,7 +69,7 @@ namespace Plu
         int FramesAmount;      // duration in ticks; valid sample times are [0, FramesAmount]
         float FramesPerSecond; // ticks per second
 
-        GameHashMap<String, AnimationTrack> Tracks;
+        HashMap<String, AnimationTrack> Tracks;
 
         // Tracks resolved against a skeleton's SkeletonPoseLayout: entry [i] is the track driving
         // node i, or nullptr when this animation does not animate that node. Lets pose evaluation
@@ -83,12 +84,23 @@ namespace Plu
 
         void InvalidateTrackBinding() const;
 
+        // Length in seconds (FramesAmount / FramesPerSecond); 0 for an empty or FPS-less clip.
+        [[nodiscard]] double GetDurationSeconds() const;
+
     private:
         mutable DynamicArray<const AnimationTrack*> mTrackBinding;
         mutable UInt64 mTrackBindingSkeletonUuid = 0;
         mutable UInt64 mTrackBindingTrackCount = 0;
         mutable bool mTrackBindingBuilt = false;
     };
+
+    // Samples `animation` at `timeSeconds` into outPose (local space, indexed by skeleton's
+    // SkeletonPoseLayout). Loop wraps the time into [0, duration); otherwise it clamps, holding the
+    // first/last frame. Nodes the clip doesn't animate keep their bind transform. Returns false and
+    // leaves outPose empty when the skeleton has no valid pose layout. Main thread only (the track
+    // binding cache — see Animation::GetTrackBinding).
+    PLUASSETTYPES_API bool SampleAnimationPose(const Animation& animation, const Skeleton& skeleton,
+                                               double timeSeconds, bool loop, Pose& outPose);
 }
 
 #endif //PLUENGINE_SKELETALANIMATION_H

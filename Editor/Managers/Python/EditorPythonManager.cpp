@@ -3,6 +3,7 @@
 //
 
 #include "EditorPythonManager.h"
+#include "PluEngine/FrameDemand.h"
 
 #include "EditorAppContext.h"
 #pragma warning(push, 0)
@@ -103,6 +104,8 @@ void Plu::EditorPythonManager::CheckForScriptsChanges()
 	// at all — which is what this used to do — meant one file save put the editor into a permanent
 	// reload-every-100-frames loop.
 	if (!gScriptsReloadNeeded.exchange(false)) return;
+	// May be running from the idle tick (power saving): the reload changes what the UI shows.
+	RequestRedraw();
 	ClearProjectScripts();
 	RunProjectScripts();
 }
