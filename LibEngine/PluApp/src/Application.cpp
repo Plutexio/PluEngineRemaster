@@ -35,6 +35,7 @@
 #include "PluBase/ThreadAffinity.h"
 #include "PluEngine/Core/Threading/TripleBuffer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/ThreadPool/ThreadPool.h"
 
 // One per engine module, declared in layer order: reflection registration now
 // runs explicitly bottom-up instead of relying on link order inside one binary.
@@ -424,8 +425,11 @@ namespace Plu
         PLU_CORE_INFO("Engine Init");
         mObjectManager = Plu::CreateOwning<EngineObjectManager>();
         TypeRegistry::GetInstance()->mObjectManager = mObjectManager;
-        mApplicationInfo.AppRenderingManager = mObjectManager->GetObjectAsOwner<RenderingManager>(mObjectManager->CreateObject<RenderingManager>(&mApplicationInfo));
         mApplicationInfo.AppObjectManager = mObjectManager;
+
+        mApplicationInfo.AppThreadPool = mObjectManager->CreateObject(ThreadPool::GetStaticClass());
+
+        mApplicationInfo.AppRenderingManager = mObjectManager->GetObjectAsOwner<RenderingManager>(mObjectManager->CreateObject<RenderingManager>(&mApplicationInfo));
 
         mApplicationInfo.AppAssetManager = mObjectManager->CreateObject(EngineAssetManager::GetStaticClass());
         mApplicationInfo.AppAssetManager->Initialize(&mApplicationInfo);
@@ -472,6 +476,9 @@ namespace Plu
         JoltPhysics::Shutdown();
         mObjectManager->DestroyObject(*mApplicationInfo.AppRenderingManager->GetEngineObjectHandle());
         mApplicationInfo.AppRenderingManager = nullptr;
+
+        mObjectManager->DestroyObject(*mApplicationInfo.AppThreadPool->GetEngineObjectHandle());
+
         Engine::DestroyEngine();
         PLU_CORE_WARN("Engine Shutdown");
         mObjectManager = nullptr;

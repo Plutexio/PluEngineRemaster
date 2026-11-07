@@ -44,6 +44,7 @@ namespace Plu
         TUsePointer<RenderingManager> AppRenderingManager;
         TUsePointer<InputManager> AppInputManager;
         TUsePointer<IPythonManager> AppPythonManager;
+        TUsePointer<class ThreadPool> AppThreadPool;
 
         // The platform input backend, so a window can feed it OS events directly. Going through
         // InputManager would mean the platform layer naming a gameplay type for a pointer it only
