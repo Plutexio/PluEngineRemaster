@@ -126,6 +126,12 @@ namespace Plu
             return;
         }
         mApplicationInfo.AppWindow->Init();
+        // A window whose Init() failed (no usable GL context) is never shown; carrying on would
+        // leave the process running in the background with nothing on screen.
+        if (!mApplicationInfo.AppWindow->IsRunning()) {
+            PLU_CORE_CRITICAL("Main window failed to initialize! Aborting launch!");
+            return;
+        }
         // The app creates and Init()s window 0 itself (it must exist before the GL context does);
         // the manager only takes it into its list so lookups by id and "any window focused" see it.
         mApplicationInfo.AppWindowsManager->RegisterWindow(

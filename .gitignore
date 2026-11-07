@@ -17,3 +17,6 @@ PythonTools/__pycache__
 imgui.ini
 /DistW/
 /EditorDist/
+/EditorDistWindows/
+/RuntimeDistWindows/
+/RuntimeDist/

@@ -23,7 +23,7 @@ set(CMAKE_CONFIGURATION_TYPES
 
 # Reconfigure when a `git pull` changes what vcpkg installs: vcpkg.json is tracked by the vcpkg
 # toolchain itself and cmake/PluVcpkg.cmake (the pin) by include(), but overlay ports are not.
-file(GLOB_RECURSE PLU_VCPKG_OVERLAY_FILES "${CMAKE_SOURCE_DIR}/vcpkg-overlays/*")
+file(GLOB_RECURSE PLU_VCPKG_OVERLAY_FILES "${CMAKE_SOURCE_DIR}/vcpkg-overlays/*" "${CMAKE_SOURCE_DIR}/vcpkg-triplets/*")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PLU_VCPKG_OVERLAY_FILES})
 
 
@@ -37,7 +37,9 @@ message(STATUS "CXX compiler: ${CMAKE_CXX_COMPILER}")
 # --- 2. KONFIGURACJA PYTHON VENV ---
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-if(WIN32)
+# The venv runs the build-time tools (reflection generator, PyArmor), so it follows the host, not the
+# target: a Linux -> Windows cross build still uses venv-linux.
+if(CMAKE_HOST_WIN32)
     set(VENV_NAME "venv-windows")
     set(VENV_BIN "Scripts")
     set(PYTHON_EXE "python.exe")
@@ -73,6 +75,12 @@ if(EXISTS "${REQ_FILE}")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${REQ_FILE}")
 endif()
 
+
+# Linux -> Windows cross build (PluDistWindowsCross-* presets): Windows headers + import library for
+# the embedded Python, which the host cannot provide.
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    include("${CMAKE_SOURCE_DIR}/cmake/PluWindowsCrossPython.cmake")
+endif()
 
 if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_definitions(
@@ -145,6 +153,8 @@ if(PLU_BUILD_TESTS)
     # At the top level, so ctest run from the build directory picks up every test.
     enable_testing()
 endif()
+
+include("${CMAKE_SOURCE_DIR}/cmake/PluDistributeTarget.cmake")
 
 if(NOT PLU_TESTS_ONLY)
     add_subdirectory(LibEngine)

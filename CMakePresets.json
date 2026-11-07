@@ -22,6 +22,17 @@
     },
 
     {
+      "name": "base-windows-cross",
+      "hidden": true,
+      "description": "Windows .exe built on Linux: clang-cl + lld-link against an xwin sysroot (see cmake/Toolchains/WindowsCrossClangCL.cmake).",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-xwin",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchains/WindowsCrossClangCL.cmake"
+      }
+    },
+
+    {
       "name": "base-editor",
       "hidden": true,
       "cacheVariables": {
@@ -202,6 +213,30 @@
         "CMAKE_BUILD_TYPE": "Release",
         "PLU_DISTRIBUTION": "ON"
       }
+    },
+
+
+    {
+      "name": "PluDistWindowsCross-Editor",
+      "displayName": "Distribution Windows from Linux [Editor]",
+      "inherits": ["base-windows-cross", "base-editor"],
+      "binaryDir": "${sourceDir}/cmake-build-dist-windows-cross-editor",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PLU_DISTRIBUTION": "ON",
+        "PLU_DIST_DIR": "${sourceDir}/EditorDistWindows"
+      }
+    },
+    {
+      "name": "PluDistWindowsCross-Runtime",
+      "displayName": "Distribution Windows from Linux [Runtime]",
+      "inherits": ["base-windows-cross", "base-runtime"],
+      "binaryDir": "${sourceDir}/cmake-build-dist-windows-cross-runtime",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PLU_DISTRIBUTION": "ON",
+        "PLU_DIST_DIR": "${sourceDir}/RuntimeDistWindows"
+      }
     }
   ],
 
@@ -222,6 +257,9 @@
     { "name": "PluRelDbgWindows-Runtime",  "configurePreset": "PluRelDbgWindows-Runtime", "configuration": "RelWithDebInfo" },
 
     { "name": "PluDistLinux-Editor",       "configurePreset": "PluDistLinux-Editor",   "targets": ["DistributeEditor"] },
-    { "name": "PluDistWindows-Editor",     "configurePreset": "PluDistWindows-Editor", "configuration": "Release", "targets": ["DistributeEditor"] }
+    { "name": "PluDistWindows-Editor",     "configurePreset": "PluDistWindows-Editor", "configuration": "Release", "targets": ["DistributeEditor"] },
+
+    { "name": "PluDistWindowsCross-Editor",  "configurePreset": "PluDistWindowsCross-Editor",  "targets": ["DistributeEditor"] },
+    { "name": "PluDistWindowsCross-Runtime", "configurePreset": "PluDistWindowsCross-Runtime", "targets": ["DistributeRuntime"] }
   ]
 }

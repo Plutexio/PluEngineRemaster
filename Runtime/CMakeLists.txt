@@ -66,3 +66,18 @@ foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
             $<TARGET_FILE_DIR:PluRuntime>
     )
 endforeach ()
+
+
+# =====================================================================================
+#  Runtime distribution (target: DistributeRuntime)
+#
+#  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Runtime presets).
+#  Assembles PluRuntime(.exe), the engine libraries, their vcpkg dependencies and the engine
+#  resources into PLU_DIST_DIR — plus, for the Linux -> Windows cross build, the embeddable Python.
+#  The game project itself (scenes, assets, Scripts/) is not part of it: RuntimeApp loads the project
+#  from the directory next to the executable, so it is copied in on top.
+# =====================================================================================
+if(PLU_DISTRIBUTION)
+    set(PLU_DIST_DIR "${CMAKE_SOURCE_DIR}/RuntimeDist" CACHE PATH "Where DistributeRuntime assembles the runtime")
+    plu_add_distribute_target(DistributeRuntime PluRuntime "${PLU_DIST_DIR}")
+endif()

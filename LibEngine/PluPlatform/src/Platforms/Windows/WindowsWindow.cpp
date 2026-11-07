@@ -612,7 +612,10 @@ namespace Plu {
         mHDC = GetDC(mHandle);
         if (!InitOpenGL(mHandle))
         {
-            PLU_CORE_CRITICAL("Invalid OpenGL Context!");
+            // InitOpenGL already told the user. The window stays hidden and IsRunning() false,
+            // which Application::Run() checks to abort the launch.
+            DestroyWindow(mHandle);
+            mHandle = nullptr;
             return;
         }
         wglMakeCurrent(mHDC, mGLContext);
@@ -690,49 +693,107 @@ namespace Plu {
         }
     }
 
+    // Vendor/renderer/version of whatever context is current, read straight from opengl32.dll so it
+    // works even when GLAD failed to load (e.g. the GDI Generic 1.1 software driver).
+    static std::string QueryCurrentGLDriverInfo()
+    {
+        using PFNGetString = const unsigned char* (WINAPI*)(unsigned int);
+        HMODULE openGL = GetModuleHandleA("opengl32.dll");
+        PFNGetString getString = openGL
+            ? reinterpret_cast<PFNGetString>(GetProcAddress(openGL, "glGetString"))
+            : nullptr;
+        if (!getString) return "unknown";
+
+        auto read = [getString](unsigned int name) -> std::string {
+            const unsigned char* value = getString(name);
+            return value ? reinterpret_cast<const char*>(value) : "?";
+        };
+        return read(GL_VENDOR) + " | " + read(GL_RENDERER) + " | OpenGL " + read(GL_VERSION);
+    }
+
+    // Without a context the window is never shown and the app has nothing to render into. Release
+    // builds have no console, so a log line alone would leave a process running with no window.
+    static void ReportOpenGLFailure(const std::string& reason, const std::string& driverInfo)
+    {
+        PLU_CORE_CRITICAL("OpenGL initialization failed: {} (driver: {})", reason, driverInfo);
+        const std::string message =
+            "PluEngine could not create an OpenGL 4.5 context.\n\n"
+            "Reason: " + reason + "\n"
+            "Driver: " + driverInfo + "\n\n"
+            "On a laptop with two GPUs, make sure the application runs on the dedicated GPU "
+            "(NVIDIA Control Panel / Windows Settings > Display > Graphics) and that the graphics "
+            "drivers are up to date.";
+        MessageBoxA(nullptr, message.c_str(), "PluEngine - OpenGL error", MB_OK | MB_ICONERROR);
+    }
+
     HGLRC WindowsWindow::InitOpenGL(HWND hWnd)
     {
+        PLU_PROFILE_SCOPE("WindowsWindow::InitOpenGL");
         HDC hDC = GetDC(hWnd);
 
-        // --- KROK 1: Tymczasowy kontekst (Legacy) ---
-        if (!SetupPixelFormat(hDC)) return nullptr;
-
-        HGLRC tempContext = wglCreateContext(hDC);
-        wglMakeCurrent(hDC, tempContext);
-
-        // --- KROK 2: Inicjalizacja GLAD i WGL ---
-        if (!gladLoadGL() || !gladLoadWGL(hDC)) {
-            // Błąd inicjalizacji
-            wglMakeCurrent(NULL, NULL);
-            wglDeleteContext(tempContext);
+        // Step 1: temporary legacy context, needed to load wglCreateContextAttribsARB.
+        if (!SetupPixelFormat(hDC)) {
+            ReportOpenGLFailure("no OpenGL pixel format available for the window", "unknown");
             return nullptr;
         }
 
-        // --- KROK 3: Tworzenie nowoczesnego kontekstu 4.6 Core ---
-        // Atrybuty dla OpenGL 4.6 Core Profile
-        int attribs[] = {
-            WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-            WGL_CONTEXT_MINOR_VERSION_ARB, 6,
-            WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-    #ifdef _DEBUG
-            WGL_CONTEXT_FLAGS_ARB,         WGL_CONTEXT_DEBUG_BIT_ARB,
-    #endif
-            0
-        };
+        HGLRC tempContext = wglCreateContext(hDC);
+        if (!tempContext || !wglMakeCurrent(hDC, tempContext)) {
+            if (tempContext) wglDeleteContext(tempContext);
+            ReportOpenGLFailure("wglCreateContext failed", "unknown");
+            return nullptr;
+        }
 
+        // The legacy context reports which GPU/driver Windows picked for this process - on hybrid
+        // laptops that is the first thing to check.
+        const std::string driverInfo = QueryCurrentGLDriverInfo();
+        PLU_CORE_INFO("OpenGL driver: {}", driverInfo);
+
+        // Step 2: GLAD + WGL extensions.
+        if (!gladLoadGL() || !gladLoadWGL(hDC)) {
+            wglMakeCurrent(nullptr, nullptr);
+            wglDeleteContext(tempContext);
+            ReportOpenGLFailure("failed to load OpenGL functions", driverInfo);
+            return nullptr;
+        }
+
+        // Step 3: modern core context. 4.6 first, then 4.5 - the engine's shaders need only 4.5
+        // (same as the SDL path on Linux), and older drivers/iGPUs stop at 4.5.
+        static constexpr int kGLVersions[][2] = { {4, 6}, {4, 5} };
         HGLRC modernContext = nullptr;
         if (wglCreateContextAttribsARB) {
-            modernContext = wglCreateContextAttribsARB(hDC, 0, attribs);
+            for (const auto& version : kGLVersions) {
+                const int attribs[] = {
+                    WGL_CONTEXT_MAJOR_VERSION_ARB, version[0],
+                    WGL_CONTEXT_MINOR_VERSION_ARB, version[1],
+                    WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+    #ifdef _DEBUG
+                    WGL_CONTEXT_FLAGS_ARB,         WGL_CONTEXT_DEBUG_BIT_ARB,
+    #endif
+                    0
+                };
+                modernContext = wglCreateContextAttribsARB(hDC, 0, attribs);
+                if (modernContext) {
+                    PLU_CORE_INFO("Created OpenGL {}.{} core context", version[0], version[1]);
+                    break;
+                }
+                PLU_CORE_WARN("OpenGL {}.{} core context not available", version[0], version[1]);
+            }
         }
 
-        // --- KROK 4: Sprzątanie ---
-        wglMakeCurrent(NULL, NULL);
-        wglDeleteContext(tempContext); // Usuwamy stary, mamy nowy!
+        // Step 4: drop the temporary context.
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(tempContext);
 
-        if (modernContext) {
-            wglMakeCurrent(hDC, modernContext);
+        if (!modernContext) {
+            ReportOpenGLFailure(wglCreateContextAttribsARB
+                                    ? "the driver supports neither OpenGL 4.6 nor 4.5 core profile"
+                                    : "WGL_ARB_create_context is not supported",
+                                driverInfo);
+            return nullptr;
         }
 
+        wglMakeCurrent(hDC, modernContext);
         mGLContext = modernContext;
         return modernContext;
     }

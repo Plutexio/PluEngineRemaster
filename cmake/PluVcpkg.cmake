@@ -185,6 +185,8 @@ else()
 endif()
 
 set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/vcpkg-overlays" CACHE STRING "")
+# Our own triplets, e.g. x64-windows-xwin for the Linux -> Windows cross build.
+set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/vcpkg-triplets" CACHE STRING "")
 # FORCE: CLion's vcpkg integration injects its own toolchain path; the engine must build against
 # the vcpkg chosen above.
 set(CMAKE_TOOLCHAIN_FILE "${PLU_VCPKG_DIR}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "" FORCE)

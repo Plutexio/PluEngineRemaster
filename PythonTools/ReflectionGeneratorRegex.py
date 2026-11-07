@@ -721,15 +721,40 @@ REFLECTION_TRIGGER_MACROS: List[str] = [
 ]
 
 
+# Platforms whose code is guarded by a PluBase/Base.h macro. Their Platforms/<X> folders are scanned on
+# every host, and what the generator emits for them is wrapped in #ifdef <macro> (the headers themselves
+# are guarded the same way). That keeps ReflectionCache/ independent of the host: a Linux -> Windows
+# cross build compiles the same cache as the Linux build next to it. Folders of platforms without such
+# a macro are still skipped when they do not match the host (IsExcludedPlatformDir).
+# Limitation: the guard covers .generated.cpp and Init<Module>Reflection.cpp, not the pybind11
+# bindings or EnumList.txt — a PyExport class or a PLU_ENUM in a platform folder would need that too.
+PlatformGuardMacros: dict = {
+    "Windows": "PLU_PLATFORM_WINDOWS",
+    "Linux":   "PLU_PLATFORM_LINUX",
+}
+
+
+def PlatformGuardOfPath(FilePath) -> Optional[str]:
+    """The #ifdef macro the generated code of a header under Platforms/<X>/ needs, or None."""
+    NormPath = str(FilePath).replace("\\", "/")
+    for FolderName, Macro in PlatformGuardMacros.items():
+        if f"/Platforms/{FolderName}/" in NormPath:
+            return Macro
+    return None
+
+
 def IsExcludedPlatformDir(DirPath: str) -> bool:
     """
     Zwraca True jeśli folder jest podfolderem Platforms/<Platforma>
     która nie pasuje do bieżącej platformy.
     Działa zarówno dla ścieżek z separatorem / jak i \\.
+    Platforms with a guard macro (PlatformGuardMacros) are never excluded.
     """
     NormDir = DirPath.replace("\\", "/")
     for FolderName, SysPlatformPrefix in PlatformFolderMap.items():
         if f"/Platforms/{FolderName}" in NormDir:
+            if FolderName in PlatformGuardMacros:
+                return False
             return not sys.platform.startswith(SysPlatformPrefix)
     return False
 
@@ -2318,9 +2343,14 @@ def GenerateReflectionData(Data: List[FileData]):
                             UuidClassPath = str(C.FilePath)
                     UuidProps[Prop.Name] = {"class": Prop.UuidForClass, "classPath": UuidClassPath}
 
+        PlatformGuard = PlatformGuardOfPath(FilePath)
         S = io.StringIO()
         if True:
             S.write(f'#include "{FilePath}"\n')
+            # The header defines its class only on its own platform; the include above brings in
+            # PluBase/Base.h, which defines the macro.
+            if PlatformGuard:
+                S.write(f"#ifdef {PlatformGuard}\n")
             S.write("#include <PluEngine/Core/Reflection/TypeTraits.h>\n")
             # std::is_copy_assignable_v, used by the emitted CopyPtr lambdas.
             S.write("#include <type_traits>\n\n")
@@ -2469,6 +2499,9 @@ def GenerateReflectionData(Data: List[FileData]):
                     S.write(f"    Plu::TypeRegistry::GetInstance()->AddEnum<{QualName}>(info);\n")
                     S.write(f"}}\n\n")
 
+            if PlatformGuard:
+                S.write(f"#endif // {PlatformGuard}\n")
+
         WriteIfChanged(GenSource, S.getvalue())
 
     # ── Generuj EditorAssetObjectsCreators.cpp (tylko gdy projekt Editor istnieje) ──
@@ -2564,7 +2597,8 @@ def GenerateReflectionData(Data: List[FileData]):
                 for RawLine in CL:
                     Parts = RawLine.strip().split(" - ")
                     if len(Parts) >= 3:
-                        ProjectClassList.append([Parts[0], Parts[2]])
+                        Guard = PlatformGuardOfPath(Parts[3]) if len(Parts) >= 4 else None
+                        ProjectClassList.append([Parts[0], Parts[2], Guard])
 
         if os.path.exists(EnumListFile):
             with open(EnumListFile, "r", encoding="utf-8") as EL:
@@ -2580,10 +2614,16 @@ def GenerateReflectionData(Data: List[FileData]):
         I = io.StringIO()
         I.write("#include <PluEngine/Core/Reflection/ReflectionBase.h>\n\n")
         I.write(f"// Project: {Proj}\n\n")
+        def WriteGuarded(Line: str, Guard: Optional[str]) -> None:
+            if Guard:
+                I.write(f"#ifdef {Guard}\n{Line}#endif\n")
+            else:
+                I.write(Line)
+
         for Entry in ProjectClassList:
             if Entry[1].removeprefix("ClassType.") == "INTERFACE":
                 continue
-            I.write(f"extern void Register_Reflection_{Entry[0]}();\n")
+            WriteGuarded(f"extern void Register_Reflection_{Entry[0]}();\n", Entry[2])
         for EnumName in ProjectEnumList:
             I.write(f"extern void Register_Reflection_{EnumName}();\n")
         I.write("\n")
@@ -2599,7 +2639,7 @@ def GenerateReflectionData(Data: List[FileData]):
         for Entry in ProjectClassList:
             if Entry[1].removeprefix("ClassType.") == "INTERFACE":
                 continue
-            I.write(f"    Register_Reflection_{Entry[0]}();\n")
+            WriteGuarded(f"    Register_Reflection_{Entry[0]}();\n", Entry[2])
         for EnumName in ProjectEnumList:
             I.write(f"    Register_Reflection_{EnumName}();\n")
         I.write("}\n")

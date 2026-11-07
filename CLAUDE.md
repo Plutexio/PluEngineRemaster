@@ -41,6 +41,16 @@ cmake --build --preset PluDebugLinux-Runtime
 
 Other presets follow the pattern `Plu{Debug|Release|RelDbg}{Linux|Windows}-{Editor|Runtime}`.
 
+### Windows .exe from Linux (cross build)
+
+`PluDistWindowsCross-Editor` / `PluDistWindowsCross-Runtime` build a Windows distribution on Linux and package it into `EditorDistWindows/` / `RuntimeDistWindows/` (build presets run `DistributeEditor` / `DistributeRuntime`). Release only.
+
+- Toolchain: clang-cl + lld-link + llvm-rc (via `cmake/Toolchains/llvm-rc-codepage`) against an MSVC CRT + Windows SDK splatted by **xwin** — same MSVC ABI as a native Visual Studio build, so the code takes its normal `_WIN32` paths. One-time setup and the sysroot location (`$PLU_XWIN_DIR`, default `~/.local/share/xwin`) are in `cmake/Toolchains/WindowsCrossClangCL.cmake`.
+- vcpkg builds the ports with the overlay triplet `vcpkg-triplets/x64-windows-xwin.cmake` (release-only), whose toolchain is `WindowsCrossClangCL.vcpkg.cmake` = the cross toolchain + vcpkg's own `windows.cmake`.
+- Python: `cmake/PluWindowsCrossPython.cmake` downloads the official NuGet package (headers + `python3xx.lib`) and the embeddable package (shipped next to the exe) into the build dir, pinned by version + SHA256. Keep its minor version equal to the host Python's.
+- Packaging is `cmake/PluDistribute.cmake` (shared by editor and runtime, native and cross); on a Linux host it resolves PE imports with `llvm-objdump`. The MSVC C++ runtime (`msvcp140.dll`) is not shipped — the target machine needs the VC++ Redistributable, same as a native build.
+- Anything run on the build machine (venv, PyArmor) must test `CMAKE_HOST_WIN32`, not `WIN32` — in a cross build `WIN32` is true on a Linux host.
+
 ### Build speed setup
 
 Measured choices — keep them unless you re-measure:
@@ -61,6 +71,8 @@ Measured choices — keep them unless you re-measure:
 **Critical**: any time you add or change `PLU_CLASS`, `PLU_STRUCT`, `PLU_ENUM`, `PLU_PROPERTY`, or `PLU_FUNCTION` annotations in a header, the reflection generator must be re-run before building. It scans header files with regex (no libclang) and writes `*.generated.{h,cpp}` plus `PluEngineBindings.cpp` / `PluEngine.pyi` into `ReflectionCache/`. The pybind11 bindings themselves are chunked into `ReflectionCache/Bindings/PluEngineBindings_<Module>_<N>.cpp` (per module, ceil(generated size / `BindingsChunkTargetChars`) files, packed bottom-up) so they compile in parallel; `PluEngineBindings.cpp` only holds `PYBIND11_EMBEDDED_MODULE` and calls the chunks in layer order. All of them compile into `PluApp`. The chunk list is `ReflectionCache/BindingsLayout.cmake`, include()d by `LibEngine/CMakeLists.txt`: when the wanted layout changes, the generator still fills the layout CMake already knows for that build and rewrites the file, so CMake reconfigures on the next build. The build (CMake) runs it automatically as a pre-build step; run it manually only when iterating outside a build. Note: `ReflectionCache/` is gitignored — it is regenerated on every build.
 
 The generator takes `-p`/`--project <name>` (required), `-b`/`--bindings`, `-F`/`--force`, `-q`/`--quiet`.
+
+Reflected headers under `Platforms/Windows/` and `Platforms/Linux/` are scanned on every host; their `.generated.cpp` and their lines in `Init<Module>Reflection.cpp` are wrapped in `#ifdef PLU_PLATFORM_WINDOWS` / `PLU_PLATFORM_LINUX` (`PlatformGuardMacros` in the generator), so one `ReflectionCache/` serves the Linux build and the Linux → Windows cross build alike. Not covered: pybind11 bindings and `PLU_ENUM`s in those folders.
 
 **Gotcha**: the generator never prunes (except `ReflectionCache/Bindings/`, which the bindings step owns and cleans). Moving a reflected header between modules leaves the old `ReflectionCache/<OldModule>/*.generated.*` behind, and CMake's glob keeps compiling it — you get a "No such file or directory" on the header's old absolute path. `git mv` also preserves mtime, so the cache thinks nothing changed. After moving reflected files, `rm -rf ReflectionCache`. There is **no** single-file mode. `<name>` is a subdirectory to scan (e.g. `Editor`) or `ALL` to scan the whole repo. CMake invokes it as `-bp Engine` for `LibEngine` and `-bp Editor` for the editor.
 

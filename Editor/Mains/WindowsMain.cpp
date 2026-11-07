@@ -19,6 +19,15 @@
 #include "PluEngine/Application.h"
 #include "PluBase/Log.h"
 
+// Hybrid-GPU laptops (NVIDIA Optimus, AMD PowerXpress) run every process on the integrated GPU
+// unless the executable asks otherwise. Old iGPUs stop below OpenGL 4.5, so without this the engine
+// gets no GL context there. The drivers only read these from the .exe, not from a DLL.
+extern "C"
+{
+    __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+
 
 
 

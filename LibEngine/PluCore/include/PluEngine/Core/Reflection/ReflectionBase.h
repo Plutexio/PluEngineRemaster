@@ -7,6 +7,8 @@
 
 #include <functional>
 
+// Spelled out rather than left to the engine PCH: targets without it (PluRuntime) include this too.
+#include <pybind11/pybind11.h>
 #include "imgui.h"
 #include "PluSTL/PluSTL_FWD.h"
 #include "PluEngine/Core.h"

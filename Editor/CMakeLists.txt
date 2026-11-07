@@ -244,47 +244,30 @@ add_custom_command(TARGET PluEditor POST_BUILD
 #  Editor distribution (target: DistributeEditor)
 #
 #  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Editor presets).
-#  Assembles a self-contained editor into ${CMAKE_SOURCE_DIR}/EditorDist:
+#  Assembles a self-contained editor into PLU_DIST_DIR (default ${CMAKE_SOURCE_DIR}/EditorDist):
 #    - PluEditor(.exe) + every engine module library, glad and spdlog (+ vcpkg runtime libraries)
 #    - EngineAssets/, ThirdParty/UI/ (fonts + icons), PluEngine.pyi
 #    - obfuscated (PyArmor) ShaderCodeParser.py in PythonTools/ — the only Python
 #      tool run at editor runtime (via the embedded interpreter).
+#    - Linux -> Windows cross build only: the embeddable Python (python3xx.dll + stdlib).
+#  The packaging itself is cmake/PluDistribute.cmake, shared with DistributeRuntime.
 #
 #  Runtime resource paths come from GetEngineResourcesDir() == the directory next to the
 #  exe, because in this configuration Engine is built without PLU_PROJECT_ROOT.
 # =====================================================================================
 if(PLU_DISTRIBUTION)
-    set(PLU_EDITOR_DIST_DIR "${CMAKE_SOURCE_DIR}/EditorDist")
+    set(PLU_DIST_DIR "${CMAKE_SOURCE_DIR}/EditorDist" CACHE PATH "Where DistributeEditor assembles the editor")
 
-    if(WIN32)
+    # Runs on the host, so it is the host venv's.
+    if(CMAKE_HOST_WIN32)
         set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor.exe")
     else()
         set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor")
     endif()
 
-    # Built from PLU_MODULES rather than spelled out, so a new engine module is packaged without
-    # anyone remembering this list (a hand-written one silently left PluEffects out).
-    set(PLU_ENGINE_LIB_FILES "")
-    foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
-        list(APPEND PLU_ENGINE_LIB_FILES "$<TARGET_FILE:${PLU_MODULE}>")
-    endforeach ()
-
-    add_custom_target(DistributeEditor
-            COMMAND ${CMAKE_COMMAND}
-            -DDIST_DIR=${PLU_EDITOR_DIST_DIR}
-            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-            -DEDITOR_EXE=$<TARGET_FILE:PluEditor>
-            # Every engine module, semicolon-separated. It was one $<TARGET_FILE:Engine> while the
-            # engine was a single library; Engine is an INTERFACE target now and has no file.
-            "-DENGINE_LIBS=$<JOIN:${PLU_ENGINE_LIB_FILES},;>"
-            -DVCPKG_LIB_DIR=${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib
+    plu_add_distribute_target(DistributeEditor PluEditor "${PLU_DIST_DIR}"
             -DPYARMOR_EXE=${PLU_PYARMOR_EXE}
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/DistributeEditor.cmake"
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            VERBATIM
-            COMMENT "Packaging standalone editor into ${PLU_EDITOR_DIST_DIR}"
     )
-    add_dependencies(DistributeEditor PluEditor)
 endif()
 
 #set(CPACK_PACKAGE_NAME "PluEditor")
