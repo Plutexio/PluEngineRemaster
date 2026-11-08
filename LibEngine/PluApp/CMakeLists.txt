@@ -2,7 +2,7 @@
 # name types from all of them.
 plu_add_engine_module(PluApp
         DEPENDS PluCore PluAssetCore PluPlatform PluAssetTypes PluEffects PluScripting
-                PluRender PluAssetPipeline PluGameplay PluPhysics)
+                PluRender PluAssetPipeline PluGameplay PluPhysics PluNetworking)
 
 # The bindings chunks (PLU_BINDINGS_SOURCES, from ReflectionCache/BindingsLayout.cmake – see
 # LibEngine/CMakeLists.txt) plus the PYBIND11_EMBEDDED_MODULE that calls them; the chunks compile in

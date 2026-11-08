@@ -2190,6 +2190,13 @@ def GenerateReflectionData(Data: List[FileData]):
             if Entry.is_dir() and Entry.name not in ProjectGroups:
                 if os.path.exists(os.path.join(Entry.path, "ClassList.txt")):
                     ProjectGroups.append(Entry.name)
+    # Every engine module this run scans, also one with nothing reflected yet — it has no
+    # ClassList.txt, but still needs the Init<Module>Reflection() that Application calls.
+    ScanRoot = os.path.abspath(ProjectToScanDir)
+    for Module in ReadEngineModuleOrder():
+        ModuleDir = os.path.join(ProjectDir, "LibEngine", Module)
+        if Module not in ProjectGroups and os.path.commonpath([ModuleDir, ScanRoot]) == ScanRoot:
+            ProjectGroups.append(Module)
 
     if ForceMode:
         for Proj in ProjectGroups:

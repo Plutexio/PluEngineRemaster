@@ -41,7 +41,7 @@ Layers = {
     "PluGameplay": 5,
     # Above gameplay since the physics rework: PhysicsWorld builds bodies from gameplay components
     # and listens to scene events, while gameplay never names physics.
-    "PluPhysics": 6,
+    "PluPhysics": 6, "PluNetworking": 6,
     "PluApp": 7,
 }
 
@@ -53,6 +53,7 @@ Owners = {
     "AssetTypes": "PluAssetTypes", "Render": "PluRender", "Physics": "PluPhysics",
     "Scripting": "PluScripting", "AssetPipeline": "PluAssetPipeline",
     "Gameplay": "PluGameplay", "Effects": "PluEffects",
+    "Networking": "PluNetworking",
 }
 
 # Root headers kept at PluEngine/<name>.h rather than under a module directory.
@@ -71,6 +72,7 @@ Baseline = {
     "PluAssetPipeline": 0,
     "PluGameplay": 0,
     "PluPhysics": 0,
+    "PluNetworking": 0,
     "PluApp": 0,
 }
 

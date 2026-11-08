@@ -145,6 +145,11 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/PluBase/CMakeLists.txt")
     message(FATAL_ERROR "PluBase/ is empty — the submodule is not checked out. Run:\n"
             "  git submodule update --init")
 endif()
+# PluNetwork too (github.com/Plutexio/PluNetwork), added by LibEngine after PluBase.
+if(NOT PLU_TESTS_ONLY AND NOT EXISTS "${CMAKE_SOURCE_DIR}/PluNetwork/CMakeLists.txt")
+    message(FATAL_ERROR "PluNetwork/ is empty — the submodule is not checked out. Run:\n"
+            "  git submodule update --init")
+endif()
 set(PLUSTL_BUILD_TESTS ${PLU_BUILD_TESTS} CACHE BOOL "" FORCE)
 set(PLUSTL_TESTS_TSAN ${PLU_TESTS_TSAN} CACHE BOOL "" FORCE)
 add_subdirectory(PluSTL)

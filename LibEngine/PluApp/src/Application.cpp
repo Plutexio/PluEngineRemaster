@@ -28,6 +28,7 @@
 #include "PluEngine/Gameplay/GameClient.h"
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Physics/JoltIntializer.h"
+#include "PluEngine/Networking/Networking.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
 #include "PluEngine/Render/RenderThreading.h"
@@ -49,6 +50,7 @@ extern void InitPluRenderReflection();
 extern void InitPluAssetPipelineReflection();
 extern void InitPluGameplayReflection();
 extern void InitPluPhysicsReflection();
+extern void InitPluNetworkingReflection();
 extern void InitPluAppReflection();
 
 namespace Plu
@@ -409,6 +411,7 @@ namespace Plu
         InitPluAssetPipelineReflection();
         InitPluGameplayReflection();
         InitPluPhysicsReflection();
+        InitPluNetworkingReflection();
         InitPluAppReflection();
         // Reflection is registered; now let the asset layer plug itself into it.
         InstallAssetReflectionHooks();
@@ -469,10 +472,12 @@ namespace Plu
 #endif
 
         JoltPhysics::Init(&mApplicationInfo);
+        Networking::Init();
     }
 
     void Application::EngineShutdown()
     {
+        Networking::Shutdown();
         JoltPhysics::Shutdown();
         mObjectManager->DestroyObject(*mApplicationInfo.AppRenderingManager->GetEngineObjectHandle());
         mApplicationInfo.AppRenderingManager = nullptr;

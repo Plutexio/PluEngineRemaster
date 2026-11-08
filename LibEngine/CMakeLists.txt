@@ -1,6 +1,6 @@
 project(Engine)
 
-# The engine is eleven layered shared libraries. Each one lives in LibEngine/<Module>/{include,src}
+# The engine is twelve layered shared libraries. Each one lives in LibEngine/<Module>/{include,src}
 # with its own include root, its own export macro and its own reflection cache directory, and may
 # link only the modules below it — the layering is stated once, in each module's CMakeLists, and
 # from here on the linker is what enforces it. PythonTools/LayeringCheck.py checks the same rule at
@@ -14,7 +14,7 @@ set(PLU_MODULES
         PluEffects PluScripting
         PluRender PluAssetPipeline
         PluGameplay
-        PluPhysics
+        PluPhysics PluNetworking
         PluApp
         CACHE INTERNAL "Engine modules, bottom-up. Consumers copy these next to their executable."
 )
@@ -107,9 +107,14 @@ endif ()
 # projects can use it without the engine. Here, after the third-party targets it links.
 add_subdirectory("${CMAKE_SOURCE_DIR}/PluBase" "${CMAKE_BINARY_DIR}/PluBase")
 
+# PluNetwork: sockets, packets and the packet dispatcher on raw OS sockets, another library of its
+# own (github.com/Plutexio/PluNetwork). It finds PluSTL, PluBase, spdlog and glm as the targets above
+# and skips its own sandbox. The engine reaches it through the PluNetworking module.
+add_subdirectory("${CMAKE_SOURCE_DIR}/PluNetwork" "${CMAKE_BINARY_DIR}/PluNetwork")
+
 # Shared libraries outside the engine modules that, like the modules, have to sit next to the
 # executable.
-set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog PluBase
+set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog PluBase PluNetwork
         CACHE INTERNAL "Third-party shared libraries consumers copy next to their executable."
 )
 

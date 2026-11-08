@@ -4,3 +4,6 @@
 [submodule "PluBase"]
 	path = PluBase
 	url = https://github.com/Plutexio/PluBase.git
+[submodule "PluNetwork"]
+	path = PluNetwork
+	url = https://github.com/Plutexio/PluNetwork.git
