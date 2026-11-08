@@ -105,16 +105,16 @@ namespace Plu
 
     bool Texture::CreateFromInfo(TextureInfo* Info, bool GenerateMipmaps)
     {
-        if (Info->Data == nullptr || Info->Width <= 0 || Info->Height <= 0)
+        if (Info->RawData.Data == nullptr || Info->RawData.Width <= 0 || Info->RawData.Height <= 0)
         {
             return false;
         }
 
         Target = GL_TEXTURE_2D;
-        Width = Info->Width;
-        Height = Info->Height;
+        Width = Info->RawData.Width;
+        Height = Info->RawData.Height;
         Layers = 1;
-        Channels = Info->Channels;
+        Channels = Info->RawData.Channels;
 
         glGenTextures(1, &TextureID);
         glBindTexture(GL_TEXTURE_2D, TextureID);
@@ -137,7 +137,7 @@ namespace Plu
 
         // Upload texture data
         glTexImage2D(GL_TEXTURE_2D, 0, GetInternalFormat(), Width, Height, 0,
-                     GetFormat(), GL_UNSIGNED_BYTE, Info->Data);
+                     GetFormat(), GL_UNSIGNED_BYTE, Info->RawData.Data);
 
         CheckGLError("After glTexImage2D");
 

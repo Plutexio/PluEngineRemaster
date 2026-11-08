@@ -43,7 +43,7 @@ void Plu::TextureDisplayPanel::OnUpdate(float deltaTime)
 				float availW = viewportSize.x;
 				float availH = viewportSize.y;
 
-				float texAspect = (float)textureInfo->Width / (float)textureInfo->Height;
+				float texAspect = (float)textureInfo->RawData.Width / (float)textureInfo->RawData.Height;
 				float availAspect = availW / availH;
 
 				ImVec2 imageSize;

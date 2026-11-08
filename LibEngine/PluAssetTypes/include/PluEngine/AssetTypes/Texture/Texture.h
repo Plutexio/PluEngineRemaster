@@ -11,13 +11,11 @@
 namespace Plu
 {
 	PLU_STRUCT()
-	struct PLUASSETTYPES_API TextureInfo : IAssetData
+	struct PLUASSETTYPES_API TextureRawData
 	{
-		REFLECTION_BODY_TEXTUREINFO()
+		REFLECTION_BODY_TEXTURERAWDATA()
 
-		// Owns the pixel buffer (always allocated with new[] in TextureImport::LoadTexture;
-		// the stbi-decoded import path frees its data itself and never lands here).
-		~TextureInfo() override { delete[] Data; }
+		~TextureRawData() { delete[] Data; }
 
 		PLU_PROPERTY()
 		Int32 Width = 0;
@@ -29,6 +27,15 @@ namespace Plu
 		Int32 Channels = 0;
 
 		unsigned char* Data = nullptr;
+	};
+
+	PLU_STRUCT()
+	struct PLUASSETTYPES_API TextureInfo : IAssetData
+	{
+		REFLECTION_BODY_TEXTUREINFO()
+
+
+		TextureRawData RawData;
 	};
 }
 

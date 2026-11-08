@@ -6,6 +6,7 @@
 
 #include "glad/glad.h"
 #include "imgui_impl_sdl3.h"
+#include "AppIconPng.h"
 #include "PluEngine/Platform/SDLInputBackend.h"
 #include "PluBase/ThreadAffinity.h"
 #include "PluEngine/FrameDemand.h"
@@ -153,6 +154,26 @@ namespace Plu
     // is the reason secondary windows must not create (or make current) a context of their own.
     static SDL_GLContext gSharedGLContext = nullptr;
 
+    // Sets the engine icon (Packaging/pluengine.png, compiled in by PluPlatform's CMakeLists) on a
+    // window. Covers X11 and Wayland compositors with xdg-toplevel-icon (KDE); GNOME ignores
+    // per-window icons and takes the one from the app's .desktop entry.
+    static void ApplyAppIcon(SDL_Window* window)
+    {
+        PLU_PROFILE_SCOPE("SDLWindow::ApplyAppIcon");
+
+        SDL_IOStream* stream = SDL_IOFromConstMem(AppIcon::kPng, sizeof(AppIcon::kPng));
+        SDL_Surface* icon = stream ? SDL_LoadPNG_IO(stream, true) : nullptr;
+        if (!icon) {
+            PLU_CORE_WARN("Failed to decode the embedded window icon: {}", SDL_GetError());
+            return;
+        }
+        // SDL copies the pixels, so the surface is ours to free right away.
+        if (!SDL_SetWindowIcon(window, icon)) {
+            PLU_CORE_WARN("Failed to set the window icon: {}", SDL_GetError());
+        }
+        SDL_DestroySurface(icon);
+    }
+
     void SDLWindow::Init()
     {
         // SDL3 creates windows shown by default and dropped the x/y args from SDL_CreateWindow;
@@ -217,6 +238,8 @@ namespace Plu
         mRunning = true;
 
         gSDLWindows.Insert(mSDLWindowID, this);
+
+        ApplyAppIcon(mWindow);
 
         SDL_ShowWindow(mWindow);
     }

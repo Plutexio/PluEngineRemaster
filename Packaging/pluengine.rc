@@ -1,0 +1,6 @@
+// Application icon of the Windows executables (PluEditor, PluRuntime).
+// Explorer and shortcuts show the first icon group of an executable, so this must stay the only
+// (or the lowest-numbered) one. WindowsWindow::Init loads the same ID for the window class
+// (kAppIconResourceId in WindowsWindow.cpp) — keep the two in sync.
+// pluengine.ico is generated from pluengine.svg by PythonTools/GenerateAppIcons.py.
+1 ICON "pluengine.ico"

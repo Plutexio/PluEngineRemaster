@@ -162,6 +162,11 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
 
 target_compile_definitions(PluEditor PUBLIC PLU_EDITOR)
 
+if (WIN32)
+    # Application icon (Explorer, taskbar, window class). Linux embeds it in PluPlatform instead.
+    target_sources(PluEditor PRIVATE "${CMAKE_SOURCE_DIR}/Packaging/pluengine.rc")
+endif ()
+
 add_custom_command(TARGET PluEditor
         PRE_BUILD
         COMMENT "Generating Reflection Data"

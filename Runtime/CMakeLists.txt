@@ -26,6 +26,11 @@ add_executable(PluRuntime WIN32 ${SOURCES_REFLECTION}
 
 target_link_libraries(PluRuntime PUBLIC Engine)
 
+if (WIN32)
+    # Application icon (Explorer, taskbar, window class). Linux embeds it in PluPlatform instead.
+    target_sources(PluRuntime PRIVATE "${CMAKE_SOURCE_DIR}/Packaging/pluengine.rc")
+endif ()
+
 add_custom_command(TARGET PluRuntime
         PRE_BUILD
         COMMENT "Generating Reflection Data"

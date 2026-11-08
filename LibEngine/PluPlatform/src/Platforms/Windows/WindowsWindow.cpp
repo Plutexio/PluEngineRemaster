@@ -577,15 +577,28 @@ namespace Plu {
 
     void WindowsWindow::Init() {
 
-        WNDCLASS wc = {};
-        wc.lpfnWndProc = WindowProc;
-        wc.hInstance = GetModuleHandle(nullptr);
-        wc.lpszClassName = "EngineWindowClass";
+        // ICON resource of the executable (Packaging/pluengine.rc), not of this DLL — hence the
+        // module handle of the process. Missing resource = null icon = Windows' default one.
+        constexpr int kAppIconResourceId = 1;
+        const HINSTANCE exeInstance = GetModuleHandle(nullptr);
 
-        if (!GetClassInfo(GetModuleHandle(nullptr), wc.lpszClassName, &wc))
+        WNDCLASSEX wc = {};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = WindowProc;
+        wc.hInstance = exeInstance;
+        wc.lpszClassName = "EngineWindowClass";
+        // Both sizes are loaded explicitly; with only hIcon set, Windows shrinks the 32 px frame for
+        // the title bar instead of using the 16 px one from the .ico.
+        wc.hIcon = static_cast<HICON>(LoadImage(exeInstance, MAKEINTRESOURCE(kAppIconResourceId), IMAGE_ICON,
+                                                GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
+        wc.hIconSm = static_cast<HICON>(LoadImage(exeInstance, MAKEINTRESOURCE(kAppIconResourceId), IMAGE_ICON,
+                                                  GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+        mhIcon = wc.hIcon;
+
+        if (!GetClassInfoEx(exeInstance, wc.lpszClassName, &wc))
         {
             PLU_CORE_INFO("Registering Window Class!");
-            if (!RegisterClass(&wc))
+            if (!RegisterClassEx(&wc))
             {
                 PLU_CORE_ASSERT(false, "RegisterClass failed")
                 return;
