@@ -482,6 +482,9 @@ namespace Plu
         mObjectManager->DestroyObject(*mApplicationInfo.AppRenderingManager->GetEngineObjectHandle());
         mApplicationInfo.AppRenderingManager = nullptr;
 
+        mObjectManager->DestroyObject(*mApplicationInfo.AppWindow->GetEngineObjectHandle());
+        mObjectManager->DestroyObject(*mApplicationInfo.AppWindowsManager->GetEngineObjectHandle());
+
         mObjectManager->DestroyObject(*mApplicationInfo.AppThreadPool->GetEngineObjectHandle());
 
         Engine::DestroyEngine();

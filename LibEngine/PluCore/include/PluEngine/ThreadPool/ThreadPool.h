@@ -5,10 +5,13 @@
 #ifndef PLUENGINE_THREADPOOL_H
 #define PLUENGINE_THREADPOOL_H
 
+#include <pplcancellation_token.h>
+
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "ThreadPool.generated.h"
 #include "PluSTL/Concurrent/ConcurrentQueue.h"
+#include "PluSTL/Concurrent/ConcurrentArray.h"
 
 namespace Plu
 {

@@ -12,7 +12,7 @@ void Plu::ThreadPool::RunThread(int workerIndex)
     RegisterThreadName(String::Format("Worker {0}", workerIndex));
 
     while (mIsRunning) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        //TODO
     }
 }
 
