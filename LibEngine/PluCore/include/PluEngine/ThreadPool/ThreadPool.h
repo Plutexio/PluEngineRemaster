@@ -8,23 +8,37 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "ThreadPool.generated.h"
+#include "PluSTL/Concurrent/ConcurrentQueue.h"
 
 namespace Plu
 {
+    enum class ETaskPrority
+    {
+        FRAME,
+        BACKGROUND
+    };
+
     PLU_CLASS()
-    class PLUCORE_API ThreadPool : public EngineObject
+    class PLUCORE_API ThreadPool final : public EngineObject
     {
         REFLECTION_BODY_THREADPOOL()
+    public:
+        using TaskPtr = void (*)(/*Here args, for future trust me*/);
     private:
         DynamicArray<std::thread*> mThreads;
         std::atomic<bool> mIsRunning;
 
+        ConcurrentQueue<TaskPtr> mBackgroundTasks;
+        ConcurrentQueue<TaskPtr> mFrameTasks;
+
         void RunThread(int workerIndex);
     public:
         ThreadPool();
-        ~ThreadPool();
+        ~ThreadPool() override;
 
-        int GetThreadCount() const;
+        [[nodiscard]] int GetThreadCount() const;
+
+        void Run(TaskPtr task, ETaskPrority priority = ETaskPrority::BACKGROUND);
     };
 }
 
