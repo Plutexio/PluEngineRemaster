@@ -180,6 +180,7 @@ Always use PluSTL types, not `std::` equivalents:
 | PluSTL | Replaces |
 |---|---|
 | `DynamicArray<T>` | `std::vector<T>` |
+| `StaticArray<T, N>` | `std::array<T, N>` |
 | `Queue<T>` | `std::queue<T>` / `std::deque<T>` |
 | `HashMap<K,V>` | `std::unordered_map<K,V>` |
 | `HashSet<T>` | `std::unordered_set<T>` |
