@@ -5,8 +5,6 @@
 #ifndef PLUENGINE_THREADPOOL_H
 #define PLUENGINE_THREADPOOL_H
 
-#include <pplcancellation_token.h>
-
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "ThreadPool.generated.h"
@@ -33,6 +31,10 @@ namespace Plu
 
         ConcurrentQueue<TaskPtr> mBackgroundTasks;
         ConcurrentQueue<TaskPtr> mFrameTasks;
+
+        DynamicArray<std::condition_variable*> mVariables;
+        DynamicArray<std::pair<std::mutex, TaskPtr>*> mTasksMutexes;
+        ConcurrentQueue<int> mFreeThreads;
 
         void RunThread(int workerIndex);
     public:
