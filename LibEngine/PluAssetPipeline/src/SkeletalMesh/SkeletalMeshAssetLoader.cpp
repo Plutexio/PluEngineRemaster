@@ -40,12 +40,10 @@ Plu::TypeInfo * Plu::SkeletalMeshAssetLoader::GetImportSettingsClass()
     return SkeletalMeshImportOptions::GetStaticClass();
 }
 
-void Plu::SkeletalMeshAssetLoader::HandleAssetImporting(DynamicArray<Path> &assetPaths, Path outPath,
-    void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager)
+void Plu::SkeletalMeshAssetLoader::HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings,
+    TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager)
 {
-    for (auto path : assetPaths) {
-        ImportSkeletalMesh(path, outPath, assetManager, *static_cast<SkeletalMeshImportOptions*>(importSettings));
-    }
+    ImportSkeletalMesh(assetPath, outPath, assetManager, *static_cast<SkeletalMeshImportOptions*>(importSettings));
 }
 
 Plu::TypeInfo * Plu::SkeletalMeshAssetLoader::GetAssetTypeViewportClass()

@@ -1371,6 +1371,15 @@ Identyfikacja wątku głównego dla egzekwowania thread-confinementu (multithrea
 
 Confinement-guarded (prywatny `CheckOwnerThread()` = `PLU_CORE_ASSERT(IsOnMainThread(), ...)`, no-op w release): `EngineAssetManager` — mutacje rejestru assetów tylko na main (etap 03); `EngineObjectManager` — już **nie** main-confined dla create/destroy (slot-mapa chroniona `shared_mutex`, affinity per-obiekt przez wskaźniki — patrz niżej), `CheckOwnerThread` został tylko w wolnym editor-introspekcyjnym `GetAllObjectsOfClass`.
 
+### Thread pool — `PluEngine/ThreadPool/ThreadPool.h` (`namespace Plu`, `ApplicationInfo::AppThreadPool`)
+
+| Function | Description |
+|---|---|
+| `Run(task, priority = BACKGROUND)` | Queues a `MoveOnlyFunction<void()>` on a worker. `FRAME` tasks are taken before `BACKGROUND` ones. Fire-and-forget: no completion handle. |
+| `ParallelFor(count, body, priority = FRAME)` | Calls `body(size_t index)` once per index in `[0, count)` on the workers **and the calling thread**; returns when all calls finished. Dynamic one-at-a-time scheduling; does not wait for helper tasks that never got a worker. First exception from `body` cancels the rest and is rethrown. Serial when called from one of the pool's workers. `body` must not create `TOwningPointer`s, dispatch events or call GL — collect results per index, act on them after the call. See `MULTITHREADING.md`. |
+| `GetThreadCount()` | Number of workers (hardware threads − 2, at least 2). |
+| `IsCurrentThreadWorker()` | `true` on one of this pool's worker threads. |
+
 ### Kontrakt thread-affinity wskaźników — `PluSTL/Pointers/` (`namespace Plu`)
 
 Każdy obiekt jest **przypięty do wątku, który go stworzył** (`ControlBlock::owningThread`, łapany w konstrukcji bloku = przy pierwszym owinięciu raw ptr, w praktyce wątek wołający `CreateObject`). Kontrakt: **owning operuje się tylko na wątku-właścicielu; między wątkami przekazuje się wyłącznie `TUsePointer` (obserwacja read-only)**. Asercje gated `#if !defined(NDEBUG) && !defined(PLU_DISABLE_PTR_THREAD_CHECKS)` (znikają w release / można wyłączyć definem), przez makro `PLU_PTR_ASSERT_OWNER(control)` (`control==nullptr || this_thread==owningThread`).

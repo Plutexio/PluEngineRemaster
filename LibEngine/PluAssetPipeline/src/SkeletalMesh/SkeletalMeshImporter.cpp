@@ -1054,7 +1054,7 @@ namespace Plu
     namespace
     {
         // Standard binary-asset header magic/version expected by
-        // EngineAssetManager::LoadBinaryDescriptor (magic 'PLUA', any known version).
+        // ReadBinaryDescriptorHeader in EngineAssetManager.cpp (magic 'PLUA', any known version).
         constexpr UInt32 kAssetMagic = 0x41554C50;      // 'PLUA'
         // v2: attach points appended after the node tree (v1 files simply have none).
         // v3: ImportScale written right after the skeleton name (older files load as 1.0).
@@ -1114,7 +1114,7 @@ namespace Plu
             if (!writer.IsOpen()) return false;
 
             // Standard binary-asset descriptor header (magic/version/typeName/uuid),
-            // so EngineAssetManager::LoadBinaryDescriptor can index this file.
+            // so ReadBinaryDescriptorHeader in EngineAssetManager.cpp can index this file.
             writer.Write<UInt32>(kAssetMagic);
             writer.Write<UInt32>(kSkeletonVersion);
             writer.WriteString(String(kSkeletonTypeName));   // UInt32 length + bytes == typeLength + typeName

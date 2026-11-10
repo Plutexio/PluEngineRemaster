@@ -36,6 +36,20 @@ namespace Plu
         bool IsEngineAsset;
 #endif
     };
+
+    // An asset file's own description of itself, read off disk on any thread. Plain data:
+    // EngineAssetManager turns it into an AssetDescriptor on the main thread.
+    struct AssetDescriptorHeader
+    {
+        Path AssetPath;
+        String TypeName;
+        UInt64 Uuid = 0;
+        AssetLoaderType LoaderType = AssetLoaderType::Undefined;
+#ifdef PLU_ENGINE_EDITOR_BUILD
+        String AssetName;
+#endif
+        bool Valid = false;
+    };
 }
 
 #endif //PLUENGINE_ASSETDESCRIPTOR_H

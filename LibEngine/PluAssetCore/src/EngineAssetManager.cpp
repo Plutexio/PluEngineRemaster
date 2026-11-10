@@ -15,6 +15,8 @@
 #include "PluEngine/AssetCore/AssetLoader.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/ThreadPool/ThreadPool.h"
+
 
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -111,112 +113,150 @@ void Plu::EngineAssetManager::LoadBinaryAssetData(TUsePointer<AssetDescriptor> a
     PLU_CORE_ERROR("No Loader for asset UUID {} Type {}", assetDesc->Uuid.getUUID(), assetDesc->AssetType->TypeName.CStr());
 }
 
-Plu::PluUUID Plu::EngineAssetManager::LoadJSONDescriptor(const Path &assetPath)
+namespace Plu
 {
-    CheckOwnerThread();
-    auto json = DiskManager::LoadJson(assetPath.ToString().ToWide());
-    if (!json.has_value()) return 0;
-    TOwningPointer<AssetDescriptor> assetDescriptor = CreateOwning<AssetDescriptor>();
-    String typeName = json.value()["typeName"].get<std::string>().c_str();
-    UInt64 uuid = 0;
-    if (json.value().contains("uuid")) {
-        uuid = json.value()["uuid"].get<UInt64>();
-    }
-    if (uuid == 0) {
-        PLU_CORE_CRITICAL("No uuid field in asset at {}!", assetPath.ToString().CStr());
-        return 0;
-    }
-    assetDescriptor->AssetType = TypeRegistry::GetInstance()->GetTypeOfName(typeName);
-    assetDescriptor->LoaderType = AssetLoaderType::JSON;
-    assetDescriptor->Uuid = uuid;
-    assetDescriptor->AssetPath = assetPath;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-    String assetName = "";
-    if (json.value().contains("assetName")) {
-        assetName = json.value()["assetName"].get<std::string>().c_str();
-    } else {
-        assetName = assetPath.GetStem();
-    }
-    assetDescriptor->AssetName = assetName;
-#endif
+namespace
+{
+    bool ReadJSONDescriptorHeader(const Path& assetPath, Plu::AssetDescriptorHeader& out)
     {
-        std::unique_lock lock(mMutex);
-        mAssetPathByUUIDMap.Insert(assetPath, uuid);
-        mAssetMap.Insert(uuid, assetDescriptor);
-        mAssetPathMap.Insert(uuid, assetPath);
-    }
+        std::optional<nlohmann::json> jsonOpt = Plu::DiskManager::LoadJson(assetPath.ToString().ToWide());
+        if (!jsonOpt.has_value()) return false;
+        const nlohmann::json& json = jsonOpt.value();
+        if (!json.contains("typeName") || !json["typeName"].is_string()) {
+            PLU_CORE_ERROR("No typeName field in asset at {}!", assetPath.ToString().CStr());
+            return false;
+        }
+        UInt64 uuid = 0;
+        if (json.contains("uuid") && json["uuid"].is_number_integer()) {
+            uuid = json["uuid"].get<UInt64>();
+        }
+        if (uuid == 0) {
+            PLU_CORE_CRITICAL("No uuid field in asset at {}!", assetPath.ToString().CStr());
+            return false;
+        }
+        out.AssetPath = assetPath;
+        out.TypeName = json["typeName"].get<std::string>().c_str();
+        out.Uuid = uuid;
+        out.LoaderType = Plu::AssetLoaderType::JSON;
 #ifdef PLU_ENGINE_EDITOR_BUILD
-    PLU_CORE_TRACE("New JSON asset descriptor loaded! UUID {} Path {}", uuid, assetPath.ToString().CStr());
-#else
-    PLU_CORE_TRACE("New JSON asset descriptor loaded! UUID {}", uuid);
+        if (json.contains("assetName") && json["assetName"].is_string()) {
+            out.AssetName = json["assetName"].get<std::string>().c_str();
+        } else {
+            out.AssetName = assetPath.GetStem();
+        }
 #endif
-    return uuid;
+        return true;
+    }
+
+    bool ReadBinaryDescriptorHeader(const Path& assetPath, Plu::AssetDescriptorHeader& out)
+    {
+        FILE* file = nullptr;
+#ifdef _WIN32
+        _wfopen_s(&file, StringW::FromNarrow(assetPath.CStr()).CStr(), L"rb");
+#else
+        file = fopen(assetPath.CStr(), "rb");
+#endif
+        if (!file) {
+            PLU_CORE_ERROR("Cannot open binary asset {}!", assetPath.CStr());
+            return false;
+        }
+
+        UInt32 magic = 0;
+        UInt32 version = 0;
+        bool headerRead = fread(&magic, sizeof(UInt32), 1, file) == 1
+                       && fread(&version, sizeof(UInt32), 1, file) == 1;
+
+        constexpr UInt32 kMaxKnownAssetVersion = 3;
+        if (!headerRead || magic != 0x41554C50 || version < 1 || version > kMaxKnownAssetVersion) {
+            PLU_CORE_ERROR("File {} has invalid magic or version!", assetPath.CStr());
+            fclose(file);
+            return false;
+        }
+
+        // Upper bound only guards against allocating garbage from a corrupted file.
+        constexpr UInt32 kMaxTypeNameLength = 1024;
+        UInt32 typeLength = 0;
+        if (fread(&typeLength, sizeof(UInt32), 1, file) != 1 || typeLength == 0 || typeLength > kMaxTypeNameLength) {
+            PLU_CORE_ERROR("File {} has an invalid type name length!", assetPath.CStr());
+            fclose(file);
+            return false;
+        }
+        DynamicArray<char> typeBuffer;
+        typeBuffer.Resize(typeLength + 1);
+        UInt64 uuid = 0;
+        bool bodyRead = fread(typeBuffer.Data(), sizeof(char), typeLength, file) == typeLength
+                     && fread(&uuid, sizeof(UInt64), 1, file) == 1;
+        fclose(file);
+        if (!bodyRead) {
+            PLU_CORE_ERROR("File {} has a truncated header!", assetPath.CStr());
+            return false;
+        }
+        typeBuffer[typeLength] = '\0';
+
+        out.AssetPath = assetPath;
+        out.TypeName = typeBuffer.Data();
+        out.Uuid = uuid;
+        out.LoaderType = Plu::AssetLoaderType::Binary;
+#ifdef PLU_ENGINE_EDITOR_BUILD
+        out.AssetName = assetPath.GetStem();
+#endif
+        return true;
+    }
+
+    bool ReadAssetDescriptorHeader(const Path& assetPath, Plu::AssetDescriptorHeader& out)
+    {
+        try {
+#ifdef PLU_ENGINE_EDITOR_BUILD
+            if (!assetPath.HasExtension()) return false;
+            if (assetPath.GetExtension() == PLU_BINARY_EXT) return ReadBinaryDescriptorHeader(assetPath, out);
+            if (assetPath.GetExtension() == PLU_ASSET_EXT || assetPath.GetExtension() == PLU_SCENE_EXT) return ReadJSONDescriptorHeader(assetPath, out);
+#else
+            if (assetPath.HasExtension()) return false;
+            String stem = assetPath.GetStem();
+            if (stem.IsEmpty()) return false;
+            if (stem[0] == 'j') return ReadJSONDescriptorHeader(assetPath, out);
+            if (stem[0] == 'b') return ReadBinaryDescriptorHeader(assetPath, out);
+#endif
+        } catch (const std::exception& e) {
+            PLU_CORE_ERROR("Error reading asset descriptor at {}: {}", assetPath.ToString().CStr(), e.what());
+        } catch (...) {
+            PLU_CORE_ERROR("Unknown error reading asset descriptor at {}", assetPath.ToString().CStr());
+        }
+        return false;
+    }
+}
 }
 
-Plu::PluUUID Plu::EngineAssetManager::LoadBinaryDescriptor(Path assetPath)
+Plu::PluUUID Plu::EngineAssetManager::RegisterAssetDescriptor(const AssetDescriptorHeader& header)
 {
     CheckOwnerThread();
-    FILE* file = nullptr;
-
-#ifdef _WIN32
-    _wfopen_s(&file, StringW::FromNarrow(assetPath.CStr()).CStr(), L"rb");
-#else
-    file = fopen(assetPath.CStr(), "rb");
-#endif
-    UInt32 magic = 0;
-    UInt32 version = 0;
-    fread(&magic, sizeof(UInt32), 1, file);
-    fread(&version, sizeof(UInt32), 1, file);
-
-    // Nagłówek (magic/typeName/uuid) jest niezależny od wersji formatu danych,
-    // więc akceptujemy każdą znaną wersję (tekstury=1, mesh=2, skeleton=3). Walidacja samych
-    // danych odbywa się w loaderze konkretnego typu (np. LoadStaticMesh).
-    // Bumping a per-type payload version means raising this ceiling too, or the asset stops
-    // being indexed at all.
-    constexpr UInt32 kMaxKnownAssetVersion = 3;
-    if (magic != 0x41554C50 || version < 1 || version > kMaxKnownAssetVersion)
-    {
-        PLU_ERROR("File {} has invalid magic or version!", assetPath.CStr());
-        fclose(file);
+    TypeInfo* assetType = TypeRegistry::GetInstance()->GetTypeOfName(header.TypeName);
+    if (!assetType && header.LoaderType == AssetLoaderType::Binary) {
+        PLU_CORE_ERROR("Error during Binary Descriptor Load! No type with name {}", header.TypeName.CStr());
         return 0;
     }
-
-    UInt32 typeLength = 0;
-    fread(&typeLength, sizeof(UInt32), 1, file);
-    char* typeBuffer = new char[typeLength + 1];
-    fread(typeBuffer, sizeof(char), typeLength, file);
-    typeBuffer[typeLength] = '\0';
-    String typeName = typeBuffer;
-    delete[] typeBuffer;
-
-    UInt64 uuid;
-    fread(&uuid, sizeof(UInt64), 1, file);
 
     TOwningPointer<AssetDescriptor> assetDescriptor = CreateOwning<AssetDescriptor>();
-    assetDescriptor->Uuid = uuid;
-    assetDescriptor->AssetType = TypeRegistry::GetInstance()->GetTypeOfName(typeName);
-    if (!assetDescriptor->AssetType) {
-        PLU_CORE_ERROR("Error during Binary Descriptor Load! No type with name {}", typeName.CStr());
-        return 0;
-    }
-    assetDescriptor->LoaderType = AssetLoaderType::Binary;
-    assetDescriptor->AssetPath = assetPath;
+    assetDescriptor->AssetType = assetType;
+    assetDescriptor->LoaderType = header.LoaderType;
+    assetDescriptor->Uuid = header.Uuid;
+    assetDescriptor->AssetPath = header.AssetPath;
 #ifdef PLU_ENGINE_EDITOR_BUILD
-    String assetName = assetPath.GetStem();
-    assetDescriptor->AssetName = assetName;
+    assetDescriptor->AssetName = header.AssetName;
 #endif
     {
         std::unique_lock lock(mMutex);
-        mAssetPathByUUIDMap.Insert(assetPath, uuid);
-        mAssetMap.Insert(uuid, assetDescriptor);
-        mAssetPathMap.Insert(uuid, assetPath);
+        mAssetPathByUUIDMap.Insert(header.AssetPath, header.Uuid);
+        mAssetMap.Insert(header.Uuid, assetDescriptor);
+        mAssetPathMap.Insert(header.Uuid, header.AssetPath);
     }
+    const char* loaderName = header.LoaderType == AssetLoaderType::Binary ? "BINARY" : "JSON";
 #ifdef PLU_ENGINE_EDITOR_BUILD
-    PLU_CORE_TRACE("New BINARY asset descriptor loaded! UUID {} Path {}", uuid, assetPath.ToString().CStr());
+    PLU_CORE_TRACE("New {} asset descriptor loaded! UUID {} Path {}", loaderName, header.Uuid, header.AssetPath.ToString().CStr());
 #else
-    PLU_CORE_TRACE("New BINARY asset descriptor loaded! UUID {}", uuid);
+    PLU_CORE_TRACE("New {} asset descriptor loaded! UUID {}", loaderName, header.Uuid);
 #endif
-    return uuid;
+    return header.Uuid;
 }
 
 void Plu::EngineAssetManager::RegisterAssetDataFromLoader(TOwningPointer<IAssetData> assetData,
@@ -265,38 +305,62 @@ void Plu::EngineAssetManager::PrepareLoaders()
 
 void Plu::EngineAssetManager::LoadAssetDescriptor(Path assetPath)
 {
-    CheckOwnerThread();
-    PluUUID uuid;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-    if (!assetPath.HasExtension()) return;
-    if (assetPath.GetExtension() == PLU_BINARY_EXT) uuid = LoadBinaryDescriptor(assetPath);
-    if (assetPath.GetExtension() == PLU_ASSET_EXT || assetPath.GetExtension() == PLU_SCENE_EXT) uuid = LoadJSONDescriptor(assetPath);
-#else
-    if (assetPath.HasExtension()) return;
-    String stem = assetPath.GetStem();
-    String assetTxt = "Asset";
-    String UUID = stem.Substring(assetTxt.Length() + 1);
-    if (stem[0] == 'j') uuid = LoadJSONDescriptor(assetPath);
-    if (stem[0] == 'b') uuid = LoadBinaryDescriptor(assetPath);
-#endif
-
-    UInt64 uuidToSend = uuid;
+    AssetDescriptorHeader header;
+    if (!ReadAssetDescriptorHeader(assetPath, header)) return;
+    // The descriptor's owner has to be main, and "LoadAssetDescriptor" listeners load asset data
+    // and create engine objects, so off main only the disk read happens here.
+    if (!IsOnMainThread()) {
+        mPendingDescriptors.PushBack(std::move(header));
+        RequestRedraw();
+        return;
+    }
+    UInt64 uuidToSend = RegisterAssetDescriptor(header);
+    if (uuidToSend == 0) return;
     GetObjectEventDispatcher()->Dispatch("LoadAssetDescriptor", &uuidToSend);
 }
 
 void Plu::EngineAssetManager::ScanDirectory(const Path &assetPath, bool engineAssets)
 {
     CheckOwnerThread();
+    PLU_PROFILE_SCOPE("EngineAssetManager::ScanDirectory");
     PLU_CORE_TRACE("Scan directory: {}", assetPath.ToString().CStr());
-    for (auto& entry : std::filesystem::recursive_directory_iterator(assetPath.CStr())) {
-        if (entry.is_directory()) continue;
-        Path entryPath = entry.path().string().c_str();
-        LoadAssetDescriptor(entryPath);
+
+    DynamicArray<Path> assetPaths;
+    {
+        PLU_PROFILE_SCOPE("EngineAssetManager::ScanDirectory::Collect");
+        for (auto& entry : std::filesystem::recursive_directory_iterator(assetPath.CStr())) {
+            if (entry.is_directory()) continue;
+            assetPaths.EmplaceBack(entry.path().string().c_str());
+        }
+    }
+    if (assetPaths.IsEmpty()) return;
+
+    DynamicArray<AssetDescriptorHeader> headers;
+    headers.Resize(assetPaths.Size());
+    {
+        PLU_PROFILE_SCOPE("EngineAssetManager::ScanDirectory::ReadHeaders");
+        auto readHeader = [&assetPaths, &headers](size_t index) {
+            headers[index].Valid = ReadAssetDescriptorHeader(assetPaths[index], headers[index]);
+        };
+        if (TUsePointer<ThreadPool> threadPool = mApplicationInfo->AppThreadPool) {
+            threadPool->ParallelFor(assetPaths.Size(), readHeader);
+        } else {
+            for (size_t index = 0; index < assetPaths.Size(); ++index) readHeader(index);
+        }
+    }
+
+    // In directory order, same as the old serial scan, so duplicate UUIDs resolve the same way.
+    PLU_PROFILE_SCOPE("EngineAssetManager::ScanDirectory::Register");
+    for (const AssetDescriptorHeader& header : headers) {
+        if (!header.Valid) continue;
+        UInt64 uuidToSend = RegisterAssetDescriptor(header);
+        if (uuidToSend == 0) continue;
 #ifdef PLU_ENGINE_EDITOR_BUILD
-        if (TUsePointer<AssetDescriptor> assetDesc = GetAssetDescriptor(entryPath)) {
+        if (TUsePointer<AssetDescriptor> assetDesc = GetAssetDescriptor(uuidToSend)) {
             assetDesc->IsEngineAsset = engineAssets;
         }
 #endif
+        GetObjectEventDispatcher()->Dispatch("LoadAssetDescriptor", &uuidToSend);
     }
 }
 
@@ -379,6 +443,18 @@ void Plu::EngineAssetManager::ProcessPendingLoads()
 {
     PLU_PROFILE_SCOPE("EngineAssetManager::ProcessPendingLoads");
     PLU_CORE_ASSERT(IsOnMainThread(), "ProcessPendingLoads must run on the main thread");
+
+    // Descriptors first: a data request below may name an asset registered just now.
+    if (!mPendingDescriptors.IsEmpty()) {
+        Queue<AssetDescriptorHeader> pendingDescriptors;
+        mPendingDescriptors.Drain(pendingDescriptors);
+        AssetDescriptorHeader header;
+        while (pendingDescriptors.TryPopFront(header)) {
+            UInt64 uuidToSend = RegisterAssetDescriptor(header);
+            if (uuidToSend == 0) continue;
+            GetObjectEventDispatcher()->Dispatch("LoadAssetDescriptor", &uuidToSend);
+        }
+    }
 
     // Drain and reset in one critical section, so off-main threads can keep posting while we
     // do I/O without a request slipping through the gap between the two.

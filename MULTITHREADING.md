@@ -465,6 +465,35 @@ Kolejka to `ConcurrentHashSet<UInt64>`: `Insert()` dedupuje powtórzone żądani
 cała odpowiedź), a `ProcessPendingLoads()` woła `DrainToArray()` — drenaż i reset są jedną sekcją
 krytyczną, więc żądanie zgłoszone w trakcie I/O maina nie może ani zginąć, ani trafić dwa razy.
 
+### Parallel work on the thread pool (`ThreadPool::ParallelFor`)
+`ApplicationInfo::AppThreadPool` (`PluEngine/ThreadPool/ThreadPool.h`) runs plain tasks on worker
+threads: no GL context, and they must not create engine objects or `TOwningPointer`s (the creating
+thread would own them) or dispatch events. For "do N independent things" use
+`ParallelFor(count, body)`:
+- The caller and up to `min(GetThreadCount(), count - 1)` helper tasks claim indices one at a time
+  from a shared atomic counter, so items of uneven cost balance themselves.
+- The caller only waits for indices that were actually claimed. A helper that gets a worker late
+  (the pool was busy with long BACKGROUND tasks) finds nothing left and exits; its shared state is
+  refcounted, so it never touches the finished call. With every worker busy, the caller simply
+  does all the work itself.
+- An exception from `body` skips the remaining indices and is rethrown on the caller.
+- Called from one of the pool's own workers it runs serially — blocking a worker on its own pool
+  could deadlock it.
+
+Reference use: `EngineAssetManager::ScanDirectory`. Main collects the paths and sizes a
+`DynamicArray<AssetDescriptorHeader>` (one POD slot per path, so workers never share a write);
+`ParallelFor` fills the slots via `ReadAssetDescriptorHeader` (file I/O + header parsing only; it
+logs and skips broken files instead of throwing, or one bad file would cancel the whole scan).
+Back on main, the headers are registered in directory order (`RegisterAssetDescriptor` creates
+the `AssetDescriptor` owners) and `"LoadAssetDescriptor"` is dispatched — listeners load asset
+data and create engine objects, so they stay on main.
+
+`LoadAssetDescriptor(path)` works from any thread. On main it reads and registers synchronously.
+Elsewhere it reads the header on the calling thread, pushes it to `mPendingDescriptors`
+(`ConcurrentQueue<AssetDescriptorHeader>`) and calls `RequestRedraw()`; the next
+`ProcessPendingLoads()` registers it and dispatches the event on main — before draining the data
+requests, which may name the new asset. Until then the getters do not see it.
+
 ### Nowy typ obiektu renderowanego
 1. Dodaj POD do `RenderSnapshot` (`RenderThreading.h`) + wyczyść w `Clear()`.
 2. Ekstrakcja na main w `RenderSnapshotBuilder::BuildSnapshotAndPublish` (tu wolno dotykać

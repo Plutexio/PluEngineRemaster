@@ -5,21 +5,36 @@
 #include "PluEngine/ThreadPool/ThreadPool.h"
 
 #include "PluBase/ThreadAffinity.h"
+#include "PluEngine/Timer.h"
 
+#include <atomic>
+#include <exception>
+#include <memory>
+
+namespace
+{
+    // The pool whose worker the current thread is; null on every other thread.
+    thread_local const Plu::ThreadPool* tWorkerOfPool = nullptr;
+}
 
 void Plu::ThreadPool::RunThread(int workerIndex)
 {
     RegisterThreadName(String::Format("Worker {0}", workerIndex));
-    mFreeThreads.PushBack(workerIndex);
+    tWorkerOfPool = this;
 
-    while (mIsRunning) {
-        std::unique_lock<std::mutex> lock(mTasksMutexes[workerIndex]->first);
-        mVariables[workerIndex]->wait(lock, [this, workerIndex]() -> bool {
-            return mTasksMutexes[workerIndex]->second != nullptr;
-        });
-        mTasksMutexes[workerIndex]->second();
-        mTasksMutexes[workerIndex]->second = nullptr;
-        mFreeThreads.PushBack(workerIndex);
+    while (true) {
+        TaskPtr task;
+        {
+            std::unique_lock<std::mutex> lock(mTaskMutex);
+            mWakeUp.wait(lock, [this]() {
+                return !mIsRunning || !mFrameTasks.IsEmpty() || !mBackgroundTasks.IsEmpty();
+            });
+
+            if (!mFrameTasks.TryPopFront(task) && !mBackgroundTasks.TryPopFront(task)) {
+                return;
+            }
+        }
+        task();
     }
 }
 
@@ -39,15 +54,6 @@ Plu::ThreadPool::ThreadPool()
     mBackgroundTasks.Reserve(1000);
     mFrameTasks.Reserve(5000);
 
-    mVariables.Resize(threadCount);
-    for (int i =0; i < threadCount; i++) {
-        mVariables[i] = new std::condition_variable;
-    }
-    mTasksMutexes.Resize(threadCount);
-    for (int i =0; i < threadCount; i++) {
-        mTasksMutexes[i] = new std::pair<std::mutex, TaskPtr>();
-    }
-
     for (int i = 0; i < threadCount; i++) {
         mThreads.PushBack(new std::thread(&ThreadPool::RunThread, this, i));
     }
@@ -56,8 +62,14 @@ Plu::ThreadPool::ThreadPool()
 
 Plu::ThreadPool::~ThreadPool()
 {
-    mIsRunning = false;
     PLU_CORE_INFO("Waiting for threads to finish and destroying thread pool");
+
+    {
+        std::lock_guard<std::mutex> lock(mTaskMutex);
+        mIsRunning = false;
+    }
+    mWakeUp.notify_all();
+
     for (std::thread *thread: mThreads) {
         if (thread->joinable()) {
             thread->join();
@@ -65,11 +77,6 @@ Plu::ThreadPool::~ThreadPool()
         delete thread;
     }
     mThreads.Clear();
-
-    for (auto variable : mVariables) {
-        delete variable;
-    }
-    mVariables.Clear();
     PLU_CORE_INFO("Thread pool exited cleanly");
 }
 
@@ -78,24 +85,86 @@ int Plu::ThreadPool::GetThreadCount() const
     return static_cast<int>(mThreads.Size());
 }
 
-void Plu::ThreadPool::Run(TaskPtr task, ETaskPrority priority)
+bool Plu::ThreadPool::IsCurrentThreadWorker() const
 {
-    switch (priority) {
-        case ETaskPrority::FRAME:
-            mFrameTasks.PushBack(task);
-            break;
-        case ETaskPrority::BACKGROUND:
-            mBackgroundTasks.PushBack(task);
-            break;
+    return tWorkerOfPool == this;
+}
+
+namespace
+{
+    // Shared by the calling thread and the helper tasks of one ParallelFor. Helpers hold it by
+    // refcount because one may only get a worker after the call has returned; it then claims an
+    // index past the end and leaves without touching callback/context.
+    struct ParallelForState
+    {
+        size_t Count = 0;
+        void (*Callback)(void*, size_t) = nullptr;
+        void* Context = nullptr;
+
+        std::atomic<size_t> NextIndex{0};
+        // Every index in [0, Count) is claimed and completed exactly once, also after a failure
+        // (it is skipped then), so the caller only ever waits on this reaching Count.
+        std::atomic<size_t> Completed{0};
+        std::atomic<bool> Failed{false};
+        std::mutex ErrorMutex;
+        std::exception_ptr FirstError;
+
+        void Drain()
+        {
+            for (size_t index = NextIndex.fetch_add(1, std::memory_order_relaxed); index < Count;
+                 index = NextIndex.fetch_add(1, std::memory_order_relaxed)) {
+                if (!Failed.load(std::memory_order_relaxed)) {
+                    try {
+                        Callback(Context, index);
+                    } catch (...) {
+                        std::lock_guard<std::mutex> lock(ErrorMutex);
+                        if (!FirstError) FirstError = std::current_exception();
+                        Failed.store(true, std::memory_order_relaxed);
+                    }
+                }
+                // acq_rel: publishes this item's writes to the caller, which acquires below.
+                if (Completed.fetch_add(1, std::memory_order_acq_rel) + 1 == Count) {
+                    Completed.notify_all();
+                }
+            }
+        }
+    };
+}
+
+void Plu::ThreadPool::ParallelForImpl(size_t count, ParallelForCallback callback, void* context, ETaskPrority priority)
+{
+    PLU_PROFILE_SCOPE("ThreadPool::ParallelFor");
+    if (count == 0) return;
+
+    auto state = std::make_shared<ParallelForState>();
+    state->Count = count;
+    state->Callback = callback;
+    state->Context = context;
+
+    // A worker blocked waiting on its own pool is one worker fewer to do the work it waits for,
+    // so nested calls stay serial. The caller takes items as well, so count - 1 helpers suffice.
+    const size_t helperCount = IsCurrentThreadWorker() ? 0 : std::min(mThreads.Size(), count - 1);
+    for (size_t i = 0; i < helperCount; ++i) {
+        Run([state]() { state->Drain(); }, priority);
     }
 
-    int idx;
-    bool success = mFreeThreads.TryPopFront(idx);
-    if (!success) {
-        return;
+    // The caller drains too, so the call finishes even if every worker is busy with other tasks.
+    state->Drain();
+
+    size_t completed = state->Completed.load(std::memory_order_acquire);
+    while (completed != count) {
+        state->Completed.wait(completed, std::memory_order_acquire);
+        completed = state->Completed.load(std::memory_order_acquire);
     }
-    std::unique_lock<std::mutex> lock(mTasksMutexes[idx]->first);
-    mTasksMutexes[idx]->second = task;
-    lock.unlock();
-    mVariables[idx]->notify_one();
+
+    if (state->FirstError) std::rethrow_exception(state->FirstError);
+}
+
+void Plu::ThreadPool::Run(TaskPtr task, ETaskPrority priority)
+{
+    {
+        std::lock_guard<std::mutex> lock(mTaskMutex);
+        (priority == ETaskPrority::FRAME ? mFrameTasks : mBackgroundTasks).PushBack(std::move(task));
+    }
+    mWakeUp.notify_all();
 }

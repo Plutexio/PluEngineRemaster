@@ -26,7 +26,7 @@ namespace Plu
 		TypeInfo *GetAssetTypeViewportClass() override;
 		DynamicArray<String> GetSupportedImportExtensions() override;
 		TypeInfo *GetImportSettingsClass() override;
-		void HandleAssetImporting(DynamicArray<Path> &assetPaths, Path outPath, void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
+		void HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
 		bool IsAssetCreatable() override;
 #endif
 		String GetSupportedAssetType() override;

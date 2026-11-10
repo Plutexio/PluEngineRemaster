@@ -28,15 +28,13 @@ Plu::TypeInfo * Plu::TextureAssetHandler::GetImportSettingsClass()
 	return nullptr;
 }
 
-void Plu::TextureAssetHandler::HandleAssetImporting(DynamicArray<Path> &assetPaths, Path outPath, void *importSettings,
+void Plu::TextureAssetHandler::HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings,
 	TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager)
 {
-	for (auto path : assetPaths) {
-		PathW outPathForAsset = outPath.ToString().ToWide();
-		outPathForAsset += String::Format("/{0}{1}", path.GetStem().CStr(), PLU_BINARY_EXT).ToWide();
-		TextureImport::ImportTexture(path.ToString().ToWide(), outPathForAsset);
-		assetManager->LoadAssetDescriptor(outPathForAsset.ToString().ToNarrow());
-	}
+	Path outPathForAsset = outPath;
+	outPathForAsset += String::Format("/{0}{1}", assetPath.GetStem().CStr(), PLU_BINARY_EXT);
+	TextureImport::ImportTexture(assetPath.ToString().ToWide(), outPathForAsset.ToString().ToWide());
+	assetManager->LoadAssetDescriptor(outPathForAsset);
 }
 
 bool Plu::TextureAssetHandler::IsAssetCreatable()

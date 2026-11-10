@@ -432,12 +432,6 @@ namespace Plu
 
         mApplicationInfo.AppThreadPool = mObjectManager->CreateObject(ThreadPool::GetStaticClass());
 
-        for (int i = std::thread::hardware_concurrency(); i > 0; i--) {
-            mApplicationInfo.AppThreadPool->Run([]() {
-                PLU_CORE_INFO("Test Thread Pool");
-            }, ETaskPrority::BACKGROUND);
-        }
-
         mApplicationInfo.AppRenderingManager = mObjectManager->GetObjectAsOwner<RenderingManager>(mObjectManager->CreateObject<RenderingManager>(&mApplicationInfo));
 
         mApplicationInfo.AppAssetManager = mObjectManager->CreateObject(EngineAssetManager::GetStaticClass());

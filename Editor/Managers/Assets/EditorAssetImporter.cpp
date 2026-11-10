@@ -12,6 +12,7 @@
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetCore/AssetLoader.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
+#include "PluEngine/ThreadPool/ThreadPool.h"
 
 void Plu::EditorAssetImporter::Initialize(DynamicArray<Path> assetPaths, ApplicationInfo *appInfo, const Path& targetDirectory)
 {
@@ -85,12 +86,15 @@ void Plu::EditorAssetImporter::RenderUI()
         if (!idk.second) noSettingsTypes.PushBack(idk.first);
     }
     for (auto assetType : noSettingsTypes) {
-        mAssetLoaderPerType[assetType]->HandleAssetImporting(mAssetPathsPerType[assetType],
+        mApplicationInfo->AppThreadPool->ParallelFor(mAssetPathsPerType[assetType].Size(), [&](int i) {
+                mAssetLoaderPerType[assetType]->HandleAssetImporting(
+                    mAssetPathsPerType[assetType][i],
                 GetImportDirectory(),
                 nullptr,
                 mApplicationInfo->AppAssetManager,
                 mApplicationInfo->AppObjectManager
-        );
+            );
+        });
         mAssetPathsPerType.Remove(assetType);
         mAssetImportSettingsPerType.Remove(assetType);
         mAssetLoaderPerType.Remove(assetType);
@@ -127,12 +131,15 @@ void Plu::EditorAssetImporter::RenderUI()
         }
         if (ImGui::Button("Import")) {
             for (auto loader : mAssetLoaderPerType) {
-                loader.second->HandleAssetImporting(mAssetPathsPerType[loader.first],
-                    GetImportDirectory(),
-                    mAssetImportSettingsPerTypeData[loader.first],
-                    mApplicationInfo->AppAssetManager,
-                    mApplicationInfo->AppObjectManager
-            );
+                mApplicationInfo->AppThreadPool->ParallelFor(mAssetPathsPerType[loader.first].Size(), [&](int i) {
+                    loader.second->HandleAssetImporting(
+                        mAssetPathsPerType[loader.first][i],
+                     GetImportDirectory(),
+                     mAssetImportSettingsPerTypeData[loader.first],
+                     mApplicationInfo->AppAssetManager,
+                     mApplicationInfo->AppObjectManager
+                     );
+                });
             }
             ImGui::CloseCurrentPopup();
             cleanup();

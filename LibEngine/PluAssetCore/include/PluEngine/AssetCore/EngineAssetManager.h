@@ -6,11 +6,13 @@
 #define PLUENGINE_ENGINEASSETMANAGER_H
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
+#include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "EngineAssetManager.generated.h"
 #include "PluBase/PluUUID.h"
 #include "PluBase/ThreadAffinity.h"
 #include "PluSTL/HashSet/HashSet.h"
 #include "PluSTL/Concurrent/ConcurrentHashSet.h"
+#include "PluSTL/Concurrent/ConcurrentQueue.h"
 #include <shared_mutex>
 #include <mutex>
 
@@ -18,7 +20,6 @@ namespace Plu
 {
     class IAssetLoader;
     struct IAssetData;
-    struct AssetDescriptor;
 
 
     PLU_CLASS()
@@ -41,8 +42,7 @@ namespace Plu
         void LoadJSONAssetData(TUsePointer<AssetDescriptor> assetDesc);
         void LoadBinaryAssetData(TUsePointer<AssetDescriptor> assetDesc);
 
-        PluUUID LoadJSONDescriptor(const Path &assetPath);
-        PluUUID LoadBinaryDescriptor(Path assetPath);
+        PluUUID RegisterAssetDescriptor(const AssetDescriptorHeader& header);
 
         ApplicationInfo* mApplicationInfo = nullptr;
 
@@ -50,20 +50,10 @@ namespace Plu
         void RegisterAssetDataFromLoader(TOwningPointer<IAssetData> assetData, TUsePointer<AssetDescriptor> assetDesc);
         friend class IAssetLoader;
 
-        // Protects mAssetMap, mAssetPathMap, mAssetPathByUUIDMap, mAssetDataMap for
-        // concurrent read access from the render thread. Writers (main-thread-only) take
-        // unique_lock; readers (any thread) take shared_lock. mAssetLoaders is setup-only
-        // (PrepareLoaders at startup) and never read by render thread — not protected.
         mutable std::shared_mutex mMutex;
-
-        // Deferred load requests posted by off-main threads (e.g. the render thread when
-        // GetAssetDataNoLoad misses). Drained on the main thread by ProcessPendingLoads().
-        // Insert() dedupes repeated requests for the same UUID while it is still pending —
-        // its bool return IS the dedupe answer, no lock + scan needed. DrainToArray() empties
-        // the set and hands over its contents in one critical section, so a request posted
-        // while the main thread is doing I/O can be neither lost nor queued twice (the old
-        // copy-then-clear pair had a window where exactly that could happen).
         ConcurrentHashSet<UInt64> mPendingLoadRequests;
+        // Headers read by LoadAssetDescriptor off the main thread, registered in ProcessPendingLoads().
+        ConcurrentQueue<AssetDescriptorHeader> mPendingDescriptors;
 
         // Mutations remain main-thread-only. Asserts in debug, no-op in release.
         void CheckOwnerThread() const
@@ -79,23 +69,19 @@ namespace Plu
         void PrepareLoaders();
 
         //Loading
+        // Any thread. Off the main thread the descriptor is registered (and announced) by the next
+        // ProcessPendingLoads(), so it is not visible to getters yet when this returns.
         void LoadAssetDescriptor(Path assetPath);
         void ScanDirectory(const Path &assetPath, bool engineAssets = false);
         void LoadAssetData(TUsePointer<AssetDescriptor> assetDesc);
 
-        //Getters (thread-safe — safe to call from any thread)
         TUsePointer<AssetDescriptor> GetAssetDescriptor(PluUUID uuid);
         TUsePointer<IAssetData> GetAssetData(PluUUID uuid);
         TUsePointer<IAssetData> GetAssetData(TUsePointer<AssetDescriptor> assetDesc);
-        // Non-lazy-loading variant — returns nullptr if asset not yet loaded. Use from render thread.
         [[nodiscard]] TUsePointer<IAssetData> GetAssetDataNoLoad(PluUUID uuid) const;
         TUsePointer<IAssetLoader> GetAssetLoader(TypeInfo* type);
 
-        // Deferred loading (thread-safe — call from any thread). Posts a request to load the
-        // asset's CPU data; the actual I/O happens on the main thread in ProcessPendingLoads().
-        // Use from the render thread when GetAssetDataNoLoad misses, then re-check next frame.
         void RequestAssetDataLoad(PluUUID uuid);
-        // Drains the pending-load queue. Main-thread only — call once per frame.
         void ProcessPendingLoads();
 
         //Getters for Paths
@@ -115,13 +101,8 @@ namespace Plu
 
         //Validation
         bool AssetExistsWithName(String assetName);
-        // True when at least one registered asset lives inside the given directory (recursively).
         [[nodiscard]] bool AnyAssetsUnderDirectory(const Path& directory) const;
 
-        //Moving assets around on disk
-        // Rewrites the registry after an asset file — or a whole directory of assets — was renamed
-        // or moved on disk. UUIDs stay untouched, so references from other assets keep working;
-        // only the cached paths (descriptor path, name, path maps) are updated. Does not touch disk.
         void RelocateAssets(const Path& oldPath, const Path& newPath);
 
         //Slow Section

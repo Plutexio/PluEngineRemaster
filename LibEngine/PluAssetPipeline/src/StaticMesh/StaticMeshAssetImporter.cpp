@@ -27,12 +27,10 @@ Plu::TypeInfo * Plu::StaticMeshAssetHandler::GetImportSettingsClass()
 	return StaticMeshImportProps::GetStaticClass();
 }
 
-void Plu::StaticMeshAssetHandler::HandleAssetImporting(DynamicArray<Path> &assetPaths, Path outPath,
-	void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager)
+void Plu::StaticMeshAssetHandler::HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings,
+	TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager)
 {
-	for (auto path : assetPaths) {
-		MeshImporter::ImportStaticMesh(*static_cast<StaticMeshImportProps*>(importSettings), path.ToString().ToWide(), outPath.ToString().ToWide(), assetManager);
-	}
+	MeshImporter::ImportStaticMesh(*static_cast<StaticMeshImportProps*>(importSettings), assetPath.ToString().ToWide(), outPath.ToString().ToWide(), assetManager);
 }
 
 Plu::TypeInfo * Plu::StaticMeshAssetHandler::GetAssetTypeViewportClass()

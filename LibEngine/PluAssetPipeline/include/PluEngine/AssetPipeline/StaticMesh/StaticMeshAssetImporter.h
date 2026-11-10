@@ -41,7 +41,7 @@ namespace Plu
 #ifdef PLU_ENGINE_EDITOR_BUILD
 		DynamicArray<String> GetSupportedImportExtensions() override;
 		TypeInfo *GetImportSettingsClass() override;
-		void HandleAssetImporting(DynamicArray<Path> &assetPaths, Path outPath, void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
+		void HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
 		TypeInfo *GetAssetTypeViewportClass() override;
 		bool DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc, TUsePointer<EngineAssetManager> assetManager,
 							   TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
