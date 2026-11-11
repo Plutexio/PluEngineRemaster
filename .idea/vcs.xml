@@ -2,5 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PluBase" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PluNetwork" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PluSTL" vcs="Git" />
   </component>
 </project>

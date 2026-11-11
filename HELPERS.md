@@ -1640,6 +1640,19 @@ identity), `.x/.y/.z/.w`, indexing, iteration, comparison, arithmetic, and `Leng
 `LengthSquared`, `Normalized`, `Dot`, `Distance`, `Lerp`, `Cross` (Vec3). Tuples and lists convert
 implicitly, so scripts written against the old tuple bindings keep working.
 
+## Embedded engine Python — `PluEngine/Scripting/EmbeddedPython.h` (`namespace Plu`)
+
+The engine's own Python code is plain `.py` files in `LibEngine/PluScripting/python/`, compiled into
+PluScripting as byte arrays by `cmake/PluEmbedPython.cmake` (any `*.py` there is picked up). No path
+at runtime, nothing to copy into a distribution, no PyArmor pass. Put engine-side Python here, not in
+a `pybind11::exec(R"(...)")` string.
+
+| Function | Description |
+|---|---|
+| `pybind11::dict ExecEmbeddedPython(const char* name, const char* moduleName)` | Runs the embedded `<name>.py` in a fresh namespace with `__name__ = moduleName` and returns it. Tracebacks show `PluScripting/python/<name>.py`. Throws on a Python error or an unknown name. |
+| `void InstallPythonUtils(pybind11::module_& module)` | Copies everything in `__all__` of `PluEngineUtils.py` into the `PluEngine` module. Called last by the generated `PluEngineBindings.cpp`. That file runs *during* the `PluEngine` module init, so it must not `import PluEngine` at module level. Its stubs are the hand-written `PluEngineUtils.pyi`, which the generator appends to `PluEngine.pyi`. |
+| `void RedirectPythonOutputToLog()` | `sys.stdout`/`sys.stderr` → engine log (`PluLogRedirect.py`). Called once by `EditorPythonManager` / `RuntimePythonRunner` after `Py_Initialize`. |
+
 ## Nazwy obiektów w scenie — `PluEngine/GameObject/GameObject.h`, `PluEngine/Scenes/SceneWorld.h`
 
 | Funkcja | Opis |

@@ -3,6 +3,7 @@
 //
 
 #include "RuntimePythonRunner.h"
+#include "PluEngine/Scripting/EmbeddedPython.h"
 
 #include "pybind11/eval.h"
 
@@ -12,6 +13,7 @@ Plu::RuntimePythonRunner::RuntimePythonRunner()
         Py_Initialize();
     }
     pybind11::module_ main_module = pybind11::module_::import("__main__");
+    RedirectPythonOutputToLog();
 }
 
 Plu::RuntimePythonRunner::~RuntimePythonRunner()
@@ -53,29 +55,7 @@ void Plu::RuntimePythonRunner::RunScript(Path scriptPath)
 		}
 		sys.attr("argv") = py_argv;
 
-		// 3. Przekierowanie stdout/stderr bez operatora _a
-		pybind11::module_ builtins = pybind11::module_::import("builtins");
-		builtins.attr("print_to_plu") = pybind11::cpp_function([this](std::string m, bool isError) {
-			if (isError) PLU_ERROR("[Python] {}", m);
-			else PLU_INFO("[Python] {}", m);
-		});
-
-		pybind11::exec(R"(
-import sys
-import builtins
-
-class LogRedirector:
-    def __init__(self, callback):
-        self.callback = callback
-    def write(self, m):
-        msg = m.strip()
-        if msg: self.callback(msg)
-    def flush(self): pass
-
-# Pobieramy funkcję bezpośrednio z builtins, żeby uniknąć problemów z zasięgiem
-sys.stdout = LogRedirector(lambda msg: builtins.print_to_plu(msg, False))
-sys.stderr = LogRedirector(lambda msg: builtins.print_to_plu(msg, True))
-)");
+		// stdout/stderr go to the engine log since the constructor (RedirectPythonOutputToLog).
 
 		// 4. Uruchomienie skryptu
 		std::string moduleName = scriptPath.GetStem().CStr();
