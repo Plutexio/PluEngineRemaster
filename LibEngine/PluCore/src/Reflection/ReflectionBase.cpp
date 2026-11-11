@@ -43,6 +43,7 @@ namespace Plu
 			existing->BaseType = base;
 			existing->PythonType = type;
 			existing->IsAbstract = false;
+			GatherPythonProperties(type, existing);
 			PLU_CORE_INFO("Class from python {} -> {} (reloaded)", name.CStr(), base->TypeName.CStr());
 		} else {
 			TypeInfo* newType = new TypeInfo{0, name, TypeType::CLASS};
@@ -52,10 +53,20 @@ namespace Plu
 			newType->PythonType = type;
 			newType->IsAbstract = false;
 			TypeRegistry::GetInstance()->AddType(newType);
+			GatherPythonProperties(type, newType);
 			PLU_CORE_INFO("Class from python {} -> {}", name.CStr(), base->TypeName.CStr());
 		}
 		String nameToSend = name;
 		TypeRegistry::GetInstance()->TypeRegistryEventDispatcher.Dispatch("NewPythonType", &nameToSend);
+	}
+
+	void GatherPythonProperties(const pybind11::type& pythonType, TypeInfo *type)
+	{
+		for (auto entry : pythonType.attr("__dict__")) {
+			if (hasattr(entry, "__plu_property__")) {
+				PLU_CORE_INFO("Property Found!");
+			}
+		}
 	}
 
 	void * PropertyInfo::GetPtr(void *objectInstance) const

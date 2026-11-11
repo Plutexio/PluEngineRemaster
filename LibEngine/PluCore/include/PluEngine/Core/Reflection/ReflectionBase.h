@@ -48,15 +48,9 @@ namespace Plu
 
 	using SetterFn      = void (*)(void* ptr, const void* buf);
 	using GetterFn      = void (*)(void* ptr, void* buf);
-
-	// Typed field-to-field assignment, used to duplicate an object without going through JSON.
-	// A no-op for property types that are not copy-assignable (the generator guards it), so a
-	// clone leaves such a field at whatever the freshly constructed object put there.
+	
 	using CopyFn        = void (*)(const void* src, void* dst);
 
-	// Lifecycle for a heap scratch instance of the property's type. Only needed
-	// (and only emitted) for accessor-based properties, where the editor must
-	// hand the getter/setter a fully constructed T to read/write through.
 	using ConstructScratchFn = void* (*)();
 	using DestroyScratchFn   = void  (*)(void* ptr);
 
@@ -88,18 +82,6 @@ namespace Plu
 		void* GetPtr(void* objectInstance) const;
 	};
 
-	// Copies every reflected property of `type` (own and inherited) from src to dst, field to field.
-	// Both must really be instances of `type`.
-	//
-	// This is the JSON-free path used to duplicate scene objects: it does the same job as
-	// serialize-then-deserialize, without building a JSON DOM, allocating key strings or looking any
-	// property up by name.
-	//
-	// Pointer-valued properties are copied shallowly, which is correct for the ones that exist today
-	// — asset handles (TUsePointer<StaticMesh>, <Skeleton>, …) and TClassPointer are meant to be
-	// shared between a source and its copy. A property pointing at another object *of the same
-	// scene* would need remapping to the copy's counterpart; there is no such reflected property in
-	// the engine right now, so if you add one, teach this function about it.
 	PLUCORE_API void CopyReflectedProperties(TypeInfo* type, const void* src, void* dst);
 
 	enum class TypeType
@@ -126,12 +108,6 @@ namespace Plu
 
 		DynamicArray<PropertyInfo*> Properties;
 
-		// Flattened name -> property lookup across the whole inheritance chain, built lazily on the
-		// first FindProperty. Deserialization does one lookup per field per object, so a linear scan
-		// up the hierarchy (the old behaviour) made scene loading O(fields * properties) in string
-		// comparisons. Rebuilt whenever any type gains a property — a base type gaining one changes
-		// the flattened set of every type below it, so the validity stamp is registry-global rather
-		// than per-type.
 		HashMap<String, PropertyInfo*> PropertiesByName;
 		UInt64 PropertiesByNameGeneration = 0;
 
@@ -196,30 +172,14 @@ namespace Plu
 	{
 		HashMap<String, TypeInfo*> mTypeMap;
 		HashMap<String, EnumInfo*> mEnumMap;
-		// The two subsystems reflection itself needs, held directly rather than through
-		// ApplicationInfo: that struct lives in the application layer, above everything, so naming
-		// its type here would make the bottom of the stack depend on the top. Application sets both.
 		TUsePointer<EngineObjectManager> mObjectManager;
 		TUsePointer<EngineAssetManager> mAssetManager;
 		friend class Application;
 	public:
-		// Installed by the asset layer at startup (InstallAssetReflectionHooks). Reflection sits
-		// below the asset system, so it reaches it through these instead of naming
-		// EngineAssetManager — which would make the bottom of the stack depend on a layer above it.
-		// All three are null in a build without the asset layer; every caller checks.
 		std::function<TUsePointer<IAssetData>(DeserializationContext*, const PluUUID&)> assetDataResolver;
 		std::function<bool(void*, String, TypeInfo*)> assetPointerControl;
 		std::function<bool(void*, String, TypeInfo*, PropertyInfo*)> assetUuidControl;
-
-		// Bridges to TypeSerializer<TypeInfo*>::EditorControl (TypeTraits.h) without ReflectionBase.h
-		// including that much heavier header back (ImGui/pybind11 type casters/physics channels) —
-		// wired once from editor-only startup code (see EditorApp::OnInit). Returns whether anything
-		// changed, same contract as every other EditorControl, so nested struct/class edits still
-		// propagate "changed" up to callers that dirty-mark assets on it.
 		std::function<bool(TypeInfo*, void*)> editorControlForTypeInfo;
-		// Deserializes INTO the existing instance (the field inside the owning object). It must not
-		// construct a new one: TypeSerializer<T>::Deserialize only has the field's address, so a
-		// returned object could never reach the field — it was silently dropped and leaked.
 		std::function<void(DeserializationContext*, const JSON&, TypeInfo*, void*)> deserializeForTypeInfo;
 		std::function<JSON(TypeInfo*, void*)> serializeForTypeInfo;
 		TUsePointer<EngineObjectManager> GetObjectManager();
@@ -231,8 +191,6 @@ namespace Plu
 
 		EventDispatcher TypeRegistryEventDispatcher;
 
-		// Frees every registered TypeInfo/PropertyInfo/EnumInfo. Call once at the very end of
-		// engine shutdown — nothing may touch reflection (or objects using it) afterwards.
 		void Cleanup();
 
 		template<typename T>
@@ -256,6 +214,8 @@ namespace Plu
 	PLU_FUNCTION()
 	void PLUCORE_API RegisterPluClass(pybind11::type type);
 
+	void PLUCORE_API GatherPythonProperties(const pybind11::type& pythonType, TypeInfo* type);
+
 	template<typename T>
 	struct TypeSerializer
 	{
@@ -264,10 +224,6 @@ namespace Plu
 			if constexpr (std::is_pointer_v<T>) {
 				return {"NO POINTER SERIALIZATION"};
 			} else if constexpr (std::is_enum_v<T>) {
-				// Serialise enums by their value NAME (refactor-stable: survives
-				// reordering / inserting enumerators). The name<->value mapping
-				// comes from the runtime EnumInfo registry, so this works in every
-				// translation unit regardless of where the enum is declared.
 				const UInt64 value = static_cast<UInt64>(*static_cast<T*>(dataToSerialize));
 				EnumInfo* enumInfo = TypeRegistry::GetInstance()->GetEnumByT<T>();
 				if (enumInfo) {
@@ -277,8 +233,6 @@ namespace Plu
 						}
 					}
 				}
-				// Unknown / unregistered value — fall back to the raw integer so no
-				// data is lost (deserialization accepts numbers too).
 				return value;
 			} else {
 				if (TypeRegistry::GetInstance()->serializeForTypeInfo) {
@@ -331,8 +285,6 @@ namespace Plu
 					EnumInfo* enumInfo = TypeRegistry::GetInstance()->GetEnumByT<T>();
 					if (!enumInfo) return false;
 
-					// EnumIntSize is the size of the underlying type in BYTES
-					// (generator emits sizeof(BaseType)). Read exactly that many.
 					UInt64 currentValue = 0;
 					switch (enumInfo->EnumIntSize) {
 						case 1: currentValue = *static_cast<UInt8*>(value);  break;
@@ -349,8 +301,6 @@ namespace Plu
 							break;
 						}
 					}
-					// enumValue can be null when the stored value is not a named
-					// enumerator (uninitialised data, bit flags, …) — never deref it.
 					const char* previewLabel = enumValue ? enumValue->ValueName.CStr() : "<invalid>";
 					if (ImGui::BeginCombo(name.CStr(), previewLabel, ImGuiComboFlags_WidthFitPreview))
 					{
