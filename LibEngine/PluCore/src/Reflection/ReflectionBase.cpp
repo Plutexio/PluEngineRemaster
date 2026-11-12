@@ -177,6 +177,11 @@ namespace Plu
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
 
+		if (!primitive) {
+			PLU_CORE_ERROR("Invalid type for serialization! Prop: %s ", PropertyName.CStr());
+			return JSON::value_t::discarded;
+		}
+
 		pybind11::gil_scoped_acquire gil;
 		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
 
@@ -189,6 +194,11 @@ namespace Plu
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
 
+		if (!primitive) {
+			PLU_CORE_ERROR("Invalid type for deserialization! Prop: %s ", PropertyName.CStr());
+			return;
+		}
+
 		pybind11::gil_scoped_acquire gil;
 		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
 
@@ -200,6 +210,11 @@ namespace Plu
 	bool PythonPropertyInfo::EditorControl(void *objectInstance, const String &label, TypeInfo *ownerType) const
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+
+		if (!primitive) {
+			ImGui::Text("Invalid property type! Prop: %s ", PropertyName.CStr());
+			return false;
+		}
 
 		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
 
