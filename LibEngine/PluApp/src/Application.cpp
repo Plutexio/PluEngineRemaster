@@ -37,6 +37,7 @@
 #include "PluEngine/Core/Threading/TripleBuffer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/ThreadPool/ThreadPool.h"
+#include "PluEngine/Core/Reflection/TypeTraits.h"
 
 // One per engine module, declared in layer order: reflection registration now
 // runs explicitly bottom-up instead of relying on link order inside one binary.
@@ -401,6 +402,31 @@ namespace Plu
         Plu::RegisterMainThread();
         gApplication = this;
         Plu::Log::Init();
+
+        REFLECTION_PRIMITIVE_TYPE(int);
+        REFLECTION_PRIMITIVE_TYPE(Int8);
+        REFLECTION_PRIMITIVE_TYPE(Int16);
+        REFLECTION_PRIMITIVE_TYPE(Int32);
+        REFLECTION_PRIMITIVE_TYPE(Int64);
+        REFLECTION_PRIMITIVE_TYPE(UInt8);
+        REFLECTION_PRIMITIVE_TYPE(UInt16);
+        REFLECTION_PRIMITIVE_TYPE(UInt32);
+        REFLECTION_PRIMITIVE_TYPE(UInt64);
+        REFLECTION_PRIMITIVE_TYPE(float);
+        REFLECTION_PRIMITIVE_TYPE(double);
+        REFLECTION_PRIMITIVE_TYPE(bool);
+        REFLECTION_PRIMITIVE_TYPE(Vec2);
+        REFLECTION_PRIMITIVE_TYPE(Vec3);
+        REFLECTION_PRIMITIVE_TYPE(Vec4);
+        REFLECTION_PRIMITIVE_TYPE(IVec2);
+        REFLECTION_PRIMITIVE_TYPE(IVec3);
+        REFLECTION_PRIMITIVE_TYPE(IVec4);
+        REFLECTION_PRIMITIVE_TYPE(Quaternion);
+        REFLECTION_PRIMITIVE_TYPE(String);
+        REFLECTION_PRIMITIVE_TYPE(StringW);
+        REFLECTION_PRIMITIVE_TYPE(Path);
+        REFLECTION_PRIMITIVE_TYPE(PathW);
+
         InitPluCoreReflection();
         InitPluPlatformReflection();
         InitPluAssetCoreReflection();

@@ -298,7 +298,6 @@ void Plu::EngineAssetManager::PrepareLoaders()
             if (mAssetLoaders.Contains(entry.first)) continue;
             TUsePointer<IAssetLoader> loader = mApplicationInfo->AppObjectManager->CreateObject(entry.second);
             mAssetLoaders.Insert(loader->GetSupportedAssetType(),mApplicationInfo->AppObjectManager->GetObjectAsOwner<IAssetLoader>(*loader->GetEngineObjectHandle()));
-            PLU_CORE_TRACE("Added Asset Loader of type {}", loader->GetClass()->TypeName.CStr());
         }
     }
 }

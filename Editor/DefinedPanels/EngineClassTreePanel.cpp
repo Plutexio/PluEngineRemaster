@@ -60,13 +60,20 @@ void CreateReflectionClassTree(ReflectionTypeTree* startingPoint)
 void Tooltip(Plu::TypeInfo* type)
 {
 	if (ImGui::BeginItemTooltip()) {
-		for (auto property : type->Properties) {
-			ImGui::Text("%s - %s - Offset: %lu, Size: %lu",
-				property->PropertyName.CStr(),
-				property->PropertyTypeName.CStr(),
-				property->PropertyOffset,
-				property->PropertySize
-			);
+		for (Plu::IPropertyInfo* property : type->Properties) {
+			if (auto* cppProperty = dynamic_cast<Plu::PropertyInfo*>(property)) {
+				ImGui::Text("%s - %s - Offset: %lu, Size: %lu",
+					property->PropertyName.CStr(),
+					property->PropertyTypeName.CStr(),
+					cppProperty->PropertyOffset,
+					cppProperty->PropertySize
+				);
+			} else {
+				ImGui::Text("%s - %s - Python",
+					property->PropertyName.CStr(),
+					property->PropertyTypeName.CStr()
+				);
+			}
 		}
 		ImGui::EndTooltip();
 	}

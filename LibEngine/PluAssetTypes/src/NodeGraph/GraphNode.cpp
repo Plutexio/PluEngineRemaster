@@ -38,7 +38,7 @@ namespace Plu
 	{
 		// Walk the whole base chain so inherited PLU_PROPERTY fields also become pins.
 		for (TypeInfo* type = GetClass(); type != nullptr; type = type->BaseType) {
-			for (PropertyInfo* prop : type->Properties) {
+			for (IPropertyInfo* prop : type->Properties) {
 				if (!prop) continue;
 				if (prop->PropertyName == "Uuid") continue; // identity, not a data input
 				if (!IsPinnableDataType(prop->PropertyTypeName)) continue;

@@ -2414,9 +2414,9 @@ def GenerateReflectionData(Data: List[FileData]):
                     S.write(f"        instance->BaseType = {Cls.Bases[0]}::GetStaticClass();\n")
 
                 for Prop in Cls.Properties:
-                    S.write(f'        PropertyInfo* prop{Prop.Name} = new PropertyInfo{{ '
+                    S.write(f'        PropertyInfo* prop{Prop.Name} = new PropertyInfo('
                             f'"{Prop.Name}", offsetof({Cls.Name}, {Prop.Name}), sizeof({Prop.Type}), '
-                            f'"{Prop.Type}" }};\n')
+                            f'"{Prop.Type}");\n')
                     if Prop.GetterName or Prop.SetterName:
                         if Prop.GetterName:
                             # Getter/Setter lambdy – nie używamy offsetof do serializacji
@@ -2462,7 +2462,9 @@ def GenerateReflectionData(Data: List[FileData]):
                     S.write(f'        instance->AddProperty(prop{Prop.Name});\n')
 
                 if Cls.UuidProperty:
-                    S.write(f'        instance->TypeUuidProp = instance->FindProperty("{Cls.UuidProperty.Name}");\n')
+                    # The UUID property is always one of the class's own properties (checked where
+                    # UUID= is parsed), so its local is in scope here.
+                    S.write(f'        instance->TypeUuidProp = prop{Cls.UuidProperty.Name};\n')
 
                 S.write(f'        instance->SerializeToJson = [](void* obj) -> nlohmann::json {{\n')
                 S.write(f'            {Cls.Name}* objPtr = static_cast<{Cls.Name}*>(obj);\n')

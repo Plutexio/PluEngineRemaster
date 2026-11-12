@@ -6,8 +6,8 @@
 #define PLUENGINE_REFLECTIONBASE_H
 
 #include <functional>
+#include <optional>
 
-// Spelled out rather than left to the engine PCH: targets without it (PluRuntime) include this too.
 #include <pybind11/pybind11.h>
 #include "imgui.h"
 #include "PluSTL/PluSTL_FWD.h"
@@ -54,32 +54,70 @@ namespace Plu
 	using ConstructScratchFn = void* (*)();
 	using DestroyScratchFn   = void  (*)(void* ptr);
 
+	using FromPythonFn = void (*)(pybind11::handle source, void* outValue);
+	using ToPythonFn = pybind11::object (*)(void* value);
+
 	template<typename T> T FromString(const String& str);
 
-	struct PLUCORE_API PropertyInfo
+	struct PLUCORE_API IPropertyInfo
 	{
 		String PropertyName;
-		UInt64 PropertyOffset;
-		UInt64 PropertySize;
 		String PropertyTypeName;
 
-		SerializeFn   SerializePtr;
-		DeserializeFn DeserializePtr;
-		EditorFn      EditorControlPtr;
+		IPropertyInfo(String propertyName, String propertyTypeName);
+		virtual ~IPropertyInfo() = default;
 
-		SetterFn SetterPtr;
-		GetterFn GetterPtr;
+		[[nodiscard]] virtual JSON Serialize(void* objectInstance) const = 0;
+		virtual void Deserialize(DeserializationContext* deserializationContext, const JSON& json, void* objectInstance) const = 0;
+		virtual bool EditorControl(void* objectInstance, const String& label, TypeInfo* ownerType) const = 0;
+		virtual void Copy(const void* srcInstance, void* dstInstance) const = 0;
+
+		[[nodiscard]] virtual void* GetPtr(void* objectInstance) const { return nullptr; }
+	};
+
+	// A PLU_PROPERTY of a C++ type, emitted by the reflection generator.
+	struct PLUCORE_API PropertyInfo : IPropertyInfo
+	{
+		UInt64 PropertyOffset;
+		UInt64 PropertySize;
+
+		SerializeFn   SerializePtr = nullptr;
+		DeserializeFn DeserializePtr = nullptr;
+		EditorFn      EditorControlPtr = nullptr;
+
+		SetterFn SetterPtr = nullptr;
+		GetterFn GetterPtr = nullptr;
 		CopyFn   CopyPtr = nullptr;
 
 		ConstructScratchFn ConstructScratch = nullptr;
 		DestroyScratchFn   DestroyScratch = nullptr;
 
-		bool IsPersistent = true;
-		bool IsVisibleInEditor = false;
-
 		TypeInfo* UuidForClass = nullptr;
 
-		void* GetPtr(void* objectInstance) const;
+		PropertyInfo(String propertyName, UInt64 propertyOffset, UInt64 propertySize, String propertyTypeName);
+
+		[[nodiscard]] JSON Serialize(void* objectInstance) const override;
+		void Deserialize(DeserializationContext* deserializationContext, const JSON& json, void* objectInstance) const override;
+		bool EditorControl(void* objectInstance, const String& label, TypeInfo* ownerType) const override;
+		void Copy(const void* srcInstance, void* dstInstance) const override;
+		[[nodiscard]] void* GetPtr(void* objectInstance) const override;
+	};
+
+	struct PLUCORE_API PythonPropertyInfo : IPropertyInfo
+	{
+		pybind11::object Descriptor;
+		pybind11::object ValueType;
+		String Tooltip;
+		std::optional<double> Min;
+		std::optional<double> Max;
+
+		PythonPropertyInfo(String propertyName, String propertyTypeName);
+		~PythonPropertyInfo() override;
+
+		[[nodiscard]] JSON Serialize(void* objectInstance) const override;
+		void Deserialize(DeserializationContext* deserializationContext, const JSON& json, void* objectInstance) const override;
+		bool EditorControl(void* objectInstance, const String& label, TypeInfo* ownerType) const override;
+		void Copy(const void* srcInstance, void* dstInstance) const override;
 	};
 
 	PLUCORE_API void CopyReflectedProperties(TypeInfo* type, const void* src, void* dst);
@@ -91,6 +129,21 @@ namespace Plu
 		ENUM,
 		INTERFACE,
 		UNKNOWN
+	};
+
+	struct PLUCORE_API PrimitiveTypeInfo
+	{
+		String TypeName;
+
+		EditorFn EditorControlPtr = nullptr;
+		SerializeFn SerializePtr = nullptr;
+		DeserializeFn DeserializePtr = nullptr;
+
+		ConstructScratchFn ConstructScratchPtr = nullptr;
+		DestroyScratchFn DestroyScratchPtr = nullptr;
+
+		FromPythonFn FromPythonPtr = nullptr;
+		ToPythonFn ToPythonPtr = nullptr;
 	};
 
 	struct PLUCORE_API TypeInfo
@@ -106,9 +159,9 @@ namespace Plu
 		PropertyInfo* TypeUuidProp = nullptr;
 		[[nodiscard]] PropertyInfo* GetTypeUuidProp() const;
 
-		DynamicArray<PropertyInfo*> Properties;
+		DynamicArray<IPropertyInfo*> Properties;
 
-		HashMap<String, PropertyInfo*> PropertiesByName;
+		HashMap<String, IPropertyInfo*> PropertiesByName;
 		UInt64 PropertiesByNameGeneration = 0;
 
 		ConstructorFunc Constructor = [this]()->void* {
@@ -118,9 +171,12 @@ namespace Plu
 			PLU_CORE_ASSERT(false, info.CStr())
 			return nullptr;
 		};
-		void AddProperty(PropertyInfo* propertyInfo);
+		void AddProperty(IPropertyInfo* propertyInfo);
+		// Deletes this type's own properties (not inherited ones). Used when a Python class is
+		// reloaded and its PluEngine.Property list is collected again.
+		void ClearProperties();
 		[[nodiscard]] void* Construct() const;
-		[[nodiscard]] PropertyInfo* FindProperty(const String& propertyName);
+		[[nodiscard]] IPropertyInfo* FindProperty(const String& propertyName);
 		bool IsAbstract;
 
 		bool IsPythonType = false;
@@ -172,6 +228,7 @@ namespace Plu
 	{
 		HashMap<String, TypeInfo*> mTypeMap;
 		HashMap<String, EnumInfo*> mEnumMap;
+		HashMap<String, PrimitiveTypeInfo*> mPrimitiveTypeMap;
 		TUsePointer<EngineObjectManager> mObjectManager;
 		TUsePointer<EngineAssetManager> mAssetManager;
 		friend class Application;
@@ -197,7 +254,6 @@ namespace Plu
 		requires std::is_enum_v<T>
 		void AddEnum(EnumInfo* enumInfo)
 		{
-			PLU_CORE_TRACE("Enum {} added to global TypeRegistry", enumInfo->EnumName.CStr());
 			mEnumMap.Insert(typeid(T).name(), enumInfo);
 		}
 
@@ -207,6 +263,11 @@ namespace Plu
 		{
 			return mEnumMap[typeid(T).name()];
 		}
+
+		template<typename T>
+		void AddPrimitiveType(const String& name);
+
+		PrimitiveTypeInfo* FindPrimitiveByName(const String& name);
 	};
 
 	String PLUCORE_API GetTypeNameFromPython(pybind11::type type);
@@ -337,6 +398,26 @@ namespace Plu
 			return false;
 		}
 	};
+
+	template<typename T>
+	void TypeRegistry::AddPrimitiveType(const String& name)
+	{
+		PrimitiveTypeInfo* typeInfo = new PrimitiveTypeInfo();
+		typeInfo->TypeName = name;
+		typeInfo->EditorControlPtr = TypeSerializer<T>::EditorControl;
+		typeInfo->DeserializePtr = TypeSerializer<T>::Deserialize;
+		typeInfo->SerializePtr = TypeSerializer<T>::Serialize;
+
+		typeInfo->ConstructScratchPtr = []() -> void* {return new T();};
+		typeInfo->DestroyScratchPtr = [](void* p) {delete static_cast<T*>(p);};
+
+		typeInfo->ToPythonPtr = [](void* value) -> pybind11::object {return pybind11::cast(*static_cast<T*>(value));};
+		typeInfo->FromPythonPtr = [](pybind11::handle source, void* outValue) {*static_cast<T*>(outValue) = source.cast<T>();};
+
+		mPrimitiveTypeMap.Insert(name, typeInfo);
+	}
+
+#define REFLECTION_PRIMITIVE_TYPE(x) TypeRegistry::GetInstance()->AddPrimitiveType<x>(#x);
 }
 
 #endif //PLUENGINE_REFLECTIONBASE_H

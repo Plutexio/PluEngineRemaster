@@ -5,10 +5,16 @@
 #include "PluEngine/Core/Reflection/ReflectionBase.h"
 
 #include "PluBase/Log.h"
+#include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 
 namespace Plu
 {
+	PrimitiveTypeInfo * TypeRegistry::FindPrimitiveByName(const String &name)
+	{
+		return mPrimitiveTypeMap.Contains(name) ? mPrimitiveTypeMap[name] : nullptr;
+	}
+
 	String GetTypeNameFromPython(pybind11::type type)
 	{
 		std::string name = pybind11::str(type.attr("__name__"));
@@ -28,12 +34,7 @@ namespace Plu
 		}
 		if (!base->IsDerivedOfOrSame(EngineObject::GetStaticClass())) return;
 
-		// A script reload re-executes the module, so this runs again for a name that is already
-		// registered. The TypeInfo is then updated IN PLACE instead of being replaced: its address is
-		// cached all over the engine (EngineObject::mPythonType, TClassPointer properties like
-		// GameMode::ControllerClass, the BaseType link of derived python classes, editor type caches),
-		// and handing out a new one would leave every single one of those pointing at the previous
-		// python class — while leaking the old TypeInfo, which AddType only unlinks from the map.
+
 		TypeInfo* existing = TypeRegistry::GetInstance()->GetTypeOfName(name);
 		if (existing && !existing->IsPythonType) {
 			PLU_CORE_ERROR("RegisterPluClass: python class '{}' collides with a C++ reflected type of the same name", name.CStr());
@@ -43,6 +44,7 @@ namespace Plu
 			existing->BaseType = base;
 			existing->PythonType = type;
 			existing->IsAbstract = false;
+			existing->ClearProperties();
 			GatherPythonProperties(type, existing);
 			PLU_CORE_INFO("Class from python {} -> {} (reloaded)", name.CStr(), base->TypeName.CStr());
 		} else {
@@ -62,16 +64,163 @@ namespace Plu
 
 	void GatherPythonProperties(const pybind11::type& pythonType, TypeInfo *type)
 	{
-		for (auto entry : pythonType.attr("__dict__")) {
-			if (hasattr(entry, "__plu_property__")) {
-				PLU_CORE_INFO("Property Found!");
+		PLU_PROFILE_SCOPE("GatherPythonProperties");
+		for (pybind11::handle item : pythonType.attr("__dict__").attr("items")()) {
+			pybind11::tuple pair = pybind11::reinterpret_borrow<pybind11::tuple>(item);
+			pybind11::handle descriptor = pair[1];
+			if (!pybind11::hasattr(descriptor, "__plu_property__")) continue;
+
+			pybind11::object nameObj = descriptor.attr("Name");
+			if (nameObj.is_none()) {
+				PLU_CORE_WARN("{}: a PluEngine.Property was added after the class was created and is ignored",
+				              type->TypeName.CStr());
+				continue;
 			}
+
+			pybind11::object valueType = descriptor.attr("Type");
+			auto* property = new PythonPropertyInfo(
+				pybind11::cast<std::string>(nameObj).c_str(),
+				pybind11::cast<std::string>(valueType.attr("__name__")).c_str());
+			property->Descriptor = pybind11::reinterpret_borrow<pybind11::object>(descriptor);
+			property->ValueType = valueType;
+			property->Tooltip = pybind11::cast<std::string>(descriptor.attr("Tooltip")).c_str();
+
+			pybind11::object minObj = descriptor.attr("Min");
+			pybind11::object maxObj = descriptor.attr("Max");
+			if (!minObj.is_none()) property->Min = minObj.cast<double>();
+			if (!maxObj.is_none()) property->Max = maxObj.cast<double>();
+
+			type->AddProperty(property);
+			PLU_CORE_TRACE("Python property {}.{} : {}", type->TypeName.CStr(),
+			               property->PropertyName.CStr(), property->PropertyTypeName.CStr());
 		}
+	}
+
+	IPropertyInfo::IPropertyInfo(String propertyName, String propertyTypeName)
+		: PropertyName(std::move(propertyName)), PropertyTypeName(std::move(propertyTypeName))
+	{
+	}
+
+	PropertyInfo::PropertyInfo(String propertyName, UInt64 propertyOffset, UInt64 propertySize, String propertyTypeName)
+		: IPropertyInfo(std::move(propertyName), std::move(propertyTypeName)),
+		  PropertyOffset(propertyOffset), PropertySize(propertySize)
+	{
 	}
 
 	void * PropertyInfo::GetPtr(void *objectInstance) const
 	{
 		return static_cast<char*>(objectInstance) + PropertyOffset;
+	}
+
+	JSON PropertyInfo::Serialize(void *objectInstance) const
+	{
+		return SerializePtr(GetPtr(objectInstance));
+	}
+
+	void PropertyInfo::Deserialize(DeserializationContext *deserializationContext, const JSON &json, void *objectInstance) const
+	{
+		DeserializePtr(deserializationContext, json, GetPtr(objectInstance));
+	}
+
+	void PropertyInfo::Copy(const void *srcInstance, void *dstInstance) const
+	{
+		if (!CopyPtr) return;
+		CopyPtr(GetPtr(const_cast<void*>(srcInstance)), GetPtr(dstInstance));
+	}
+
+	bool PropertyInfo::EditorControl(void *objectInstance, const String &label, TypeInfo *ownerType) const
+	{
+		auto drawControl = [&](void* value) -> bool {
+#ifdef PLU_ENGINE_EDITOR_BUILD
+			if (UuidForClass) {
+				return UUIDForAssetUI(value, label, ownerType, const_cast<PropertyInfo*>(this));
+			}
+#endif
+			return EditorControlPtr(value, label);
+		};
+
+		if (!GetterPtr && !SetterPtr) {
+			return drawControl(GetPtr(objectInstance));
+		}
+
+		if (!ConstructScratch || !DestroyScratch) {
+			return false;
+		}
+		void* scratch = ConstructScratch();
+		if (GetterPtr) {
+			GetterPtr(objectInstance, scratch);
+		}
+		const bool changed = drawControl(scratch);
+		if (changed && SetterPtr) {
+			SetterPtr(objectInstance, scratch);
+		}
+		DestroyScratch(scratch);
+		return changed;
+	}
+
+	PythonPropertyInfo::PythonPropertyInfo(String propertyName, String propertyTypeName)
+		: IPropertyInfo(std::move(propertyName), std::move(propertyTypeName))
+	{
+	}
+
+	PythonPropertyInfo::~PythonPropertyInfo()
+	{
+		// Same as TypeInfo::PythonType in TypeRegistry::Cleanup: reflection is torn down after
+		// Py_Finalize, and a decref then would touch a dead interpreter.
+		if (!Py_IsInitialized()) {
+			Descriptor.release();
+			ValueType.release();
+		}
+	}
+
+	JSON PythonPropertyInfo::Serialize(void *objectInstance) const
+	{
+		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+
+		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
+
+		void* temp = primitive->ConstructScratchPtr();
+		primitive->FromPythonPtr(self.attr(PropertyName.CStr()), temp);
+		return primitive->SerializePtr(temp);
+	}
+
+	void PythonPropertyInfo::Deserialize(DeserializationContext *deserializationContext, const JSON &json, void *objectInstance) const
+	{
+		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+
+		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
+
+		void* temp = primitive->ConstructScratchPtr();
+		primitive->DeserializePtr(deserializationContext, json, temp);
+		pybind11::setattr(self, PropertyName.CStr(), primitive->ToPythonPtr(temp));
+	}
+
+	bool PythonPropertyInfo::EditorControl(void *objectInstance, const String &label, TypeInfo *ownerType) const
+	{
+		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+
+		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
+
+		void* temp = primitive->ConstructScratchPtr();
+		primitive->FromPythonPtr(self.attr(PropertyName.CStr()), temp);
+		bool changed = primitive->EditorControlPtr(temp, label);
+		if (changed) {
+			pybind11::setattr(self, PropertyName.CStr(), primitive->ToPythonPtr(temp));
+		}
+		primitive->DestroyScratchPtr(temp);
+		return changed;
+	}
+
+	void PythonPropertyInfo::Copy(const void *srcInstance, void *dstInstance) const
+	{
+		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+		pybind11::object src = pybind11::cast(static_cast<const EngineObject*>(srcInstance), pybind11::return_value_policy::reference);
+		pybind11::object dst = pybind11::cast(static_cast<EngineObject*>(dstInstance), pybind11::return_value_policy::reference);
+
+		void* temp = primitive->ConstructScratchPtr();
+		primitive->FromPythonPtr(src.attr(PropertyName.CStr()), temp);
+		pybind11::setattr(dst, PropertyName.CStr(), primitive->ToPythonPtr(temp));
+		primitive->DestroyScratchPtr(temp);
 	}
 
 	PropertyInfo * TypeInfo::GetTypeUuidProp() const
@@ -81,13 +230,21 @@ namespace Plu
 		return nullptr;
 	}
 
-	// Bumped on every AddProperty; every TypeInfo's flattened lookup map carries the value it was
-	// built at. Starts at 1 so a never-built map (stamp 0) always reads as stale.
 	static UInt64 gPropertyGeneration = 1;
 
-	void TypeInfo::AddProperty(PropertyInfo *propertyInfo)
+	void TypeInfo::AddProperty(IPropertyInfo *propertyInfo)
 	{
 		Properties.PushBack(propertyInfo);
+		++gPropertyGeneration;
+	}
+
+	void TypeInfo::ClearProperties()
+	{
+		for (IPropertyInfo* property : Properties) {
+			delete property;
+		}
+		Properties.Clear();
+		// The flattened maps of every type below this one still point at the deleted properties.
 		++gPropertyGeneration;
 	}
 
@@ -96,38 +253,31 @@ namespace Plu
 		return Constructor ? Constructor() : nullptr;
 	}
 
-	PropertyInfo * TypeInfo::FindProperty(const String &propertyName)
+	IPropertyInfo * TypeInfo::FindProperty(const String &propertyName)
 	{
 		if (PropertiesByNameGeneration != gPropertyGeneration) {
 			PropertiesByName.Clear();
-			// Walk base-first so a property redeclared in a derived type wins, matching the old
-			// scan order (own properties first, base only as fallback).
 			DynamicArray<TypeInfo*> chain;
 			for (TypeInfo* t = this; t; t = t->BaseType) {
 				chain.PushBack(t);
 			}
 			for (Int64 i = static_cast<Int64>(chain.Size()) - 1; i >= 0; --i) {
-				for (PropertyInfo* p : chain[i]->Properties) {
+				for (IPropertyInfo* p : chain[i]->Properties) {
 					PropertiesByName[p->PropertyName] = p;
 				}
 			}
 			PropertiesByNameGeneration = gPropertyGeneration;
 		}
-		PropertyInfo** found = PropertiesByName.Find(propertyName);
+		IPropertyInfo** found = PropertiesByName.Find(propertyName);
 		return found ? *found : nullptr;
 	}
 
 	void CopyReflectedProperties(TypeInfo *type, const void *src, void *dst)
 	{
 		if (!type || !src || !dst) return;
-		// Base first, mirroring how the JSON path writes and replays fields, so a property
-		// redeclared in a derived type ends up with the derived value.
 		CopyReflectedProperties(type->BaseType, src, dst);
-		for (PropertyInfo* prop : type->Properties) {
-			if (!prop->CopyPtr) continue;
-			// Straight to the field, exactly like the deserialization path — setters are bypassed
-			// there too, so a clone and a load produce the same object state.
-			prop->CopyPtr(prop->GetPtr(const_cast<void*>(src)), prop->GetPtr(dst));
+		for (IPropertyInfo* prop : type->Properties) {
+			prop->Copy(src, dst);
 		}
 	}
 
@@ -197,9 +347,7 @@ namespace Plu
 	{
 		if (mTypeMap.Contains(typeInfo->TypeName)) {
 			mTypeMap.Remove(typeInfo->TypeName);
-			PLU_CORE_TRACE("Type {} removed from global TypeRegistry", typeInfo->TypeName.CStr());
 		}
-		PLU_CORE_TRACE("Type {} added to global TypeRegistry", typeInfo->TypeName.CStr());
 		mTypeMap.Insert(typeInfo->TypeName, typeInfo);
 	}
 
@@ -221,16 +369,10 @@ namespace Plu
 		for (auto& entry : mTypeMap) {
 			TypeInfo* typeInfo = entry.second;
 			if (!typeInfo) continue;
-			// The interpreter (Py_Finalize in ~EditorPythonManager) is usually gone by the time we
-			// run — a decref through the pybind11 handle would touch a dead interpreter. Drop the
-			// reference without decref then; with a live interpreter a normal decref is fine.
 			if (!Py_IsInitialized()) {
 				typeInfo->PythonType.release();
 			}
-			for (PropertyInfo* property : typeInfo->Properties) {
-				delete property;
-			}
-			typeInfo->Properties.Clear();
+			typeInfo->ClearProperties();
 			delete typeInfo;
 		}
 		mTypeMap.Clear();
@@ -244,5 +386,12 @@ namespace Plu
 			delete enumInfo;
 		}
 		mEnumMap.Clear();
+
+		for (auto entry : mPrimitiveTypeMap) {
+			PrimitiveTypeInfo* typeInfo = entry.second;
+			if (!typeInfo) continue;
+			delete typeInfo;
+		}
+		mPrimitiveTypeMap.Clear();
 	}
 }

@@ -301,28 +301,6 @@ namespace Plu
 		}
 	};
 
-	// CollisionProfileRef serializes as just the preset name; the editor renders a dropdown of
-	// the project's presets (logic in TypeTraits.cpp, editor-only).
-	template <>
-	struct TypeSerializer<CollisionProfileRef>
-	{
-		static nlohmann::json Serialize(void* value) { return static_cast<CollisionProfileRef*>(value)->Name.CStr(); }
-		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
-		{
-			if (json.is_string())
-				static_cast<CollisionProfileRef*>(outValue)->Name = json.get<std::string>().c_str();
-		}
-		static bool EditorControl(void* value, const String& name)
-		{
-#ifdef PLU_ENGINE_EDITOR_BUILD
-			return CollisionProfileRefEditorControl(value, name);
-#else
-			ImGui::Text("No Editor Utils in engine! Cannot show collision preset UI");
-			return false;
-#endif
-		}
-	};
-
 	template <>
 	struct TypeSerializer<Path>
 	{
@@ -520,8 +498,9 @@ namespace Plu
                 {
                 	TUsePointer<EngineObject> obj = objectManager->GetObjectAsUser<EngineObject>(candidates[n]);
                 	if (!obj) continue;
-                    PropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
-                    String objName = nameProp ? *static_cast<String *>(nameProp->GetPtr(obj.GetRaw())) : obj->GetDisplayName();
+                    IPropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
+                    void* namePtr = nameProp ? nameProp->GetPtr(obj.GetRaw()) : nullptr;
+                    String objName = namePtr ? *static_cast<String *>(namePtr) : obj->GetDisplayName();
                     const bool is_selected = (current.GetRaw() == obj.GetRaw());
                     if (filter.PassFilter(objName.CStr()))
                         if (ImGui::Selectable(objName.CStr(), is_selected)) {
@@ -554,9 +533,11 @@ namespace Plu
 			nlohmann::json json;
 			json["fields"] = nlohmann::json::array();
 			for (auto property : type->Properties) {
+				nlohmann::json value = property->Serialize(object);
+				if (value.is_discarded()) continue;
 				nlohmann::json prop;
 				prop["name"] = property->PropertyName.CStr();
-				prop["value"] = property->SerializePtr(property->GetPtr(object));
+				prop["value"] = std::move(value);
 				json["fields"].push_back(prop);
 			}
 			return json;
@@ -598,10 +579,9 @@ namespace Plu
 			void* newObj = type->Construct();
 			if (!json.contains("fields")) return newObj;
 			for (const auto& field : json["fields"]) {
-				PropertyInfo* prop = type->FindProperty(FieldName(field));
+				IPropertyInfo* prop = type->FindProperty(FieldName(field));
 				if (!prop) continue;
-				void* propValue = prop->GetPtr(newObj);
-				prop->DeserializePtr(deserializationContext, field["value"], propValue);
+				prop->Deserialize(deserializationContext, field["value"], newObj);
 			}
 			return newObj;
 		}
@@ -610,10 +590,9 @@ namespace Plu
 			PLU_PROFILE_SCOPE("TypeInfo* Deserializer");
 			if (!json.contains("fields")) return obj;
 			for (const auto& field : json["fields"]) {
-				PropertyInfo* prop = type->FindProperty(FieldName(field));
+				IPropertyInfo* prop = type->FindProperty(FieldName(field));
 				if (!prop) continue;
-				void* propValue = prop->GetPtr(obj);
-				prop->DeserializePtr(deserializationContext, field["value"], propValue);
+				prop->Deserialize(deserializationContext, field["value"], obj);
 			}
 			return obj;
 		}
@@ -631,62 +610,10 @@ namespace Plu
 			DynamicArray<TypeInfo*> parents;
 			GatherParents(value, &parents);
 			for (auto parent : parents) {
-				for (PropertyInfo* prop : parent->Properties)
-				{
-					// Fast path: the property lives directly in the object and has
-					// no accessor indirection — edit it in place. No raw byte copy,
-					// which would be UB for non-trivial types (String, DynamicArray,
-					// TUsePointer, …) whose assignment operator frees the field's
-					// own buffer through an aliased shallow copy.
-					if (!prop->GetterPtr && !prop->SetterPtr) {
-						void* fieldPtr = prop->GetPtr(obj);
-						bool changed = false;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-						if (prop->UuidForClass) {
-							changed = UUIDForAssetUI(fieldPtr, prop->PropertyName, value, prop);
-						} else {
-							changed = prop->EditorControlPtr(fieldPtr, prop->PropertyName);
-						}
-#else
-						changed = prop->EditorControlPtr(fieldPtr, prop->PropertyName);
-#endif
-						if (changed && !changedAnything) {
-							changedAnything = true;
-						}
-						continue;
-					}
-
-					// Accessor path: getter/setter expose a (possibly computed)
-					// value, so we need a scratch instance. The setter/getter
-					// contract is that buf points at a fully constructed T, so we
-					// must give it one — bytes from malloc are not a valid object.
-					if (!prop->ConstructScratch || !prop->DestroyScratch) {
-						// No scratch lifecycle available; skip rather than risk UB.
-						continue;
-					}
-					void* propValue = prop->ConstructScratch();
-					if (prop->GetterPtr) {
-						prop->GetterPtr(obj, propValue);
-					}
-					bool changed = false;
-#ifdef PLU_ENGINE_EDITOR_BUILD
-					if (prop->UuidForClass)
-					{
-						changed = UUIDForAssetUI(propValue, prop->PropertyName, value, prop);
-					} else
-					{
-						changed = prop->EditorControlPtr(propValue, prop->PropertyName);
-					}
-#else
-					changed = prop->EditorControlPtr(propValue, prop->PropertyName);
-#endif
-					if (changed && !changedAnything) {
+				for (IPropertyInfo* prop : parent->Properties) {
+					if (prop->EditorControl(obj, prop->PropertyName, value)) {
 						changedAnything = true;
 					}
-					if (changed && prop->SetterPtr) {
-						prop->SetterPtr(obj, propValue);
-					}
-					prop->DestroyScratch(propValue);
 				}
 			}
 			return changedAnything;
@@ -767,6 +694,75 @@ namespace Plu
 			} else {
 				return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::vec4*>(value)->x, 4, 0.1f);
 			}
+		}
+	};
+
+	template <>
+	struct TypeSerializer<glm::ivec2>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::ivec2*>(dataToSerialize);
+			return { v.x, v.y };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::ivec2*>(outValue);
+			v.x = json[0].get<int>();
+			v.y = json[1].get<int>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::ivec2*>(value)->x, 2);
+		}
+	};
+
+	template <>
+	struct TypeSerializer<glm::ivec3>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::ivec3*>(dataToSerialize);
+			return { v.x, v.y, v.z };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::ivec3*>(outValue);
+			v.x = json[0].get<int>();
+			v.y = json[1].get<int>();
+			v.z = json[2].get<int>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::ivec3*>(value)->x, 3);
+		}
+	};
+
+	template <>
+	struct TypeSerializer<glm::ivec4>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::ivec4*>(dataToSerialize);
+			return { v.x, v.y, v.z, v.w };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::ivec4*>(outValue);
+			v.x = json[0].get<int>();
+			v.y = json[1].get<int>();
+			v.z = json[2].get<int>();
+			v.w = json[3].get<int>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::ivec4*>(value)->x, 4);
 		}
 	};
 

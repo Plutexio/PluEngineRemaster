@@ -66,11 +66,11 @@ bool TUsePointerAssetUI_Impl(void *value, String name, TypeInfo *typeInfo)
         for (int n = 0; n < allAssetsPerField[mapKey].Size(); n++)
         {
             TUsePointer<AssetDescriptor> asset = allAssetsPerField[mapKey][n];
-            PropertyInfo* nameProp = asset->GetClass()->FindProperty("Name");
+            IPropertyInfo* nameProp = asset->GetClass()->FindProperty("Name");
             String objName;
-            if (nameProp) {
-                String* namePtr = static_cast<String *>(nameProp->GetPtr(asset.GetRaw()));
-                objName = *namePtr;
+            void* namePtr = nameProp ? nameProp->GetPtr(asset.GetRaw()) : nullptr;
+            if (namePtr) {
+                objName = *static_cast<String *>(namePtr);
             } else {
                 objName = asset->AssetName;
             }
@@ -164,8 +164,9 @@ bool UUIDForAssetUI_Impl(void* value, String name, TypeInfo* typeInfo, PropertyI
             if (!obj) continue;
             void* uuidPropPtr = obj->GetClass()->GetTypeUuidProp()->GetPtr(obj.GetRaw());
             if (static_cast<PluUUID*>(uuidPropPtr)->getUUID() == currentUuid) {
-                PropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
-                preview = nameProp ? *static_cast<String*>(nameProp->GetPtr(obj.GetRaw())) : obj->GetClass()->TypeName;
+                IPropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
+                void* namePtr = nameProp ? nameProp->GetPtr(obj.GetRaw()) : nullptr;
+                preview = namePtr ? *static_cast<String*>(namePtr) : obj->GetClass()->TypeName;
                 break;
             }
         }
@@ -186,8 +187,9 @@ bool UUIDForAssetUI_Impl(void* value, String name, TypeInfo* typeInfo, PropertyI
             {
                 TUsePointer<EngineObject> obj = engineObjectManager->GetObjectAsUser<EngineObject>(objects[n]);
                 if (!obj) continue;
-                PropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
-                String objName = nameProp ? *static_cast<String*>(nameProp->GetPtr(obj.GetRaw())) : obj->GetClass()->TypeName;
+                IPropertyInfo* nameProp = obj->GetClass()->FindProperty("Name");
+                void* namePtr = nameProp ? nameProp->GetPtr(obj.GetRaw()) : nullptr;
+                String objName = namePtr ? *static_cast<String*>(namePtr) : obj->GetClass()->TypeName;
 
                 void* uuidPropPtr = obj->GetClass()->GetTypeUuidProp()->GetPtr(obj.GetRaw());
                 const UInt64 objUuid = static_cast<PluUUID*>(uuidPropPtr)->getUUID();

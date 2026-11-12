@@ -184,8 +184,8 @@ void Plu::EditorSettingsPanel::OnUpdate(float deltaTime) {
     for (auto prop : EditorSettings::GetStaticClass()->Properties) {
       if (IsDisplayProperty(prop->PropertyName))
         continue;
-      if (prop->EditorControlPtr(prop->GetPtr(settings),
-                                 MakeStringForDisplay(prop->PropertyName))) {
+      if (prop->EditorControl(settings, MakeStringForDisplay(prop->PropertyName),
+                              EditorSettings::GetStaticClass())) {
         EditorSettingsManager::GetInstance()->Save();
       }
     }

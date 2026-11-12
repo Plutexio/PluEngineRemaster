@@ -25,8 +25,9 @@ class Property:
     Instances read and write it like a plain attribute; assigning converts to Type. Every instance
     starts with its own copy of Default. Type is taken from Default unless given.
 
-    The reflection does not read these yet: for now a Property is not shown in the editor, saved
-    with the scene or copied by PIE.
+    The reflection collects these (PythonPropertyInfo on the class's TypeInfo), but does not handle
+    the value yet: for now a Property is not edited in the editor, saved with the scene or copied
+    by PIE.
     """
 
     # Marker for the engine side to recognise a property by, without naming this class.

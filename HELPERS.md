@@ -1546,8 +1546,9 @@ A default-constructed adapter (e.g. one created from Python) is bound to no worl
 | Funkcja | Opis |
 |---|---|
 | `void* Construct() const` | Tworzy instancję typu (asercja gdy `Abstract`). |
-| `PropertyInfo* FindProperty(const String&)` | Property po nazwie — hashed lookup across the whole inheritance chain, built lazily and rebuilt whenever any type gains a property. |
-| `PropertyInfo* GetTypeUuidProp() const` | Property z UUID typu. |
+| `IPropertyInfo* FindProperty(const String&)` | Property po nazwie — hashed lookup across the whole inheritance chain, built lazily and rebuilt whenever any type gains or clears properties. |
+| `PropertyInfo* GetTypeUuidProp() const` | Property z UUID typu (always a C++ property). |
+| `void ClearProperties()` | Deletes the type's own properties and invalidates every flattened lookup. Used when a Python class is reloaded. |
 | `bool IsChildOf(TypeInfo*)` | Czy bezpośredni typ bazowy. |
 | `bool IsDerivedOf(TypeInfo*)` | Czy dziedziczy (pełny łańcuch). |
 | `bool IsDerivedOfOrSame(TypeInfo*)` | Jak wyżej lub ten sam typ. |
@@ -1561,7 +1562,18 @@ A default-constructed adapter (e.g. one created from Python) is bound to no worl
 | `void CopyReflectedProperties(TypeInfo* type, const void* src, void* dst)` | Kopiuje wszystkie reflektowane właściwości (własne i odziedziczone) pole po polu. Robi to samo co serializacja+deserializacja, ale bez budowy DOM-u JSON, alokacji kluczy i lookupów po nazwie — używane do duplikowania obiektów sceny (PIE). Wskaźniki kopiują się **płytko**: dla uchwytów assetów (`TUsePointer<StaticMesh>`, …) i `TClassPointer` to jest poprawne. Gdyby powstała właściwość wskazująca na **inny obiekt tej samej sceny**, wymagałaby przemapowania na odpowiednik w kopii — dziś takiej nie ma. |
 | `PropertyInfo::CopyPtr` | Typowane przypisanie pola, emitowane przez generator. No-op dla typów bez copy-assignment (generator zabezpiecza `if constexpr`). |
 
-**`PropertyInfo`** — `void* GetPtr(void* objectInstance) const` zwraca wskaźnik na pole w instancji.
+**`IPropertyInfo`** (`ReflectionBase.h`) — common interface of a reflected property, whatever stores it. `TypeInfo::Properties` holds these. Every operation takes the **object**, not the address of the value:
+
+| Function | Description |
+|---|---|
+| `JSON Serialize(void* obj) const` | Value as JSON. A discarded JSON (`JSON(JSON::value_t::discarded)`) means "nothing to save" — `TypeSerializer<TypeInfo*>` then leaves the field out. |
+| `void Deserialize(DeserializationContext*, const JSON&, void* obj) const` | Writes the value into the object. |
+| `bool EditorControl(void* obj, const String& label, TypeInfo* ownerType) const` | Draws the editor control; returns whether the value changed. `ownerType` = the type being edited (most derived). |
+| `void Copy(const void* src, void* dst) const` | Value copy for `CopyReflectedProperties`. |
+| `void* GetPtr(void* obj) const` | Address of the value inside the object, or **nullptr** when it is not addressable (Python properties) — null-check it. |
+
+- **`PropertyInfo`** — a C++ `PLU_PROPERTY`, emitted by the generator: field at `PropertyOffset`, `TypeSerializer<T>` function pointers, optional `GetterPtr`/`SetterPtr` (the editor edits a scratch copy through them; serialization and copy go straight to the field), `UuidForClass` (asset/object picker in the editor).
+- **`PythonPropertyInfo`** — a `PluEngine.Property` from a Python class body, collected by `RegisterPluClass` (`GatherPythonProperties`): `Descriptor`, `ValueType`, `Tooltip`, `Min`/`Max`. Work in progress: not serialized, edited or copied yet (`Serialize` returns discarded, the editor shows a disabled label).
 
 **`EnumInfo`** — `void AddValue(String name, UInt64 value)`; pola `EnumValues`, `EnumIntSize`.
 
@@ -1608,7 +1620,7 @@ Gotowe specjalizacje (działają out-of-the-box dla pól `PLU_PROPERTY`):
 - **Stringi/ścieżki:** `String`, `StringW`, `Path`, `PathW`
 - **Engine:** `PluUUID`, `TypeInfo*`, enumy (przez wartość-nazwę, w `ReflectionBase.h`)
 - **Kontenery / wskaźniki:** `DynamicArray<T>`, `TUsePointer<T>`, `TOwningPointer<T>`, `TClassPointer<T>`
-- **Matematyka:** `glm::vec2/3/4`, `glm::quat`
+- **Matematyka:** `glm::vec2/3/4`, `glm::ivec2/3/4` (JSON array of ints, axis-coloured `DragInt`s in the editor), `glm::quat`
 
 Dla nowego typu, który ma być serializowalny/edytowalny, dopisz specjalizację `TypeSerializer<TwójTyp>`.
 
@@ -1705,7 +1717,7 @@ ImGuiWidgets::Combo("Attach to", &index, components,
 |---|---|---|
 | `bool SearchBar(const char* id, ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | Search field over an `ImGuiTextFilter` (case-insensitive, `a,b` = either, `-a` = exclude): magnifier on the left, clear button on the right while there is text, Ctrl+F focuses it while its window has focus. Rebuilds the filter itself; `width` as in `SetNextItemWidth`. Returns `true` when the text changes. Filter rows with `filter.PassFilter(name)`. |
 | `bool PopupSearchBar(ImGuiTextFilter* filter, const char* hint = "Search...", float width = -FLT_MIN)` | `SearchBar.h` | `SearchBar` for the top of a popup / combo dropdown: clears the filter and takes keyboard focus when the popup appears. Used by every searchable reflection combo (enums, asset/object pickers, `BoneRef`) and the node palette. |
-| `bool DragVector(const char* label, float* values, int components, float speed = 0.1f, float min = 0, float max = 0, const char* format = "%.3f", ImGuiSliderFlags flags = 0)` | `DragVector.h` | 1–4 `DragFloat`s on one line, each marked with its axis colour (bar on the left edge: X red, Y green, Z blue, W grey). `min == max` = unclamped. What every reflected `Vec2/Vec3/Vec4` (non-colour) and `Quaternion` (as Euler degrees) draws, plus the transform rows of the details panels. Wrappers `DragVec2/3/4(label, Vec*, ...)`. |
+| `bool DragVector(const char* label, float* values, int components, float speed = 0.1f, float min = 0, float max = 0, const char* format = "%.3f", ImGuiSliderFlags flags = 0)` | `DragVector.h` | 1–4 `DragFloat`s on one line, each marked with its axis colour (bar on the left edge: X red, Y green, Z blue, W grey). `min == max` = unclamped. What every reflected `Vec2/Vec3/Vec4` (non-colour) and `Quaternion` (as Euler degrees) draws, plus the transform rows of the details panels. Wrappers `DragVec2/3/4(label, Vec*, ...)`. Integer overload `DragVector(label, int* values, components, float speed = 1, int min = 0, int max = 0, format = "%d", flags)` (`DragInt` per component) with wrappers `DragIVec2/3/4(label, IVec*, ...)` — what reflected `IVec2/3/4` draw. |
 | `bool IconButton(const char* label, const ImVec2& size = {}, const char* tooltip = nullptr, EIconButtonTone tone = Neutral)` | `Buttons.h` | Frameless button: transparent until hovered. `EIconButtonTone::Danger` hovers red (close/delete). For toolbar / title-bar icon clusters and controls over a viewport image. Text colour is the caller's (`PushStyleColor(ImGuiCol_Text, ...)`). |
 | `bool ToggleButton(const char* label, bool active, const ImVec2& size = {}, const char* tooltip = nullptr)` / `SmallToggleButton(label, active, tooltip)` | `Buttons.h` | Button filled with the theme accent while `active` — tool pickers (gizmo move/rotate/scale). Returns `true` on click; flipping the state is the caller's job. The small variant matches `SmallButton`. |
 | `bool PrimaryButton(const char* label, const ImVec2& size = {})` | `Buttons.h` | Accent-filled button for the main action of a dialog (Save All, Open, Create). |
