@@ -177,6 +177,7 @@ namespace Plu
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
 
+		pybind11::gil_scoped_acquire gil;
 		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
 
 		void* temp = primitive->ConstructScratchPtr();
@@ -188,6 +189,7 @@ namespace Plu
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
 
+		pybind11::gil_scoped_acquire gil;
 		pybind11::object self = pybind11::cast(static_cast<EngineObject*>(objectInstance), pybind11::return_value_policy::reference);
 
 		void* temp = primitive->ConstructScratchPtr();
@@ -203,7 +205,12 @@ namespace Plu
 
 		void* temp = primitive->ConstructScratchPtr();
 		primitive->FromPythonPtr(self.attr(PropertyName.CStr()), temp);
+		ImGui::PushID(PropertyName.CStr());
 		bool changed = primitive->EditorControlPtr(temp, label);
+		ImGui::PopID();
+		if (Tooltip != "") {
+			ImGui::SetItemTooltip("%s",Tooltip.CStr());
+		}
 		if (changed) {
 			pybind11::setattr(self, PropertyName.CStr(), primitive->ToPythonPtr(temp));
 		}
