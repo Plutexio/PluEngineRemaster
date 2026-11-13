@@ -1573,7 +1573,7 @@ A default-constructed adapter (e.g. one created from Python) is bound to no worl
 | `void* GetPtr(void* obj) const` | Address of the value inside the object, or **nullptr** when it is not addressable (Python properties) — null-check it. |
 
 - **`PropertyInfo`** — a C++ `PLU_PROPERTY`, emitted by the generator: field at `PropertyOffset`, `TypeSerializer<T>` function pointers, optional `GetterPtr`/`SetterPtr` (the editor edits a scratch copy through them; serialization and copy go straight to the field), `UuidForClass` (asset/object picker in the editor).
-- **`PythonPropertyInfo`** — a `PluEngine.Property` from a Python class body, collected by `RegisterPluClass` (`GatherPythonProperties`): `Descriptor`, `ValueType`, `Tooltip`, `Min`/`Max`. Work in progress: not serialized, edited or copied yet (`Serialize` returns discarded, the editor shows a disabled label).
+- **`PythonPropertyInfo`** — a `PluEngine.Property` from a Python class body, collected by `RegisterPluClass` (`GatherPythonProperties`): `Descriptor`, `ValueType`, `Tooltip`, `Min`/`Max`. Reads and writes the value through the Python attribute (`getattr`/`setattr` + the `PrimitiveTypeInfo` of the value type), so a getter/setter declared on the `PluEngine.Property` runs for the editor, serialization and copy too.
 
 **`EnumInfo`** — `void AddValue(String name, UInt64 value)`; pola `EnumValues`, `EnumIntSize`.
 
@@ -1664,6 +1664,15 @@ a `pybind11::exec(R"(...)")` string.
 | `pybind11::dict ExecEmbeddedPython(const char* name, const char* moduleName)` | Runs the embedded `<name>.py` in a fresh namespace with `__name__ = moduleName` and returns it. Tracebacks show `PluScripting/python/<name>.py`. Throws on a Python error or an unknown name. |
 | `void InstallPythonUtils(pybind11::module_& module)` | Copies everything in `__all__` of `PluEngineUtils.py` into the `PluEngine` module. Called last by the generated `PluEngineBindings.cpp`. That file runs *during* the `PluEngine` module init, so it must not `import PluEngine` at module level. Its stubs are the hand-written `PluEngineUtils.pyi`, which the generator appends to `PluEngine.pyi`. |
 | `void RedirectPythonOutputToLog()` | `sys.stdout`/`sys.stderr` → engine log (`PluLogRedirect.py`). Called once by `EditorPythonManager` / `RuntimePythonRunner` after `Py_Initialize`. |
+
+**`PluEngine.Property`** (`PluEngineUtils.py`) — a reflected field of a Python engine class, declared in the class body: `Range = PluEngine.Property(25.0, "Tooltip", Min=0.0)`. Args: `Default` (required, not `None`), `Tooltip`, `Type` (defaults to `type(Default)`; assignments convert to it), `Min`/`Max`, `Getter`/`Setter`. Accessors attach like the builtin `property` — `@Range.setter` / `@Range.getter` on a function that **reuses the property's name** (another name raises `TypeError` at class creation). The Property still stores the value; accessors are hooks around it:
+
+| Accessor | Signature | Behaviour |
+|---|---|---|
+| setter | `(self, value) -> None \| value` | `value` already converted **and already stored** — reading the property inside the setter gives the new value. `None` = keep it, anything else is stored instead (e.g. clamped). Raise to reject: the previous value is restored. Never assign the same property inside it (recursion). |
+| getter | `(self, stored) -> value` | Gets the stored value, returns what is read (converted to `Type`). |
+
+The setter runs on every assignment — scripts, editor edits, scene load, PIE copy — but not for the initial `Default`. Decorating returns a copy, so `@Base.Range.setter` in a subclass leaves the base class alone.
 
 ## Nazwy obiektów w scenie — `PluEngine/GameObject/GameObject.h`, `PluEngine/Scenes/SceneWorld.h`
 

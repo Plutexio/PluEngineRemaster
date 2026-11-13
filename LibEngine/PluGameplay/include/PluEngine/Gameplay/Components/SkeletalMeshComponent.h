@@ -65,7 +65,7 @@ namespace Plu
 		// Raw (graph-less) animation: sampled directly with no blending/state-machine logic.
 		// Ignored while AnimGraph is assigned — the graph takes priority — but never cleared, so
 		// unassigning AnimGraph falls straight back to this path.
-		PLU_PROPERTY()
+		PLU_PROPERTY(PyExport)
 		TUsePointer<Animation> AnimationToShow;
 
 		PLU_PROPERTY()

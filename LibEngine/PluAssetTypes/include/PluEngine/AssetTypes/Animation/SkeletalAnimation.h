@@ -59,7 +59,7 @@ namespace Plu
         void SortKeys();
     };
 
-    PLU_STRUCT()
+    PLU_STRUCT(PyExport)
     struct PLUASSETTYPES_API Animation : IAssetData
     {
         REFLECTION_BODY_ANIMATION()

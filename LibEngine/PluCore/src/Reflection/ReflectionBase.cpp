@@ -187,7 +187,9 @@ namespace Plu
 
 		void* temp = primitive->ConstructScratchPtr();
 		primitive->FromPythonPtr(self.attr(PropertyName.CStr()), temp);
-		return primitive->SerializePtr(temp);
+		JSON j = primitive->SerializePtr(temp);
+		primitive->DestroyScratchPtr(temp);
+		return j;
 	}
 
 	void PythonPropertyInfo::Deserialize(DeserializationContext *deserializationContext, const JSON &json, void *objectInstance) const
@@ -205,6 +207,7 @@ namespace Plu
 		void* temp = primitive->ConstructScratchPtr();
 		primitive->DeserializePtr(deserializationContext, json, temp);
 		pybind11::setattr(self, PropertyName.CStr(), primitive->ToPythonPtr(temp));
+		primitive->DestroyScratchPtr(temp);
 	}
 
 	bool PythonPropertyInfo::EditorControl(void *objectInstance, const String &label, TypeInfo *ownerType) const
@@ -236,6 +239,11 @@ namespace Plu
 	void PythonPropertyInfo::Copy(const void *srcInstance, void *dstInstance) const
 	{
 		PrimitiveTypeInfo* primitive = TypeRegistry::GetInstance()->FindPrimitiveByName(PropertyTypeName);
+		if (!primitive) {
+			PLU_CORE_ERROR("Invalid type for copy! Prop: %s ", PropertyName.CStr());
+			return;
+		}
+		pybind11::gil_scoped_acquire gil;
 		pybind11::object src = pybind11::cast(static_cast<const EngineObject*>(srcInstance), pybind11::return_value_policy::reference);
 		pybind11::object dst = pybind11::cast(static_cast<EngineObject*>(dstInstance), pybind11::return_value_policy::reference);
 
