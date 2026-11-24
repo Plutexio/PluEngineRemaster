@@ -19,8 +19,7 @@ Plu::String Plu::ParticleSystemAssetLoader::GetSupportedAssetType()
 
 bool Plu::ParticleSystemAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
 	TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-	TUsePointer<IShaderManager> shaderManager)
+	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
 	std::optional<JSON> jsonOpt = DiskManager::LoadJson(assetDesc->AssetPath.ToString().ToWide());
 	if (!jsonOpt.has_value()) {
@@ -31,7 +30,6 @@ bool Plu::ParticleSystemAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> 
 	DeserializationContext dc;
 	dc.assetManager  = assetManager;
 	dc.scenesManager = sceneManager;
-	dc.shaderManager = shaderManager;
 
 	auto* system = static_cast<ParticleSystem*>(ParticleSystem::GetStaticClass()->Construct());
 	if (!system) return false;
@@ -85,7 +83,7 @@ Plu::TypeInfo * Plu::ParticleSystemAssetLoader::GetAssetTypeViewportClass()
 
 bool Plu::ParticleSystemAssetLoader::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
 	TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-	TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+	TUsePointer<SceneManager> sceneManager)
 {
 	TUsePointer<IAssetData> data = assetManager->GetAssetData(assetDesc);
 	auto* system = dynamic_cast<ParticleSystem*>(data.GetRaw());

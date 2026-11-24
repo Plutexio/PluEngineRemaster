@@ -51,8 +51,7 @@ Plu::String Plu::TextureAssetHandler::GetSupportedAssetType()
 
 bool Plu::TextureAssetHandler::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
 	TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-	TUsePointer<IShaderManager> shaderManager)
+	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
 	TOwningPointer<TextureInfo> textureInfo = CreateOwning<TextureInfo>();
 	TextureImport::LoadTexture(assetDesc->AssetPath.ToString().ToWide(), textureInfo.GetRaw());

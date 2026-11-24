@@ -27,16 +27,14 @@ namespace Plu
             TOwningPointer<IAssetData>* assetDataToPopulate,
             TUsePointer<EngineAssetManager> assetManager,
             TUsePointer<EngineObjectManager> objectManager,
-            TUsePointer<SceneManager> sceneManager,
-            TUsePointer<IShaderManager> shaderManager
+            TUsePointer<SceneManager> sceneManager
         ) = 0;
 
         void DispatchAssetLoad(
             TUsePointer<AssetDescriptor> assetDesc,
             TUsePointer<EngineAssetManager> assetManager,
             TUsePointer<EngineObjectManager> objectManager,
-            TUsePointer<SceneManager> sceneManager,
-            TUsePointer<IShaderManager> shaderManager
+            TUsePointer<SceneManager> sceneManager
         );
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -48,8 +46,7 @@ namespace Plu
             TUsePointer<AssetDescriptor> assetDesc,
             TUsePointer<EngineAssetManager> assetManager,
             TUsePointer<EngineObjectManager> objectManager,
-            TUsePointer<SceneManager> sceneManager,
-            TUsePointer<IShaderManager> shaderManager
+            TUsePointer<SceneManager> sceneManager
         ) {return false;}
         virtual bool IsAssetCreatable() {return true;}
         virtual bool CanImportAsset(Path assetPath, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) {return true;}

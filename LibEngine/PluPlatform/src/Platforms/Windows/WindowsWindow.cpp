@@ -18,7 +18,6 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "glad/glad_wgl.h"
 #include "PluEngine/Platform/WinAPIInputBackend.h"
 #include "spdlog/sinks/wincolor_sink.h"
 
@@ -126,8 +125,8 @@ namespace Plu {
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
         }
         WindowsWindow* window = *windowFind;
-        // Kontekst ImGui powstaje po Init() (RenderingManager::InitializeImGuiContext), a WndProc
-        // dostaje komunikaty już w trakcie Init (SetWindowPos/ShowWindow) — stąd null check.
+        // The ImGui context is created after Init(), but WndProc already gets messages during
+        // Init (SetWindowPos/ShowWindow) — hence the null check.
         if (window->UpdateImGui && window->GetImGuiContext())
         {
             if (LRESULT imgui = ImGui_ImplWin32_WndProcHandlerEx(hwnd, uMsg, wParam, lParam, window->GetImGuiContext()->IO))
@@ -246,8 +245,6 @@ namespace Plu {
     {
         mIsRunning = false;
         mHandle = nullptr;
-        mGLContext = nullptr;
-        mHDC = nullptr;
         mhIcon = nullptr;
     }
 
@@ -362,7 +359,7 @@ namespace Plu {
         mode.dmSize = sizeof(DEVMODEA);
         for (DWORD i = 0; EnumDisplaySettingsA(monitor.szDevice, i, &mode); ++i)
         {
-            // Tryby o mniejszej głębi to te same rozdzielczości w kółko - kontekst GL i tak ma 32 bpp.
+            // Lower bit depths are the same resolutions over again - the swapchain is 32 bpp anyway.
             if (mode.dmBitsPerPel != 32) continue;
             modes.PushBack({static_cast<int>(mode.dmPelsWidth),
                             static_cast<int>(mode.dmPelsHeight),
@@ -422,28 +419,11 @@ namespace Plu {
     void WindowsWindow::SetVSyncEnabled(bool enable)
     {
         mVSyncEnabled = enable;
-        ApplySwapInterval(enable);
-    }
-
-    void WindowsWindow::ApplySwapInterval(bool vsync)
-    {
-        typedef BOOL(WINAPI* PFNWGLSWAPINTERVALEXTPROC)(int);
-        static PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT =
-            (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
-
-        if (wglSwapIntervalEXT)
-            wglSwapIntervalEXT(vsync ? 1 : 0);
     }
 
     void WindowsWindow::SetWindowTitle(String title)
     {
         SetWindowTextA(mHandle, title.CStr());
-    }
-
-
-    void* WindowsWindow::GetGLContext()
-    {
-        return static_cast<void*>(mGLContext);
     }
 
     void WindowsWindow::SpawnConsoleWindow()
@@ -477,21 +457,6 @@ namespace Plu {
             logger->sinks().push_back(stdout_sink);
 
         PLU_CORE_INFO("Console Allocated");
-    }
-
-    void WindowsWindow::MakeGLContextCurrent()
-    {
-        wglMakeCurrent(mHDC, mGLContext);
-    }
-
-    void WindowsWindow::ReleaseGLContext()
-    {
-        wglMakeCurrent(nullptr, nullptr);
-    }
-
-    void WindowsWindow::SwapBuffer()
-    {
-        SwapBuffers(mHDC);
     }
 
     void WindowsWindow::SetCursorVisibility(bool visible)
@@ -622,16 +587,6 @@ namespace Plu {
 
         PLU_CORE_ASSERT(mHandle, "Invalid Handle")
 
-        mHDC = GetDC(mHandle);
-        if (!InitOpenGL(mHandle))
-        {
-            // InitOpenGL already told the user. The window stays hidden and IsRunning() false,
-            // which Application::Run() checks to abort the launch.
-            DestroyWindow(mHandle);
-            mHandle = nullptr;
-            return;
-        }
-        wglMakeCurrent(mHDC, mGLContext);
         mIsRunning = true;
         ShowWindow(mHandle, SW_SHOW);
         uintptr_t id = (uintptr_t)mHandle;
@@ -692,142 +647,7 @@ namespace Plu {
         }
         OleUninitialize();
 
-        DestroyOpenGL();
         DestroyWindow(mHandle);
-    }
-
-    void WindowsWindow::DestroyOpenGL()
-    {
-        if (mGLContext)
-        {
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(mGLContext);
-            mGLContext = nullptr;
-        }
-    }
-
-    // Vendor/renderer/version of whatever context is current, read straight from opengl32.dll so it
-    // works even when GLAD failed to load (e.g. the GDI Generic 1.1 software driver).
-    static std::string QueryCurrentGLDriverInfo()
-    {
-        using PFNGetString = const unsigned char* (WINAPI*)(unsigned int);
-        HMODULE openGL = GetModuleHandleA("opengl32.dll");
-        PFNGetString getString = openGL
-            ? reinterpret_cast<PFNGetString>(GetProcAddress(openGL, "glGetString"))
-            : nullptr;
-        if (!getString) return "unknown";
-
-        auto read = [getString](unsigned int name) -> std::string {
-            const unsigned char* value = getString(name);
-            return value ? reinterpret_cast<const char*>(value) : "?";
-        };
-        return read(GL_VENDOR) + " | " + read(GL_RENDERER) + " | OpenGL " + read(GL_VERSION);
-    }
-
-    // Without a context the window is never shown and the app has nothing to render into. Release
-    // builds have no console, so a log line alone would leave a process running with no window.
-    static void ReportOpenGLFailure(const std::string& reason, const std::string& driverInfo)
-    {
-        PLU_CORE_CRITICAL("OpenGL initialization failed: {} (driver: {})", reason, driverInfo);
-        const std::string message =
-            "PluEngine could not create an OpenGL 4.5 context.\n\n"
-            "Reason: " + reason + "\n"
-            "Driver: " + driverInfo + "\n\n"
-            "On a laptop with two GPUs, make sure the application runs on the dedicated GPU "
-            "(NVIDIA Control Panel / Windows Settings > Display > Graphics) and that the graphics "
-            "drivers are up to date.";
-        MessageBoxA(nullptr, message.c_str(), "PluEngine - OpenGL error", MB_OK | MB_ICONERROR);
-    }
-
-    HGLRC WindowsWindow::InitOpenGL(HWND hWnd)
-    {
-        PLU_PROFILE_SCOPE("WindowsWindow::InitOpenGL");
-        HDC hDC = GetDC(hWnd);
-
-        // Step 1: temporary legacy context, needed to load wglCreateContextAttribsARB.
-        if (!SetupPixelFormat(hDC)) {
-            ReportOpenGLFailure("no OpenGL pixel format available for the window", "unknown");
-            return nullptr;
-        }
-
-        HGLRC tempContext = wglCreateContext(hDC);
-        if (!tempContext || !wglMakeCurrent(hDC, tempContext)) {
-            if (tempContext) wglDeleteContext(tempContext);
-            ReportOpenGLFailure("wglCreateContext failed", "unknown");
-            return nullptr;
-        }
-
-        // The legacy context reports which GPU/driver Windows picked for this process - on hybrid
-        // laptops that is the first thing to check.
-        const std::string driverInfo = QueryCurrentGLDriverInfo();
-        PLU_CORE_INFO("OpenGL driver: {}", driverInfo);
-
-        // Step 2: GLAD + WGL extensions.
-        if (!gladLoadGL() || !gladLoadWGL(hDC)) {
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(tempContext);
-            ReportOpenGLFailure("failed to load OpenGL functions", driverInfo);
-            return nullptr;
-        }
-
-        // Step 3: modern core context. 4.6 first, then 4.5 - the engine's shaders need only 4.5
-        // (same as the SDL path on Linux), and older drivers/iGPUs stop at 4.5.
-        static constexpr int kGLVersions[][2] = { {4, 6}, {4, 5} };
-        HGLRC modernContext = nullptr;
-        if (wglCreateContextAttribsARB) {
-            for (const auto& version : kGLVersions) {
-                const int attribs[] = {
-                    WGL_CONTEXT_MAJOR_VERSION_ARB, version[0],
-                    WGL_CONTEXT_MINOR_VERSION_ARB, version[1],
-                    WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-    #ifdef _DEBUG
-                    WGL_CONTEXT_FLAGS_ARB,         WGL_CONTEXT_DEBUG_BIT_ARB,
-    #endif
-                    0
-                };
-                modernContext = wglCreateContextAttribsARB(hDC, 0, attribs);
-                if (modernContext) {
-                    PLU_CORE_INFO("Created OpenGL {}.{} core context", version[0], version[1]);
-                    break;
-                }
-                PLU_CORE_WARN("OpenGL {}.{} core context not available", version[0], version[1]);
-            }
-        }
-
-        // Step 4: drop the temporary context.
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(tempContext);
-
-        if (!modernContext) {
-            ReportOpenGLFailure(wglCreateContextAttribsARB
-                                    ? "the driver supports neither OpenGL 4.6 nor 4.5 core profile"
-                                    : "WGL_ARB_create_context is not supported",
-                                driverInfo);
-            return nullptr;
-        }
-
-        wglMakeCurrent(hDC, modernContext);
-        mGLContext = modernContext;
-        return modernContext;
-    }
-
-    bool WindowsWindow::SetupPixelFormat(HDC hdc)
-    {
-        PIXELFORMATDESCRIPTOR pfd = {
-            sizeof(PIXELFORMATDESCRIPTOR),
-            1,
-            PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-            PFD_TYPE_RGBA,
-            32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            24, // 24-bitowy bufor głębi (depth buffer)
-            8,  // 8-bitowy bufor szablonu (stencil buffer)
-            0, PFD_MAIN_PLANE, 0, 0, 0, 0
-        };
-
-        int pixelFormat = ChoosePixelFormat(hdc, &pfd);
-        if (pixelFormat == 0) return false;
-
-        return SetPixelFormat(hdc, pixelFormat, &pfd);
     }
 } // namespace Engine
 

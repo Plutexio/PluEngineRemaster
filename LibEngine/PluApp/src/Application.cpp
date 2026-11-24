@@ -19,7 +19,6 @@
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
 #include "PluEngine/Effects/Particles/ParticleParameter.h"
 #include "PluEngine/Core/DiskManager.h"
-#include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Profiler.h"
 #include "PluEngine/Platform/Window.h"
@@ -30,11 +29,8 @@
 #include "PluEngine/Physics/JoltIntializer.h"
 #include "PluEngine/Networking/Networking.h"
 #include "PluEngine/PluUtils.h"
-#include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
-#include "PluEngine/Render/RenderThreading.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluBase/ThreadAffinity.h"
-#include "PluEngine/Core/Threading/TripleBuffer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/ThreadPool/ThreadPool.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
@@ -132,7 +128,6 @@ namespace Plu
         mApplicationInfo.AppWindow->GetObjectEventDispatcher()->Subscribe("WindowCloseRequested", [this](void*) {
             OnRequestedWindowClose(mApplicationInfo.AppWindow);
         });
-        mApplicationInfo.AppRenderingManager->InitializeImGuiContext();
         mApplicationInfo.AppInputBackend = mApplicationInfo.AppInputManager->GetInputBackend().GetRaw();
         mApplicationInfo.AppInputManager->GetInputBackend()->Init();
 #ifdef PLU_PLATFORM_WINDOWS
@@ -146,11 +141,6 @@ namespace Plu
         PLU_CORE_TRACE("Initialized Successfully!");
         PLU_TIMER_END("EngineInit");
 
-        TripleBuffer<RenderSnapshot*> renderTripleBuffer;
-        RenderSnapshotBuilder renderSnapshotBuilder = RenderSnapshotBuilder(&renderTripleBuffer, &mApplicationInfo);
-
-        mApplicationInfo.AppWindow->ReleaseGLContext();
-        mApplicationInfo.AppRenderingManager->Initialize(&renderTripleBuffer);
         SetFrameDemandWakeCallback(&WakePlatformEventLoop);
 
         std::chrono::high_resolution_clock::time_point lastFrame = std::chrono::high_resolution_clock::now();
@@ -243,15 +233,6 @@ namespace Plu
                 if (mApplicationInfo.AppAssetManager) mApplicationInfo.AppAssetManager->ProcessPendingLoads();
             }
             {
-                PLU_PROFILE_SCOPE("Render Snapshot Building");
-                if (probeFrame) {
-                    renderSnapshotBuilder.DiscardFrame();
-                } else {
-                    renderSnapshotBuilder.BuildSnapshotAndPublish(deltaTime);
-                    mApplicationInfo.AppRenderingManager->NotifyFrameAvailable();
-                }
-            }
-            {
                 PLU_PROFILE_SCOPE("Input EndFrame");
                 mApplicationInfo.AppInputManager->GetInputBackend()->EndFrame();
             }
@@ -274,13 +255,8 @@ namespace Plu
             exportProfilerIfDue(deltaTime);
         }
         PLU_TIMER_START("EngineEnd");
-        mApplicationInfo.AppRenderingManager->Shutdown();
         OnShutdown();
         mApplicationInfo.AppWindowsManager->Shutdown();
-        for (RenderSnapshot*& slot : renderTripleBuffer.GetBuffersForTeardown()) {
-            delete slot;
-            slot = nullptr;
-        }
 #ifdef PLU_PLATFORM_LINUX
         SDL_Quit();
 #endif
@@ -387,8 +363,6 @@ namespace Plu
 
         mApplicationInfo.AppThreadPool = mObjectManager->CreateObject(ThreadPool::GetStaticClass());
 
-        mApplicationInfo.AppRenderingManager = mObjectManager->GetObjectAsOwner<RenderingManager>(mObjectManager->CreateObject<RenderingManager>(&mApplicationInfo));
-
         mApplicationInfo.AppAssetManager = mObjectManager->CreateObject(EngineAssetManager::GetStaticClass());
         mApplicationInfo.AppAssetManager->Initialize(&mApplicationInfo);
         TypeRegistry::GetInstance()->mAssetManager = mApplicationInfo.AppAssetManager;
@@ -397,23 +371,6 @@ namespace Plu
 
         mApplicationInfo.AppWindowsManager = mObjectManager->CreateObject(WindowsManager::GetStaticClass());
         mApplicationInfo.AppWindowsManager->Initialize(&mApplicationInfo);
-        {
-            TUsePointer<RenderingManager> renderingManager = mApplicationInfo.AppRenderingManager;
-            ImGuiWindowContextOps imGuiOps;
-            imGuiOps.CreateForWindow = [renderingManager](TUsePointer<IWindow> window) {
-                renderingManager->CreateImGuiContextForWindow(window);
-            };
-            imGuiOps.RequestTeardown = [renderingManager](UInt32 windowID) {
-                renderingManager->RequestImGuiContextTeardown(windowID);
-            };
-            imGuiOps.IsTornDown = [renderingManager](UInt32 windowID) {
-                return renderingManager->IsImGuiContextTornDown(windowID);
-            };
-            imGuiOps.DestroyForWindow = [renderingManager](UInt32 windowID) {
-                renderingManager->DestroyImGuiContextForWindow(windowID);
-            };
-            mApplicationInfo.AppWindowsManager->SetImGuiContextOps(imGuiOps);
-        }
 
         AnimationGraphVariableFactory::RegisterBuiltInTypes();
         ParticleParameterFactory::RegisterBuiltInTypes();
@@ -430,8 +387,6 @@ namespace Plu
     {
         Networking::Shutdown();
         JoltPhysics::Shutdown();
-        mObjectManager->DestroyObject(*mApplicationInfo.AppRenderingManager->GetEngineObjectHandle());
-        mApplicationInfo.AppRenderingManager = nullptr;
 
         mObjectManager->DestroyObject(*mApplicationInfo.AppWindow->GetEngineObjectHandle());
         mObjectManager->DestroyObject(*mApplicationInfo.AppWindowsManager->GetEngineObjectHandle());

@@ -61,13 +61,8 @@ namespace Plu
 
 		bool IsVSyncEnabled() override;
 		void SetVSyncEnabled(bool enabled) override;
-		void ApplySwapInterval(bool vsync) override;
 
 		void* GetWindowHandle() override;
-		void *GetGLContext() override;
-		void MakeGLContextCurrent() override;
-		void ReleaseGLContext() override;
-		void SwapBuffer() override;
 
 		void SetWindowTitle(String title) override;
 		void SetCursorPosition(IVec2 pos) override;
@@ -76,13 +71,11 @@ namespace Plu
 		bool HasWindowFocus() override;
 	private:
 		SDL_Window* mWindow = nullptr;
-		SDL_GLContext mGLContext = nullptr;
 
 		int mSDLWindowID = -1;
 
 		bool mRunning = false;
-		bool mVSyncEnabled = false;
-		bool mRequestedVSync = true;
+		bool mVSyncEnabled = true;
 
 		FullscreenType mFullscreenType = FullscreenType::Windowed;
 	};

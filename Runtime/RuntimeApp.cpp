@@ -18,7 +18,6 @@
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "Python/RuntimePythonRunner.h"
-#include "Shaders/RuntimeShaderManager.h"
 
 Plu::RuntimeApp::RuntimeApp()
 {
@@ -52,12 +51,6 @@ bool Plu::RuntimeApp::OnInit()
 
     EngineObjectHandle inputManagerHandle = mObjectManager->CreateObject<InputManager>();
     mApplicationInfo.AppInputManager = mObjectManager->GetObjectAsUser<InputManager>(inputManagerHandle);
-
-    EngineObjectHandle shaderManagerHandle = mObjectManager->CreateObject<RuntimeShaderManager>();
-    TOwningPointer<RuntimeShaderManager> shaderManager = mObjectManager->GetObjectAsOwner<RuntimeShaderManager>(shaderManagerHandle);
-    shaderManager->ShaderCodeScan();
-    mApplicationInfo.AppShaderManager = shaderManager;
-    shaderManager->InitAssetEvents(mApplicationInfo.AppAssetManager, mApplicationInfo.AppObjectManager);
 
     mApplicationInfo.AppAssetManager->ScanDirectory(selfPath.GetParentPath().ToString().ToNarrow());
 
@@ -117,7 +110,6 @@ void Plu::RuntimeApp::OnTick(float deltaTime)
         }
         lastFocus = currentFocus;
     }
-    //mApplicationInfo.AppRenderer->GetMainBuffer()->BlitToScreen(mApplicationInfo.AppWindow->GetWidth(), mApplicationInfo.AppWindow->GetHeight());
     //mApplicationInfo.AppWindow->SetCursorPosition(mApplicationInfo.AppWindow->GetCursorPosition() + IVec2(-mApplicationInfo.AppInputManager->GetInputBackend()->GetMouse().deltaX, -mApplicationInfo.AppInputManager->GetInputBackend()->GetMouse().deltaY));
 }
 

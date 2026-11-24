@@ -21,7 +21,6 @@ namespace Plu
 	class GameObjectComponent;
 	class InputHandler;
 	class WorldComponent;
-	class ShaderProgram;
 }
 
 namespace Plu

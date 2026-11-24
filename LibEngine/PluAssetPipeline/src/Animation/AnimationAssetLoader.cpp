@@ -16,8 +16,7 @@ Plu::String Plu::AnimationAssetLoader::GetSupportedAssetType()
 
 bool Plu::AnimationAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
     TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-    TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
     TOwningPointer<Animation> animation = CreateOwning<Animation>();
     if (!LoadAnimation(assetDesc->AssetPath, *animation, assetManager)) return false;
@@ -34,7 +33,7 @@ Plu::TypeInfo * Plu::AnimationAssetLoader::GetAssetTypeViewportClass()
 
 bool Plu::AnimationAssetLoader::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
     TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-    TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<SceneManager> sceneManager)
 {
     TUsePointer<Animation> animation = assetManager->GetAssetData(assetDesc);
     if (!animation) return false;

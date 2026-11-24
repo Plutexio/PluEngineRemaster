@@ -13,7 +13,6 @@ namespace Plu
         DeserializationContext* context = new DeserializationContext();
         context->assetManager = AppAssetManager;
         context->scenesManager = AppScenesManager;
-        context->shaderManager = AppShaderManager;
         return context;
     }
 }

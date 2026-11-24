@@ -137,7 +137,6 @@ void Plu::SceneManager::Initialize(ApplicationInfo *appInfo)
 {
     mObjectManager = appInfo->AppObjectManager;
     mClient = appInfo->Client;
-	mShaderManager = appInfo->AppShaderManager;
     mAssetManager = appInfo->AppAssetManager;
     mRegisteredScenesByURL["Overlay"] = nullptr;
     gSceneManager = mObjectManager->GetObjectAsUser<SceneManager>(*this->GetEngineObjectHandle());
@@ -580,7 +579,6 @@ Plu::DeserializationContext Plu::SceneManager::MakeDeserializationContext()
 	DeserializationContext dc;
 	dc.assetManager = mAssetManager;
 	dc.scenesManager = mObjectManager->GetObjectAsUser<SceneManager>(*this->GetEngineObjectHandle());
-	dc.shaderManager = mShaderManager;
 	return dc;
 }
 

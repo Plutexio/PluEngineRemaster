@@ -32,12 +32,10 @@ namespace Plu
 
 namespace Plu
 {
-	class IShaderManager;
 	struct TypeInfo;
 
 	struct DeserializationContext
 	{
-		TUsePointer<IShaderManager> shaderManager;
 		TUsePointer<EngineAssetManager> assetManager;
 		TUsePointer<SceneManager> scenesManager;
 	};

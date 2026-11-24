@@ -18,8 +18,7 @@ Plu::String Plu::BlendSpaceAssetLoader::GetSupportedAssetType()
 
 bool Plu::BlendSpaceAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
     TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-    TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
     std::optional<JSON> jsonOpt = DiskManager::LoadJson(assetDesc->AssetPath.ToString().ToWide());
     if (!jsonOpt.has_value()) {
@@ -30,7 +29,6 @@ bool Plu::BlendSpaceAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> asse
     DeserializationContext dc;
     dc.assetManager  = assetManager;
     dc.scenesManager = sceneManager;
-    dc.shaderManager = shaderManager;
 
     auto* blendSpace = static_cast<BlendSpace*>(BlendSpace::GetStaticClass()->Construct());
     if (!blendSpace) return false;
@@ -51,7 +49,7 @@ Plu::TypeInfo * Plu::BlendSpaceAssetLoader::GetAssetTypeViewportClass()
 
 bool Plu::BlendSpaceAssetLoader::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
     TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-    TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<SceneManager> sceneManager)
 {
     // Everything persistent is reflected — let EngineAssetManager's generic JSON path write it.
     return false;

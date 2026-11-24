@@ -9,17 +9,13 @@
 #include "PluEngine/Core/Widgets/SearchBar.h"
 #include "EditorAppContext.h"
 #include "InputViewerPanel.h"
-#include "TextureViewerPanel.h"
 #include "Managers/Project/EditorProjectManager.h"
 #include "Panels/EditorPanelManager.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/Gameplay/GameObject.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Render/GLTexture.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
-#include "PluEngine/Render/Renderer.h"
 #include "UI/IconsFontAwesome7.h"
 
 Plu::String Plu::LoadedObjectsPanel::GetPanelName()
@@ -74,17 +70,7 @@ void Plu::LoadedObjectsPanel::OnUpdate(float deltaTime)
 				ImGui::Text("Owners: %d", owners);
 				ImGui::Separator();
 
-				if (object->GetClass()->IsDerivedOfOrSame(Texture::GetStaticClass())) {
-					if (ImGui::MenuItem(ICON_FA_IMAGE " View Texture")) {
-						TUsePointer<TextureViewerPanel> viewer = mEditorPanelManager->AddPanel<TextureViewerPanel>();
-						viewer->TextureToView = object;
-					}
-				} else if (object->GetClass()->IsDerivedOfOrSame(FrameBuffer::GetStaticClass())) {
-					if (ImGui::MenuItem(ICON_FA_IMAGE " View Framebuffer")) {
-						TUsePointer<TextureViewerPanel> viewer = mEditorPanelManager->AddPanel<TextureViewerPanel>();
-						viewer->FrameBufferToView = object;
-					}
-				} else if (object->GetClass()->IsDerivedOfOrSame(GameObject::GetStaticClass())) {
+				if (object->GetClass()->IsDerivedOfOrSame(GameObject::GetStaticClass())) {
 					TUsePointer<GameObject> gameObject = object;
 					if (gameObject->GetInputHandler()) {
 						if (ImGui::MenuItem(ICON_FA_MAGNIFYING_GLASS " View Input Handler")) {

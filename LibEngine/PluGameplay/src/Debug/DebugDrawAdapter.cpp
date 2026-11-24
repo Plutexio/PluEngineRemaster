@@ -16,8 +16,6 @@ namespace
     const Vec3 kRaycastHitColor = Vec3(1.0f, 0.9f, 0.1f);
     constexpr float kRaycastNormalLength = 0.25f;
 
-    // Two unit vectors perpendicular to Axis and to each other. The reference axis is swapped when
-    // Axis is (nearly) parallel to Y, so the cross products never degenerate.
     void MakePerpendicularBasis(const Vec3& Axis, Vec3& OutRight, Vec3& OutUp)
     {
         const Vec3 reference = (glm::abs(glm::dot(Axis, Vec3(0.0f, 1.0f, 0.0f))) > 0.99f)

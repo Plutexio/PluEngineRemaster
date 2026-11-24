@@ -13,11 +13,9 @@
 #include "DefinedPanels/EngineClassTreePanel.h"
 #include "DefinedPanels/EngineStatsPanel.h"
 #include "DefinedPanels/ProfilerPanel.h"
-#include "DefinedPanels/LoadedShadersPanel.h"
 #include "DefinedPanels/LoadedAssetsPanel.h"
 #include "DefinedPanels/LoadedObjectsPanel.h"
 #include "DefinedPanels/RenderGpuStatsPanel.h"
-#include "DefinedPanels/ParticlesDebugPanel.h"
 #include "DefinedPanels/Style/EditorStylePanel.h"
 #include "Managers/Project/EditorProjectManager.h"
 #include "PluEngine/PluPaths.h"
@@ -34,7 +32,6 @@
 #include "DefinedPanels/Project/AssetBrowserPanel/AssetBrowserPanel.h"
 #include "DefinedPanels/Project/ProjectSettings/ProjectSettingsPanel.h"
 #include "Managers/Scene/EditorCamera.h"
-#include "Managers/Shaders/EditorShaderManager.h"
 #include "PluEngine/PluUtils.h"
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
@@ -42,8 +39,6 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Core/IAssetData.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include "PluEngine/Platform/Window.h"
 #include "PluEngine/Platform/WindowsManager.h"
 #include "EditorWindows/EditorWindowsManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
@@ -187,9 +182,6 @@ namespace Plu
                 gEditorAppContext->EditorPanelManager->AddPanel<AssetBrowserPanel>();
             }
             if (ImGui::BeginMenu(ICON_FA_BUG " Debug")) {
-                if (ImGui::MenuItem("Loaded Shaders")) {
-                    gEditorAppContext->EditorPanelManager->AddPanel<LoadedShadersPanel>();
-                }
                 if (ImGui::MenuItem("Loaded Assets")) {
                     gEditorAppContext->EditorPanelManager->AddPanel<LoadedAssetsPanel>();
                 }
@@ -198,9 +190,6 @@ namespace Plu
                 }
                 if (ImGui::MenuItem("Render / GPU")) {
                     gEditorAppContext->EditorPanelManager->AddPanel<RenderGpuStatsPanel>();
-                }
-                if (ImGui::MenuItem("Debug Particles")) {
-                    gEditorAppContext->EditorPanelManager->AddPanel<ParticlesDebugPanel>();
                 }
                 ImGui::EndMenu();
             }
@@ -314,7 +303,6 @@ namespace Plu
             if (ImGui::BeginMenu("Build")) {
                 if (ImGui::MenuItem("Build Project")) {
                     gEditorAppContext->EditorAssetManager->PrepareAssetsForDistribution(gEditorAppContext->EditorProjectManager->GetProjectCacheDirectory().ToString().ToNarrow());
-                    gEditorAppContext->EditorShaderManager->PrepareShaderCodesForDistribution(gEditorAppContext->EditorProjectManager->GetProjectCacheDirectory().ToString().ToNarrow());
                     gEditorAppContext->EditorProjectManager->BuildProjectForShipment(gEditorAppContext->EditorProjectManager->GetProjectCacheDirectory());
                     PLU_INFO("Project is ready for shipment!");
                 }
@@ -379,7 +367,6 @@ namespace Plu
                         if (gEditorAppContext->EditorScenesManager->EnterPIE()) {
                             gApplicationInfo->Client->JoinGameLocally();
                             gEditorAppContext->PIEFullscreen = true;
-                            gApplicationInfo->AppRenderingManager->SetImGuiRenderingIgnorance(true);
                             gApplicationInfo->AppWindow->SetCursorVisibility(false);
                         } else {
                             gPluEditor->EndGame();

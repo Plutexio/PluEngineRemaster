@@ -31,9 +31,8 @@ namespace Plu
         // unique_lock; readers (GetObjectAs*, GetObjectOnIndex, GetObjectNames,
         // GetNumberOfObjects, IsValid) take shared_lock. Thread-affinity is enforced
         // per-object by ControlBlock::owningThread (an owning pointer may only be operated
-        // on its creating thread), not by confining the manager to the main thread — GL
-        // resources (FrameBuffer/Texture) are legitimately created and owned on the render
-        // thread where the GL context is current.
+        // on its creating thread), not by confining the manager to the main thread — render
+        // resources are legitimately created and owned on the render thread.
         mutable std::shared_mutex mMutex;
 
         // Main-thread confinement for the few slow editor-introspection paths that still

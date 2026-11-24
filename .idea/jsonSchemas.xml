@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="JsonSchemaMappingsProjectConfiguration">
+    <state>
+      <map>
+        <entry key="vcpkg manifest file">
+          <value>
+            <SchemaInfo>
+              <option name="name" value="vcpkg manifest file" />
+              <option name="relativePathToSchema" value="https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json" />
+              <option name="applicationDefined" value="true" />
+              <option name="patterns">
+                <list>
+                  <Item>
+                    <option name="path" value="vcpkg.json" />
+                  </Item>
+                </list>
+              </option>
+            </SchemaInfo>
+          </value>
+        </entry>
+      </map>
+    </state>
+  </component>
+</project>

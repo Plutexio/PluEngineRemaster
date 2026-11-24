@@ -119,7 +119,6 @@ def filter_args(args):
     extra_includes = [
         os.path.join(GURU_PROJECT_ROOT, "Engine", "include"),
         os.path.join(GURU_PROJECT_ROOT, "Editor"),
-        os.path.join(GURU_PROJECT_ROOT, "ThirdParty", "glad")
     ]
 
     for inc in extra_includes:

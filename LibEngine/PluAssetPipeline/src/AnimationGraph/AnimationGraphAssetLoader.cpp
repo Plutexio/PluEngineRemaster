@@ -19,8 +19,7 @@ Plu::String Plu::AnimationGraphAssetLoader::GetSupportedAssetType()
 
 bool Plu::AnimationGraphAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
     TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-    TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
     // Registering a loader takes this type off EngineAssetManager's generic JSON path. The graph's
     // own reflected fields ride TypeSerializer<TypeInfo*>, but the polymorphic node list + links need
@@ -34,7 +33,6 @@ bool Plu::AnimationGraphAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> 
     DeserializationContext dc;
     dc.assetManager  = assetManager;
     dc.scenesManager = sceneManager;
-    dc.shaderManager = shaderManager;
 
     auto* graph = static_cast<AnimationGraph*>(AnimationGraph::GetStaticClass()->Construct());
     if (!graph) return false;
@@ -84,7 +82,7 @@ Plu::TypeInfo * Plu::AnimationGraphAssetLoader::GetAssetTypeViewportClass()
 
 bool Plu::AnimationGraphAssetLoader::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
     TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-    TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<SceneManager> sceneManager)
 {
     // The graph owns a polymorphic node list, which the generic reflection serializer can't handle
     // (it would drop each node's concrete type). So we write the file ourselves: reflected fields via

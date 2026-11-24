@@ -43,8 +43,7 @@ namespace Plu
         virtual void OnShutdown() = 0;
         // NOTE: the engine no longer drives an OnImGuiRender() callback. An app that wants a
         // UI builds its own ImGui frame (ImGui::NewFrame()/.../ImGui::Render()) wherever it
-        // likes and hands the result to the render thread via
-        // RenderingManager::SubmitImGuiDrawData(). Apps without UI (e.g. Runtime) skip it.
+        // likes. Apps without UI (e.g. Runtime) skip it.
         virtual void OnTick(float deltaTime) = 0;
         // Power saving (FrameDemand.h). Run() calls this instead of OnTick() on the iterations where
         // nothing asked for a frame — roughly four times a second while idle. For cheap housekeeping

@@ -6,22 +6,15 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetTypes/MeshBounds.h"
 
-#include <glad/glad.h>
 #include "EditorAppContext.h"
 #include "StaticMeshViewport.h"
 #include "Managers/Scene/EditorCamera.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
-#include "PluEngine/Gameplay/Scenes/ScenesManager.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
-#include "PluEngine/Render/Renderer.h"
-#include "PluEngine/AssetTypes/Material/Material.h"
 #include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-
-#include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Core/BoundingBox.h"
 #include "PluEngine/Physics/JoltIntializer.h"
 #include "PluEngine/Physics/PhysicsWorld.h"
@@ -101,31 +94,11 @@ void Plu::StaticMeshViewportPanel::OnUpdate(float deltaTime)
 			parentMeshViewport->CollisionDirty = false;
 		}
 
-		FrameBuffer* renderFBO = gApplicationInfo->AppRenderingManager->RequestMainFrameBuffer().GetRaw();
-
-		ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-
-		float availW = viewportSize.x;
-		float availH = viewportSize.y;
-
-		float texAspect = (float)renderFBO->GetWidth() / (float)renderFBO->GetHeight();
-		float availAspect = availW / availH;
-
-		ImVec2 imageSize;
-
-		if (availAspect > texAspect) {
-			imageSize.y = availH;
-			imageSize.x = imageSize.y * texAspect;
-		} else {
-			imageSize.x = availW;
-			imageSize.y = imageSize.x / texAspect;
-		}
-
-		GLuint texID = renderFBO->GetColorTexture()->GetID();
-		ImTextureID imguiTex = (ImTextureID)(intptr_t)texID;
+		// No renderer yet: the preview is an empty area of the available size.
+		ImVec2 imageSize = ImGui::GetContentRegionAvail();
 
 		ImVec2 pos = ImGui::GetCursorScreenPos();
-		ImGui::Image(imguiTex, imageSize, ImVec2(0,1), ImVec2(1,0));
+		ImGui::Dummy(imageSize);
 
 		bool hovered = ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + imageSize.x, pos.y + imageSize.y));
 

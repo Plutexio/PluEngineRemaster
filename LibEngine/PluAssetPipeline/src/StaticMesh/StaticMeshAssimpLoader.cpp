@@ -124,9 +124,6 @@ bool ImportStaticMesh(StaticMeshImportProps props, PathW import, PathW outDir,
     staticMesh.StaticMeshData = meshes[0];
     staticMesh.IsLoaded = false;
     staticMesh.VertexCount = 0;
-    staticMesh.VBO = 0;
-    staticMesh.VAO = 0;
-    staticMesh.EBO = 0;
 
     PathW outPath = outDir / (import.GetStem() + (PLU_BINARY_EXT_W));
 
@@ -147,9 +144,6 @@ bool ImportStaticMesh(StaticMeshImportProps props, PathW import, PathW outDir,
       staticMesh.StaticMeshData = meshes[i];
       staticMesh.IsLoaded = false;
       staticMesh.VertexCount = 0;
-      staticMesh.VBO = 0;
-      staticMesh.VAO = 0;
-      staticMesh.EBO = 0;
 
       // Użyj nazwy z Assimp
       String meshName = meshNames[i];
@@ -318,9 +312,6 @@ bool LoadStaticMesh(PathW path, StaticMesh *outMesh) {
   // Zainicjalizuj pozostałe pola
   outMesh->IsLoaded = false;
   outMesh->VertexCount = 0;
-  outMesh->VBO = 0;
-  outMesh->VAO = 0;
-  outMesh->EBO = 0;
   return true;
 }
 } // namespace MeshImporter

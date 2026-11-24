@@ -4,7 +4,6 @@
 
 #include "PluEngine/AssetPipeline/Textures/TextureImporter.h"
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "PluBase/Log.h"
 

@@ -19,7 +19,6 @@ namespace Plu
 		TUsePointer<class EditorProjectManager> EditorProjectManager;
 		TUsePointer<class SceneManager> EditorScenesManager;
 		TUsePointer<class EditorViewportManager> EditorViewportManager;
-		TUsePointer<class EditorShaderManager> EditorShaderManager;
 		TUsePointer<class EditorPythonManager> EditorPythonManager;
 		TUsePointer<class EditorWindowsManager> EditorWindowsManager;
 		TUsePointer<class EditorSceneCamera> EditorSceneCamera;

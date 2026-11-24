@@ -15,10 +15,6 @@
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 #include "PluEngine/Gameplay/InputManager.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include "PluEngine/Gameplay/Scenes/ScenesManager.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
-#include "PluEngine/Render/Renderer.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
@@ -66,34 +62,9 @@ void Plu::SceneViewportPanel::OnUpdate(float deltaTime)
 			ImVec2 viewportPos  = ImGui::GetCursorScreenPos();
 			ImVec2 viewportSize = ImGui::GetContentRegionAvail();
 
-			FrameBuffer* renderFBO = gApplicationInfo->AppRenderingManager->RequestMainFrameBuffer().GetRaw();
+			// No renderer yet: the viewport is an empty area of the available size, below the toolbar.
+			ImVec2 imageSize(viewportSize.x, std::max(1.0f, viewportSize.y - (ImGui::GetFontSize() + 2)));
 
-			float availW = viewportSize.x;
-			float availH = viewportSize.y;
-
-			float texAspect = (float)renderFBO->GetWidth() / (float)renderFBO->GetHeight();
-			float availAspect = availW / availH;
-
-			ImVec2 imageSize;
-
-			// Dopasowanie bez zniekształcenia:
-			if (availAspect > texAspect) {
-				// Obszar UI jest bardziej poziomy → ograniczamy wysokość
-				imageSize.y = availH;
-				imageSize.x = imageSize.y * texAspect;
-			} else {
-				// Obszar UI jest bardziej pionowy → ograniczamy szerokość
-				imageSize.x = availW;
-				imageSize.y = imageSize.x / texAspect;
-			}
-
-			// Uzyskaj ID tekstury (ważne: to musi być zwykła tekstura, nie multisample!)
-			GLuint texID = renderFBO->GetColorTexture()->GetID();
-
-			// ImGui chce "ImTextureID"
-			ImTextureID imguiTex = (ImTextureID)(intptr_t)texID;
-
-			// Uwaga: OpenGL odwraca oś Y → dlatego UV są odwrotnie.
 			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
 			ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
@@ -134,7 +105,7 @@ void Plu::SceneViewportPanel::OnUpdate(float deltaTime)
 			ImGui::SetCursorScreenPos(posAfterTB);
 			ImGui::BeginChild("Viewport", imageSize ,ImGuiChildFlags_Borders);
 			ImVec2 pos = ImGui::GetCursorScreenPos();
-			ImGui::Image(imguiTex, imageSize, ImVec2(0,1), ImVec2(1,0));
+			ImGui::Dummy(imageSize);
 
 			// Sterowanie kamerą tylko gdy kursor jest nad obrazem.
 			if (ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + imageSize.x, pos.y + imageSize.y))) {
@@ -148,9 +119,10 @@ void Plu::SceneViewportPanel::OnUpdate(float deltaTime)
 				gApplicationInfo->AppObjectManager->IsValid(gEditorAppContext->EditorState.SelectedGameObject)) {
 				TUsePointer<GameObject> selected = gApplicationInfo->AppObjectManager->GetObjectAsUser<GameObject>(gEditorAppContext->EditorState.SelectedGameObject);
 
-				// Trzymaj macierze w lokalnych — GetObject*/GetLastFrame* zwracają przez wartość.
-				Matrix4 view  = RenderSnapshotBuilder::GetLastFrameViewMatrix();
-				Matrix4 proj  = RenderSnapshotBuilder::GetLastFrameProjectionMatrix();
+				// Matrices in locals — ImGuizmo writes through the pointers, the getters return by value.
+				IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+				Matrix4 view  = GetEditorCameraViewMatrix(camera);
+				Matrix4 proj  = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y);
 				Matrix4 model = selected->GetObjectWorldMatrix();
 
 				ImGuizmo::SetOrthographic(false);

@@ -21,11 +21,9 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedPanels/EngineClassTreePanel.cpp
         ./DefinedPanels/EngineStatsPanel.cpp
         ./DefinedPanels/InputViewerPanel.cpp
-        ./DefinedPanels/LoadedShadersPanel.cpp
         ./DefinedPanels/LoadedAssetsPanel.cpp
         ./DefinedPanels/LoadedObjectsPanel.cpp
         ./DefinedPanels/RenderGpuStatsPanel.cpp
-        ./DefinedPanels/ParticlesDebugPanel.cpp
         ./DefinedPanels/Project/AssetBrowserPanel/AssetBrowserPanel.cpp
         ./DefinedPanels/ProfilerPanel.cpp
         ./DefinedPanels/ProjectLauncherPanel.cpp
@@ -78,8 +76,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./Managers/Project/EditorProjectManager.cpp
         ./Managers/Python/EditorPythonManager.cpp
         ./Managers/Scene/EditorCamera.cpp
-        ./Managers/Shaders/EditorShaderCode.cpp
-        ./Managers/Shaders/EditorShaderManager.cpp
         ./Panels/EditorPanel.cpp
         ./Panels/EditorPanelManager.cpp
 
@@ -139,8 +135,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./Managers/Project/PythonBuildEnvironment.h
         ./Managers/Python/EditorPythonManager.h
         ./Managers/Scene/EditorCamera.h
-        ./Managers/Shaders/EditorShaderCode.h
-        ./Managers/Shaders/EditorShaderManager.h
         ./Panels/EditorPanel.h
         ./Panels/EditorPanelManager.h
         DefinedPanels/TextureViewerPanel.h
@@ -151,10 +145,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         Managers/Assets/EditorAssetImporter.h
         DefinedPanels/Project/ProjectSettings/ProjectSettingsPanel.h
         DefinedPanels/Project/ProjectSettings/ProjectSettingsPanel.cpp
-        DefinedViewports/ShaderProgram/ShaderProgramInfoViewport.cpp
-        DefinedViewports/ShaderProgram/ShaderProgramInfoViewport.h
-        DefinedViewports/ShaderProgram/ShaderProgramInfoPanel.cpp
-        DefinedViewports/ShaderProgram/ShaderProgramInfoPanel.h
         Utils/GizmoUtils.h
         Utils/RandomTransformUtils.h
         Utils/RandomTransformUtils.cpp
@@ -228,8 +218,8 @@ set_target_properties(PluEditor PROPERTIES
 
 # Engine is an INTERFACE target now, so there is no single $<TARGET_FILE:Engine> to copy: every
 # module is its own shared library and all of them have to sit next to the executable, which is
-# what the $ORIGIN RPATH expects to find. glad and spdlog are shared for the same reason (one
-# function-pointer table / logger registry for the whole process) and travel with them.
+# what the $ORIGIN RPATH expects to find. spdlog is shared for the same reason (one logger
+# registry for the whole process) and travels with them.
 foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
     add_custom_command(TARGET PluEditor POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -250,10 +240,8 @@ add_custom_command(TARGET PluEditor POST_BUILD
 #
 #  Only enabled when configured with PLU_DISTRIBUTION=ON (see the PluDist*-Editor presets).
 #  Assembles a self-contained editor into PLU_DIST_DIR (default ${CMAKE_SOURCE_DIR}/EditorDist):
-#    - PluEditor(.exe) + every engine module library, glad and spdlog (+ vcpkg runtime libraries)
+#    - PluEditor(.exe) + every engine module library and spdlog (+ vcpkg runtime libraries)
 #    - EngineAssets/, ThirdParty/UI/ (fonts + icons), PluEngine.pyi
-#    - obfuscated (PyArmor) ShaderCodeParser.py in PythonTools/ — the only Python
-#      tool run at editor runtime (via the embedded interpreter).
 #    - Linux -> Windows cross build only: the embeddable Python (python3xx.dll + stdlib).
 #  The packaging itself is cmake/PluDistribute.cmake, shared with DistributeRuntime.
 #
@@ -263,16 +251,7 @@ add_custom_command(TARGET PluEditor POST_BUILD
 if(PLU_DISTRIBUTION)
     set(PLU_DIST_DIR "${CMAKE_SOURCE_DIR}/EditorDist" CACHE PATH "Where DistributeEditor assembles the editor")
 
-    # Runs on the host, so it is the host venv's.
-    if(CMAKE_HOST_WIN32)
-        set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor.exe")
-    else()
-        set(PLU_PYARMOR_EXE "${VENV_PATH}/${VENV_BIN}/pyarmor")
-    endif()
-
-    plu_add_distribute_target(DistributeEditor PluEditor "${PLU_DIST_DIR}"
-            -DPYARMOR_EXE=${PLU_PYARMOR_EXE}
-    )
+    plu_add_distribute_target(DistributeEditor PluEditor "${PLU_DIST_DIR}")
 endif()
 
 #set(CPACK_PACKAGE_NAME "PluEditor")

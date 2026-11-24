@@ -7,24 +7,16 @@
 
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/IAssetData.h"
-#include "PluEngine/AssetTypes/ShaderCode.h"
 #include "Material.generated.h"
 
 namespace Plu
 {
-    struct IShaderUniform;
-    struct StaticMesh;
-
     PLU_STRUCT(PyExport)
     struct PLUASSETTYPES_API MaterialInfo : IAssetData
     {
         REFLECTION_BODY_MATERIALINFO()
-    public:
-        PLU_PROPERTY(UuidFor=ShaderProgramInfo)
-        PluUUID shaderProgram;
-
-        PLU_PROPERTY()
-        DynamicArray<TOwningPointer<IShaderUniform>> MaterialParameters;
+        // Empty until the Vulkan material model exists: the GLSL shader program reference and its
+        // uniform parameters went away with the OpenGL renderer.
     };
 }
 

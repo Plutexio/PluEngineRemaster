@@ -19,13 +19,15 @@
     },
     {
       "name": "imgui",
-      "features": ["opengl3-binding", "sdl3-binding", "docking-experimental"]
+      "features": ["vulkan-binding", "sdl3-binding", "docking-experimental"]
     },
     {
       "name": "imgui",
       "features": ["win32-binding"],
       "platform": "windows"
     },
-    "imgui-node-editor"
+    "imgui-node-editor",
+    "vulkan-memory-allocator",
+    "shader-slang"
   ]
 }

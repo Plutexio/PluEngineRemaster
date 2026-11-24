@@ -115,20 +115,10 @@ namespace Plu
         virtual bool HasWindowFocus() = 0;
 
         virtual bool IsVSyncEnabled() = 0;
+        // Only records the setting; presenting (and so honouring it) belongs to the renderer.
         virtual void SetVSyncEnabled(bool enabled) = 0;
-        // Sets the swap interval on the GL context *without* touching the window's own vsync
-        // setting. The context is shared by every window, so the render thread flips the interval
-        // per swap (secondary windows present without vsync — see RenderingManager). Render thread
-        // only; SetVSyncEnabled is what the rest of the engine should use.
-        virtual void ApplySwapInterval(bool vsync) = 0;
 
         virtual void* GetWindowHandle() = 0;
-        virtual void* GetGLContext() = 0;
-
-        virtual void MakeGLContextCurrent() = 0;
-        // Odpina kontekst GL od bieżącego wątku, aby inny wątek (render thread) mógł go przejąć.
-        virtual void ReleaseGLContext() = 0;
-        virtual void SwapBuffer() = 0;
 
         virtual void SetWindowTitle(String title) = 0;
 
@@ -139,8 +129,8 @@ namespace Plu
         virtual void SetCursorPosition(IVec2 pos) = 0;
         virtual IVec2 GetCursorPosition() = 0;
 
-        // Kontekst ImGui tworzy i konfiguruje RenderingManager::InitializeImGuiContext()
-        // (przez ImGuiRenderState); okno tylko go przechowuje dla WndProc/eventów.
+        // The window only stores the ImGui context, for WndProc / events; whoever renders ImGui
+        // creates and configures it.
         void SetImGuiContext(ImGuiContext* context) { mImGuiContext = context; }
         ImGuiContext* GetImGuiContext() const { return mImGuiContext; }
 

@@ -6,7 +6,6 @@
 #define PLUENGINE_STATICMESH_H
 #include "PluEngine/PluTypes.h"
 #include "PluEngine/Core/IAssetData.h"
-#include "glad/glad.h"
 #include "StaticMesh.generated.h"
 #include "PluEngine/Core/BoundingBox.h"
 
@@ -48,16 +47,7 @@ namespace Plu
         TOwningPointer<IStaticMeshCollisionData> CollisionData;
         String CollisionName;
 
-        //This we do when needed
-        PLU_PROPERTY()
-        UInt32 VBO;
-
-        PLU_PROPERTY()
-        UInt32 VAO;
-
-        PLU_PROPERTY()
-        UInt32 EBO;
-
+        // GPU residency. Nothing uploads meshes until the Vulkan renderer does, so it stays false.
         PLU_PROPERTY()
         bool IsLoaded;
 
@@ -67,96 +57,6 @@ namespace Plu
         PLU_PROPERTY(PyExport)
         UInt32 IndexCount;
     };
-
-    inline void SetupStaticMeshGL(MeshData* meshData, StaticMesh* staticMesh)
-    {
-        // Generuj bufory
-        glGenVertexArrays(1, &staticMesh->VAO);
-        glGenBuffers(1, &staticMesh->VBO);
-        glGenBuffers(1, &staticMesh->EBO);
-
-        // Binduj VAO
-        glBindVertexArray(staticMesh->VAO);
-
-        // Vertex Buffer
-        glBindBuffer(GL_ARRAY_BUFFER, staticMesh->VBO);
-        glBufferData(GL_ARRAY_BUFFER,
-                     meshData->Vertices.Size() * sizeof(Vertex),
-                     meshData->Vertices.Data(),
-                     GL_STATIC_DRAW);
-
-        // Element Buffer
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, staticMesh->EBO);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                     meshData->Indices.Size() * sizeof(UInt32),
-                     meshData->Indices.Data(),
-                     GL_STATIC_DRAW);
-
-        // Vertex Attributes
-
-        // Location 0: Position (Vec3 - 3 floats)
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, Position)));
-
-        // Location 1: Normal (MaxUInt32 - packed 10_10_10_2)
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_INT_2_10_10_10_REV, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, Normal)));
-
-        // Location 2: UV (2x MaxUInt16 - packed 16-bit)
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_UNSIGNED_SHORT, GL_TRUE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, UV)));
-
-        // Location 3: Color (MaxUInt32 - packed RGBA8)
-        glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, Color)));
-
-        // Location 4: Tangent (packed 10_10_10_2 — xyz tangent, w = handedness/znak bitangentu)
-        glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 4, GL_INT_2_10_10_10_REV, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, Tangent)));
-
-        // Unbind
-        glBindVertexArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-        // Zapisz licznik wierzchołków i indeksów (draw używa IndexCount)
-        staticMesh->VertexCount = meshData->Vertices.Size();
-        staticMesh->IndexCount = meshData->Indices.Size();
-        staticMesh->IsLoaded = true;
-    }
-
-    // Opcjonalna funkcja do czyszczenia
-    inline void CleanupStaticMeshGL(StaticMesh* staticMesh)
-    {
-        if (staticMesh->VBO != 0)
-        {
-            glDeleteBuffers(1, static_cast<GLuint *>(&staticMesh->VBO));
-            staticMesh->VBO = 0;
-        }
-
-        if (staticMesh->EBO != 0)
-        {
-            glDeleteBuffers(1, static_cast<GLuint *>(&staticMesh->EBO));
-            staticMesh->EBO = 0;
-        }
-
-        if (staticMesh->VAO != 0)
-        {
-            glDeleteVertexArrays(1, static_cast<GLuint *>(&staticMesh->VAO));
-            staticMesh->VAO = 0;
-        }
-
-        staticMesh->VertexCount = 0;
-        staticMesh->IndexCount = 0;
-        staticMesh->IsLoaded = false;
-    }
-
-    // Funkcja do renderowania
-
-    // Wariant instanced: jeden glDrawElementsInstanced rysujący instanceCount instancji naraz
-    // (dane per-instancja idą przez SSBO "InstanceMatrices", indeksowane gl_InstanceID + uniform
-    // instanceBaseIndex — patrz Renderer::RenderSnapshot). Jedno OnStaticMeshRender, nie N: to
-    // flaga żywotności dla eviction (RenderingManager), nie licznik populacji instancji.
 }
 
 #endif //PLUENGINE_STATICMESH_H

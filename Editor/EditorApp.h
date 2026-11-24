@@ -19,15 +19,8 @@ namespace Plu
         EditorAppContext* mEditorAppContext;
         TOwningPointer<EditorPanelManager> mPanelManager;
         TOwningPointer<EditorProjectManager> mEditorProjectManager;
-        // True while a font-atlas rebuild (e.g. font-size change) is still settling and the ImGui
-        // handoff must stay in lockstep with the render thread. See OnTick() and
-        // RenderingManager::BeginImGuiLockstep().
-        bool mImGuiAtlasSettling = false;
-        // Seconds since the shader/script watchers were last polled. Time based, not a frame
+        // Seconds since the script watchers were last polled. Time based, not a frame
         // counter: under power saving frames stop coming, the watchers must not.
-        // Hash of the ImGui draw data last handed to the render thread. A probe frame (power
-        // saving, pointer moved) is published only if its hash differs.
-        UInt64 mPublishedImGuiHash = 0;
         float mFileWatchTimer = 0.0f;
         void PollFileWatchers(float deltaTime);
         //This for passa on GH
@@ -63,8 +56,7 @@ namespace Plu
 
     private:
         // Builds the whole editor UI. Driven by the editor itself from OnTick(), bracketed by
-        // ImGui::NewFrame()/Render(), and the resulting draw data is handed to the render
-        // thread via RenderingManager::SubmitImGuiDrawData().
+        // ImGui::NewFrame()/Render().
         void OnImGuiRender();
         // Builds one window's UI, branching on what kind of editor window it is.
         void OnImGuiRenderForWindow(struct EditorWindowInfo& windowInfo);

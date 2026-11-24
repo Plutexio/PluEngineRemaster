@@ -3,34 +3,6 @@
         {
             "name": "Uuid",
             "value": 4678929966706356203
-        },
-        {
-            "name": "shaderProgram",
-            "value": 1871587687173456139
-        },
-        {
-            "name": "MaterialParameters",
-            "value": [
-                {
-                    "name": "BaseColor",
-                    "type": "vec3",
-                    "value": [
-                        1.0,
-                        0.0,
-                        0.8214287757873535
-                    ]
-                },
-                {
-                    "name": "DebugMode",
-                    "type": "int",
-                    "value": 0
-                },
-                {
-                    "name": "ColorTexture",
-                    "type": "sampler2D",
-                    "value": 0
-                }
-            ]
         }
     ],
     "uuid": 4678929966706356203,

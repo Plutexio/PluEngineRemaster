@@ -10,7 +10,6 @@
 #include "PluEngine/Application.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
-#include "PluEngine/Render/Renderer.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/Physics/JoltIntializer.h"

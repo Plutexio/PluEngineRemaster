@@ -30,8 +30,6 @@ namespace Plu
         REFLECTION_BODY_WINDOWSWINDOW()
     private:
         HWND mHandle;
-        HDC mHDC;
-        HGLRC mGLContext;
         HICON mhIcon;
 
         HWND mConsoleWindow;
@@ -47,9 +45,6 @@ namespace Plu
         LONG mWindowedStyle = 0;
         WINDOWPLACEMENT mWindowedPlacement = { sizeof(WINDOWPLACEMENT) };
 
-        void DestroyOpenGL();
-        HGLRC InitOpenGL(HWND hWnd);
-        bool SetupPixelFormat(HDC hdc);
 
         friend LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
         friend class WinDropTarget;
@@ -92,15 +87,10 @@ namespace Plu
 
         bool IsVSyncEnabled() override;
         void SetVSyncEnabled(bool enable) override;
-        void ApplySwapInterval(bool vsync) override;
 
         void SetWindowTitle(String title) override;
 
-        void* GetGLContext() override;
         void SpawnConsoleWindow();
-        void MakeGLContextCurrent() override;
-        void ReleaseGLContext() override;
-        void SwapBuffer() override;
 
         void SetCursorVisibility(bool visible) override;
         IVec2 GetCursorPosition() override;

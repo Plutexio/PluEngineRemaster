@@ -1,13 +1,13 @@
 
 # PluEngine
 
-Simple 3D OpenGL game engine written in C++ with Python as a scripting language.
+Simple 3D Vulkan game engine written in C++ with Python as a scripting language.
 
 
 ## Tech Stack
 
 **Engine:** 
-OpenGL, 
+Vulkan, 
 [Jolt Physics](https://github.com/jrouwe/JoltPhysics), 
 C++, 
 [spdlog](https://github.com/gabime/spdlog), 

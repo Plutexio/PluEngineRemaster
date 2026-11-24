@@ -3,8 +3,6 @@
 //
 
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "PluEngine/Render/RenderParticleLiveness.h"
-#include "PluEngine/Render/RenderParticleCommands.h"
 #include "PluEngine/Effects/Particles/ParticleSystemCompiler.h"
 #include "PluEngine/Timer.h"
 #include "PluSTL/HashSet/HashSet.h"
@@ -60,12 +58,6 @@ namespace Plu
 		HandleDestroy();
 		mPhysicsWorld = nullptr;
 		mGameObjects.Clear();
-
-		// Behind every spawn this world queued, so no detached effect outlives it on the render thread.
-		ParticleCommand releaseCommand;
-		releaseCommand.Type = EParticleCommandType::ReleaseWorld;
-		releaseCommand.SceneHandle = GetObjectHandle();
-		PushParticleCommand(std::move(releaseCommand));
 	}
 
 	void SceneWorld::Play()
@@ -253,77 +245,6 @@ namespace Plu
 		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
 			mParticleSpawnerComponents[component->Uuid] = component;
 		}
-	}
-
-	void SceneWorld::UpdateParticleLiveness()
-	{
-		PLU_PROFILE_SCOPE("Particle Liveness");
-		if (mParticleSpawnerComponents.IsEmpty()) return;
-
-		ParticleLivenessFrame frame;
-		ReadParticleLiveness(frame);
-		// The channel carries the world the render thread ticked last. Anything else says nothing about
-		// this world, and "no entry" must never be read as "finished".
-		if (frame.SceneHandle != GetObjectHandle()) return;
-
-		HashMap<UInt64, const ParticleSpawnerLiveness*> byUuid;
-		for (const ParticleSpawnerLiveness& entry : frame.Spawners) byUuid.InsertOrAssign(entry.SpawnerUuid, &entry);
-
-		for (auto& entry : mParticleSpawnerComponents) {
-			ParticleSpawnerComponent* component = entry.second.GetRaw();
-			if (!component) continue;
-			const ParticleSpawnerLiveness* const* found = byUuid.Find(component->Uuid.getUUID());
-			if (!found) continue;
-
-			component->ApplyLiveness((*found)->AliveParticles, (*found)->CompletedActivationVersion);
-			if (component->AutoDestroyWhenFinished && component->IsFinished()) {
-				TUsePointer<GameObject> owner = component->GetParentGameObject();
-				// Deferred: DeleteGameObject queues the destroy for the next scene update.
-				if (owner) DeleteGameObject(owner->GetObjectHandle());
-			}
-		}
-	}
-
-	UInt64 SceneWorld::SpawnParticleSystem(TUsePointer<ParticleSystem> Asset, const Vec3& Location, const Vec3& Rotation, float Lifetime)
-	{
-		PLU_PROFILE_SCOPE("SceneWorld::SpawnParticleSystem");
-		ParticleSystem* system = Asset.GetRaw();
-		if (!system) {
-			PLU_CORE_WARN("SpawnParticleSystem: no particle system asset given");
-			return 0;
-		}
-
-		const UInt64 effectId = PluUUID().getUUID(); // never 0, and cannot collide with a component UUID in practice
-		ParticleCommand command;
-		command.SceneHandle = GetObjectHandle();
-		command.EffectId = effectId;
-		command.Location = Location;
-		command.Rotation = Quaternion(glm::radians(Rotation));
-		command.Lifetime = Lifetime > 0.0f ? Lifetime : 0.0f;
-		// Compiling is main-thread work (cached per CompileRevision); the queue attaches a copy only when the
-		// render thread has not been sent this revision yet.
-		PushParticleSpawnCommand(std::move(command), ParticleSystemCompiler::GetCompiled(*system));
-		return effectId;
-	}
-
-	void SceneWorld::DeactivateParticleSystem(UInt64 EffectId)
-	{
-		if (EffectId == 0) return;
-		ParticleCommand command;
-		command.Type = EParticleCommandType::Deactivate;
-		command.SceneHandle = GetObjectHandle();
-		command.EffectId = EffectId;
-		PushParticleCommand(std::move(command));
-	}
-
-	void SceneWorld::DestroyParticleSystem(UInt64 EffectId)
-	{
-		if (EffectId == 0) return;
-		ParticleCommand command;
-		command.Type = EParticleCommandType::Destroy;
-		command.SceneHandle = GetObjectHandle();
-		command.EffectId = EffectId;
-		PushParticleCommand(std::move(command));
 	}
 
 	void SceneWorld::DeleteGameObjectComponent(const TOwningPointer<GameObjectComponent> &component)

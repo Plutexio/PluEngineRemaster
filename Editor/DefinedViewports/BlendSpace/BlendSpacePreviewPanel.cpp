@@ -4,7 +4,6 @@
 
 #include "BlendSpacePreviewPanel.h"
 
-#include <glad/glad.h>
 #include "BlendSpaceViewport.h"
 #include "EditorAppContext.h"
 #include "Managers/Scene/EditorCamera.h"
@@ -18,9 +17,6 @@
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include "PluEngine/Render/Renderer.h"
 #include "UI/IconsFontAwesome7.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
@@ -122,21 +118,11 @@ void Plu::BlendSpacePreviewPanel::OnUpdate(float deltaTime)
 			if (viewport->IsPlaying && space->PreviewMesh) RequestContinuousRedraw();
 		}
 
-		FrameBuffer* renderFBO = gApplicationInfo->AppRenderingManager->RequestMainFrameBuffer().GetRaw();
-
-		const ImVec2 available = ImGui::GetContentRegionAvail();
-		const float texAspect = (float)renderFBO->GetWidth() / (float)renderFBO->GetHeight();
-		ImVec2 imageSize;
-		if (available.x / available.y > texAspect) {
-			imageSize.y = available.y;
-			imageSize.x = imageSize.y * texAspect;
-		} else {
-			imageSize.x = available.x;
-			imageSize.y = imageSize.x / texAspect;
-		}
+		// No renderer yet: the preview is an empty area of the available size.
+		const ImVec2 imageSize = ImGui::GetContentRegionAvail();
 
 		const ImVec2 pos = ImGui::GetCursorScreenPos();
-		ImGui::Image((ImTextureID)(intptr_t)renderFBO->GetColorTexture()->GetID(), imageSize, ImVec2(0, 1), ImVec2(1, 0));
+		ImGui::Dummy(imageSize);
 		const bool hovered = ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + imageSize.x, pos.y + imageSize.y));
 
 		if (viewport && viewport->NeedsFraming && FrameCameraToPreviewMesh(object.GetRaw(), imageSize))

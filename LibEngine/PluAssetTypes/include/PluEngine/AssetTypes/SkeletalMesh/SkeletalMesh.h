@@ -53,16 +53,7 @@ namespace Plu
         PLU_PROPERTY()
         TUsePointer<Skeleton> MeshSkeleton;
 
-        //This we do when needed
-        PLU_PROPERTY()
-        UInt32 VBO;
-
-        PLU_PROPERTY()
-        UInt32 VAO;
-
-        PLU_PROPERTY()
-        UInt32 EBO;
-
+        // GPU residency. Nothing uploads meshes until the Vulkan renderer does, so it stays false.
         PLU_PROPERTY()
         bool IsLoaded;
 
@@ -72,12 +63,6 @@ namespace Plu
         PLU_PROPERTY(PyExport)
         UInt32 IndexCount;
     };
-
-    // GL setup / teardown / draw for a skeletal mesh. Same role as the static-mesh helpers,
-    // but defined out-of-line in SkeletalMesh.cpp (not inline). Setup adds two extra vertex
-    // attributes over the static layout: bone indices (loc 5) and bone weights (loc 6).
-    PLUASSETTYPES_API void SetupSkeletalMeshGL(SkeletalMeshData* meshData, SkeletalMesh* skeletalMesh);
-    PLUASSETTYPES_API void CleanupSkeletalMeshGL(SkeletalMesh* skeletalMesh);
 }
 
 #endif //PLUENGINE_SKELETALMESH_H

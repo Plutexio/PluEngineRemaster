@@ -2,4 +2,4 @@
 # Engine interface target lists it explicitly.
 plu_add_engine_module(PluAssetPipeline DEPENDS PluCore PluAssetCore PluAssetTypes PluEffects)
 
-target_link_libraries(PluAssetPipeline PUBLIC glm stb_image assimp::assimp)
+target_link_libraries(PluAssetPipeline PUBLIC glm stb::stb assimp::assimp)

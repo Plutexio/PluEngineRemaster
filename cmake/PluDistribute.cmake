@@ -5,19 +5,19 @@
 #    DIST_DIR       - destination directory (EditorDist/, ...)
 #    SOURCE_DIR     - repo root
 #    EXE            - full path to the built executable
-#    ENGINE_LIBS    - ;-separated paths to every engine module library (+ glad, spdlog, PluBase)
+#    ENGINE_LIBS    - ;-separated paths to every engine module library (+ spdlog, stb, PluBase, PluNetwork)
 #    VCPKG_LIB_DIR  - vcpkg_installed/<triplet>/lib (Linux .so files)
 #    VCPKG_BIN_DIR  - vcpkg_installed/<triplet>/bin (Windows DLLs)
 #    TARGET_WINDOWS - ON when the executable is a Windows one. Not WIN32: in script mode WIN32
 #                     describes the host, and a Linux -> Windows cross build packages PE files on a
 #                     Linux host.
 #  Optional:
-#    PYARMOR_EXE    - pyarmor from the build venv; set by the editor, which runs
-#                     PythonTools/ShaderCodeParser.py at runtime and ships it obfuscated.
 #    PYTHON_RUNTIME_DIR - unpacked python.org embeddable package (cross builds); its interpreter is
 #                     shipped next to the executable so the package runs without Python installed.
 #    OBJDUMP        - llvm-objdump, to read PE imports when packaging Windows files on a non-Windows
 #                     host.
+#    IMAGEMAGICK_DIR - unpacked official Windows ImageMagick (cross builds); its DLLs, coder/filter
+#                     modules and configuration files are shipped with the executable.
 # =====================================================================================
 
 foreach(_var DIST_DIR SOURCE_DIR EXE ENGINE_LIBS VCPKG_LIB_DIR VCPKG_BIN_DIR TARGET_WINDOWS)
@@ -25,6 +25,11 @@ foreach(_var DIST_DIR SOURCE_DIR EXE ENGINE_LIBS VCPKG_LIB_DIR VCPKG_BIN_DIR TAR
         message(FATAL_ERROR "PluDistribute.cmake: missing required variable ${_var}")
     endif()
 endforeach()
+
+# The Vulkan loader. vcpkg builds one (imgui's Vulkan backend pulls it in) and the engine links it,
+# but it belongs to the system next to the GPU driver: an app-local copy shadows the system loader,
+# which Khronos advises against. Never shipped; listed as a requirement instead.
+set(_system_only_regex "^(lib)?vulkan(-1\\.dll|\\.so.*)$")
 
 message(STATUS "[dist] Cleaning ${DIST_DIR}")
 file(REMOVE_RECURSE "${DIST_DIR}")
@@ -58,7 +63,10 @@ if(NOT TARGET_WINDOWS)
     )
     set(_shipped 0)
     foreach(_dep IN LISTS _resolved_deps)
-        if(_dep MATCHES "vcpkg_installed")
+        get_filename_component(_dep_name "${_dep}" NAME)
+        if(_dep_name MATCHES "${_system_only_regex}")
+            message(STATUS "[dist] Not shipped, required on the target system: ${_dep_name}")
+        elseif(_dep MATCHES "vcpkg_installed")
             # FOLLOW_SYMLINK_CHAIN: these arrive as libfoo.so.6 -> libfoo.so.6.0.2 and the loader
             # needs the whole chain, not just the name it was linked against.
             file(COPY "${_dep}" DESTINATION "${DIST_DIR}" FOLLOW_SYMLINK_CHAIN)
@@ -66,6 +74,14 @@ if(NOT TARGET_WINDOWS)
         endif()
     endforeach()
     message(STATUS "[dist] Shipped ${_shipped} vcpkg libraries")
+
+    # ImageMagick is not in vcpkg and stays a system requirement on Linux: it loads its coders from
+    # an absolute path compiled into the distro's build, so a bundled libMagickCore would end up
+    # mixing versions with the target machine's coders.
+    list(FILTER _resolved_deps INCLUDE REGEX "libMagick")
+    if(_resolved_deps)
+        message(STATUS "[dist] Not shipped, required on the target system: ImageMagick 7 (Q16 HDRI)")
+    endif()
 
     # Anything the resolver could not find would be missing at startup on the target machine, so it
     # is worth saying out loud rather than discovering when the package does not run.
@@ -80,6 +96,7 @@ elseif(CMAKE_HOST_WIN32)
     get_filename_component(_exe_dir "${EXE}" DIRECTORY)
     message(STATUS "[dist] Copying dependency DLLs from ${_exe_dir}")
     file(GLOB _dep_dlls "${_exe_dir}/*.dll")
+    list(FILTER _dep_dlls EXCLUDE REGEX "[/\\\\]vulkan-1\\.dll$")
     file(COPY ${_dep_dlls} DESTINATION "${DIST_DIR}")
 else()
     # Windows files packaged on a Linux host (cross build). vcpkg's applocal step does run here, but
@@ -109,6 +126,8 @@ else()
     # Matched case-insensitively — the PE rules compare lower-cased names, which on a case-sensitive
     # file system leaves e.g. Jolt.dll and SDL3.dll "unresolved".
     file(GLOB _vcpkg_dlls "${VCPKG_BIN_DIR}/*.dll")
+    # Left out of the map, so they end up in the "expected from Windows" list below.
+    list(FILTER _vcpkg_dlls EXCLUDE REGEX "/vulkan-1\\.dll$")
     foreach(_dll IN LISTS _vcpkg_dlls)
         get_filename_component(_name "${_dll}" NAME)
         string(TOLOWER "${_name}" _key)
@@ -120,6 +139,12 @@ else()
         string(TOLOWER "${_name}" _key)
         list(APPEND _engine_names "${_key}")
     endforeach()
+    # Shipped as a whole in the ImageMagick section below, not one by one from here.
+    if(IMAGEMAGICK_DIR)
+        file(GLOB _magick_dlls RELATIVE "${IMAGEMAGICK_DIR}" "${IMAGEMAGICK_DIR}/CORE_RL_*.dll")
+        list(TRANSFORM _magick_dlls TOLOWER)
+        list(APPEND _engine_names ${_magick_dlls})
+    endif()
 
     set(_dep_names ${_unresolved_deps} ${_conflicting_FILENAMES})
     foreach(_dep IN LISTS _resolved_deps)
@@ -140,13 +165,60 @@ else()
         endif()
     endforeach()
     message(STATUS "[dist] Shipped ${_shipped} vcpkg libraries")
-    # What is left is the OS (kernel32, user32, opengl32, ...), the MSVC runtime and python3xx.dll
+    # What is left is the OS (kernel32, user32, vulkan-1, ...), the MSVC runtime and python3xx.dll
     # (shipped below). Listed for reference, not as a warning: no Windows system DLL exists on this
     # host to resolve against.
     if(_from_system)
         list(JOIN _from_system ", " _from_system_text)
         message(STATUS "[dist] Expected from Windows / shipped separately: ${_from_system_text}")
     endif()
+endif()
+
+# --- Libraries loaded at runtime ----------------------------------------------------------
+# dlopen() / LoadLibrary() dependencies never show up in the import tables the resolvers above read.
+# Slang loads its glslang backend (SPIR-V / GLSL output) and the GLSL module from the directory its
+# own library sits in; without them every shader compile to SPIR-V fails at runtime, not at startup.
+# Newer Slang releases also look up precompiled standard modules there. slang-llvm (~130 MB, CPU and
+# host-callable targets only) and slang-rt (the runtime for those targets) are left out on purpose.
+if(TARGET_WINDOWS)
+    set(_plugin_dir "${VCPKG_BIN_DIR}")
+    set(_plugin_globs "slang-glslang*.dll" "slang-glsl-module*.dll" "slang-standard-module-*")
+else()
+    set(_plugin_dir "${VCPKG_LIB_DIR}")
+    set(_plugin_globs "libslang-glslang*.so*" "libslang-glsl-module*.so*" "slang-standard-module-*")
+endif()
+list(TRANSFORM _plugin_globs PREPEND "${_plugin_dir}/")
+file(GLOB _plugins LIST_DIRECTORIES true ${_plugin_globs})
+foreach(_plugin IN LISTS _plugins)
+    get_filename_component(_name "${_plugin}" NAME)
+    message(STATUS "[dist] Runtime-loaded library: ${_name}")
+    if(IS_DIRECTORY "${_plugin}")
+        file(COPY "${_plugin}" DESTINATION "${DIST_DIR}")
+    else()
+        file(COPY "${_plugin}" DESTINATION "${DIST_DIR}" FOLLOW_SYMLINK_CHAIN)
+    endif()
+endforeach()
+
+# --- ImageMagick (Windows) ----------------------------------------------------------------
+# All of the official build's CORE_RL_*.dll go next to the executable, not only the ones Magick++
+# imports: the coders (IM_MOD_RL_*.dll) are loaded at runtime and pull in the delegate libraries
+# (png, jpeg, tiff, webp, ...) themselves. The MSVC runtime DLLs the installer also carries stay out
+# — the target needs the VC++ Redistributable anyway (it includes vcomp140.dll, ImageMagick's OpenMP
+# runtime) — and so do its command-line tools, demos and docs.
+#
+# This is an "installed" build (MAGICKCORE_INSTALLED_SUPPORT): without its installer it finds the
+# modules and configuration files only through MAGICK_CODER_MODULE_PATH, MAGICK_FILTER_MODULE_PATH
+# and MAGICK_CONFIGURE_PATH. Whoever initialises ImageMagick has to point them into ImageMagick/
+# next to the executable before InitializeMagick().
+if(TARGET_WINDOWS AND IMAGEMAGICK_DIR)
+    message(STATUS "[dist] Copying ImageMagick from ${IMAGEMAGICK_DIR}")
+    file(GLOB _magick_dlls "${IMAGEMAGICK_DIR}/CORE_RL_*.dll")
+    file(COPY ${_magick_dlls} DESTINATION "${DIST_DIR}")
+    set(_magick_dist "${DIST_DIR}/ImageMagick")
+    file(COPY "${IMAGEMAGICK_DIR}/modules" DESTINATION "${_magick_dist}")
+    file(GLOB _magick_config "${IMAGEMAGICK_DIR}/*.xml" "${IMAGEMAGICK_DIR}/*.icc")
+    file(COPY ${_magick_config} DESTINATION "${_magick_dist}")
+    file(COPY "${IMAGEMAGICK_DIR}/License.txt" "${IMAGEMAGICK_DIR}/NOTICE.txt" DESTINATION "${_magick_dist}")
 endif()
 
 # --- Python runtime -----------------------------------------------------------------------
@@ -183,40 +255,6 @@ file(COPY "${SOURCE_DIR}/ThirdParty/UI" DESTINATION "${DIST_DIR}/ThirdParty")
 # Type stub for projects' Python environment
 if(EXISTS "${SOURCE_DIR}/ReflectionCache/PluEngine.pyi")
     file(COPY "${SOURCE_DIR}/ReflectionCache/PluEngine.pyi" DESTINATION "${DIST_DIR}")
-endif()
-
-# --- Obfuscate ShaderCodeParser.py (editor) ---------------------------------------------
-# The only Python tool run at editor runtime (EditorShaderManager
-# → RunScript(GetEngineResourcesDir()/PythonTools/ShaderCodeParser.py)). PyArmor gen
-# creates a pyarmor_runtime_* package next to the obfuscated script, which must be
-# copied alongside it.
-#
-# PyArmor runs on the host, and by default builds its runtime package (pyarmor_runtime.so/.pyd) for
-# the host. A cross build asks for the target's one explicitly.
-if(PYARMOR_EXE)
-    set(_pytools_dir "${DIST_DIR}/PythonTools")
-    file(MAKE_DIRECTORY "${_pytools_dir}")
-
-    set(_pyarmor_platform "")
-    if(TARGET_WINDOWS AND NOT CMAKE_HOST_WIN32)
-        set(_pyarmor_platform --platform windows.x86_64)
-    endif()
-
-    message(STATUS "[dist] Obfuscating ShaderCodeParser.py (PyArmor)")
-    execute_process(
-            COMMAND "${PYARMOR_EXE}" gen ${_pyarmor_platform} --output "${_pytools_dir}"
-                    "${SOURCE_DIR}/PythonTools/ShaderCodeParser.py"
-            RESULT_VARIABLE _pyarmor_res
-            OUTPUT_VARIABLE _pyarmor_out
-            ERROR_VARIABLE  _pyarmor_err
-    )
-    if(NOT _pyarmor_res EQUAL 0)
-        message(FATAL_ERROR "[dist] PyArmor failed (${_pyarmor_res}):\n${_pyarmor_out}\n${_pyarmor_err}")
-    endif()
-
-    if(NOT EXISTS "${_pytools_dir}/ShaderCodeParser.py")
-        message(FATAL_ERROR "[dist] PyArmor did not generate ShaderCodeParser.py in ${_pytools_dir}")
-    endif()
 endif()
 
 message(STATUS "[dist] Done: ${DIST_DIR}")

@@ -1,5 +1,11 @@
 # MULTITHREADING.md
 
+> **Historical (2026-11-24).** The OpenGL renderer and its render thread are removed (`RenderingManager`,
+> `Renderer`, `RenderSnapshotBuilder`, the `RenderSnapshot` / ImGui `TripleBuffer` handoffs, GL resource
+> wrappers, particle simulation on the render thread). Nothing below that names them exists in the code;
+> the Vulkan renderer will define its own threading. Kept as the design record of the old architecture.
+
+
 Dokumentacja architektury wielowątkowej PluEngine — ściąga do pracy przy wątkach.
 Stan: pipeline TripleBuffer+RenderSnapshot (dawny „etap 2") wdrożony i zweryfikowany.
 

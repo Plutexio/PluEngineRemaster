@@ -16,9 +16,7 @@ namespace Plu
     class EngineAssetManager;
     class InputManager;
     class GameClient;
-    class RenderingManager;
     class IAssetManager;
-    class IShaderManager;
     class SceneManager;
     class EngineObjectManager;
     class IWindow;
@@ -39,9 +37,7 @@ namespace Plu
         TUsePointer<WindowsManager> AppWindowsManager;
         TUsePointer<EngineObjectManager> AppObjectManager;
         TUsePointer<SceneManager> AppScenesManager;
-        TUsePointer<IShaderManager> AppShaderManager;
         TUsePointer<EngineAssetManager> AppAssetManager;
-        TUsePointer<RenderingManager> AppRenderingManager;
         TUsePointer<InputManager> AppInputManager;
         TUsePointer<IPythonManager> AppPythonManager;
         TUsePointer<class ThreadPool> AppThreadPool;

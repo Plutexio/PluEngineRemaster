@@ -14,9 +14,9 @@
 
 namespace Plu
 {
-    // Per-window ImGui context lifecycle. The contexts are owned by RenderingManager on the render
-    // thread, but it is the window manager that knows when a window appears or goes away — and it
-    // sits a layer below the renderer, so it cannot name it. RenderingManager fills these in.
+    // Per-window ImGui context lifecycle. The contexts belong to whoever renders ImGui, but it is
+    // the window manager that knows when a window appears or goes away — and it sits a layer below
+    // the renderer, so it cannot name it. The renderer fills these in (none does right now).
     struct PLUPLATFORM_API ImGuiWindowContextOps
     {
         std::function<void(TUsePointer<IWindow>)> CreateForWindow;

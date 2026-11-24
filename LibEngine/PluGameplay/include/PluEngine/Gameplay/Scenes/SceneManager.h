@@ -53,7 +53,6 @@ namespace Plu
         TUsePointer<EngineObjectManager> mObjectManager;
         TUsePointer<GameClient> mClient;
         TUsePointer<EngineAssetManager> mAssetManager;
-        TUsePointer<IShaderManager> mShaderManager;
 
         // One context is built per scene load and threaded through every object/component below it —
         // it holds nothing per-object, and allocating one per component was pure overhead.

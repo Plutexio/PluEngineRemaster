@@ -12,7 +12,6 @@
 #include "PluEngine/FrameDemand.h"
 #include "PluEngine/Platform/Window.h"
 #include "PluEngine/PluUtils.h"
-#include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Core/Widgets/Combo.h"
 
 namespace {
@@ -165,18 +164,6 @@ void Plu::EditorSettingsPanel::DrawDisplaySection() {
 void Plu::EditorSettingsPanel::OnUpdate(float deltaTime) {
   if (BeginPanel()) {
     DrawDisplaySection();
-
-    ImGui::SeparatorText("Rendering");
-    bool limitTextureLoadPerFrame =
-        mApplicationInfo->AppRenderingManager->IsLimitTextureLoadPerFrame();
-    if (ImGui::Checkbox("Limit Amount of Textures loaded per frame",
-                        &limitTextureLoadPerFrame)) {
-      mApplicationInfo->AppRenderingManager->SetLimitTextureLoadPerFrame(
-          limitTextureLoadPerFrame);
-    }
-    ImGui::SetItemTooltip("Purely for fun, I just think it looks cool when "
-                          "textures seem to load frame by frame (In runtime "
-                          "this will not work :( Performance they said)");
 
     ImGui::SeparatorText("Editor");
     EditorSettings *settings =

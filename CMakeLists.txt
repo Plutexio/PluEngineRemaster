@@ -76,10 +76,11 @@ if(EXISTS "${REQ_FILE}")
 endif()
 
 
-# Linux -> Windows cross build (PluDistWindowsCross-* presets): Windows headers + import library for
-# the embedded Python, which the host cannot provide.
+# Linux -> Windows cross build (PluDistWindowsCross-* presets): Windows headers + import libraries for
+# the embedded Python and for ImageMagick, which the host cannot provide.
 if(WIN32 AND CMAKE_CROSSCOMPILING)
     include("${CMAKE_SOURCE_DIR}/cmake/PluWindowsCrossPython.cmake")
+    include("${CMAKE_SOURCE_DIR}/cmake/PluWindowsCrossImageMagick.cmake")
 endif()
 
 if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

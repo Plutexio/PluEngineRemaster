@@ -32,7 +32,7 @@ file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}
 # MULTITHREADING.md). With the stock single global they overwrite each other's current context —
 # whichever thread called SetCurrentContext last wins, and the other one asserts or corrupts state.
 # This is the mechanism ImGui documents for exactly this case (see the thread_local note in
-# imgui.cpp). PluImGuiTLS is defined once, in LibEngine/PluRender/src/ImGuiRenderState.cpp.
+# imgui.cpp). PluImGuiTLS is defined once, in LibEngine/PluPlatform/src/ImGuiContextTLS.cpp.
 #
 # Patching the source (not just the installed header) matters: imgui's own translation units have
 # to see the same definition of GImGui as the engine does.

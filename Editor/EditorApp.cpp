@@ -14,7 +14,6 @@
 #include "PluBase/Log.h"
 #include "PluEngine/FrameDemand.h"
 #include "PluEngine/Timer.h"
-#include "PluEngine/Render/RenderingManager.h"
 #include "PluEngine/Core/Objects/EngineObjectHandle.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 #include "PluEngine/Platform/Window.h"
@@ -40,7 +39,6 @@
 #include "Managers/Assets/EditorAssetManager.h"
 #include "Managers/Python/EditorPythonManager.h"
 #include "Managers/Scene/EditorCamera.h"
-#include "Managers/Shaders/EditorShaderManager.h"
 #include "PluEngine/Engine.h"
 #include "PluEngine/PluPaths.h"
 #include "PluEngine/Gameplay/GameClient.h"
@@ -92,7 +90,6 @@ bool Plu::PluEditor::OnInit()
     mEditorProjectManager->SetEditorAppContext(mEditorAppContext, &mApplicationInfo);
     mEditorAppContext->EditorPythonManager = mObjectManager->CreateObject(EditorPythonManager::GetStaticClass());
     mEditorAppContext->EditorViewportManager = mObjectManager->CreateObject(EditorViewportManager::GetStaticClass());
-    mEditorAppContext->EditorShaderManager = mObjectManager->CreateObject(EditorShaderManager::GetStaticClass());
     const EngineObjectHandle panelManagerHandle = mObjectManager->CreateObject<EditorPanelManager>();
     mPanelManager = mObjectManager->GetObjectAsOwner<EditorPanelManager>(panelManagerHandle);
     PLU_INFO("Editor Init");
@@ -101,13 +98,11 @@ bool Plu::PluEditor::OnInit()
     gApplicationInfo = &mApplicationInfo;
     mEditorAppContext->EditorAssetManager = gApplicationInfo->AppAssetManager;
     mEditorAppContext->EditorScenesManager = gApplicationInfo->AppScenesManager;
-    mEditorAppContext->EditorShaderManager->PreInit(mEditorProjectManager);
     mEditorAppContext->EditorPanelManager = mPanelManager;
     mEditorAppContext->EditorProjectManager =  mEditorProjectManager;
     mPanelManager->Init(&mApplicationInfo, mEditorAppContext);
     mPanelManager->Init();
     mApplicationInfo.AppScenesManager = mEditorAppContext->EditorScenesManager;
-    mApplicationInfo.AppShaderManager = mEditorAppContext->EditorShaderManager;
     mEditorAppContext->EditorWindowsManager = mObjectManager->CreateObject(EditorWindowsManager::GetStaticClass());
     mEditorAppContext->EditorWindowsManager->Initialize(&mApplicationInfo, mEditorAppContext);
     mEditorAppContext->EditorWindowsManager->RegisterMainWindow(props.Title);
@@ -119,8 +114,8 @@ bool Plu::PluEditor::OnInit()
 
 void Plu::PluEditor::OnPostInit()
 {
-    // Zapamiętane ustawienia Display (VSync / tryb okna / rozdzielczość). Musi być po
-    // AppWindow->Init() i jeszcze na main threadzie — przed oddaniem kontekstu GL.
+    // Saved Display settings (VSync / window mode / resolution). Must run after
+    // AppWindow->Init(), on the main thread.
     EditorSettingsManager::GetInstance()->ApplyDisplaySettings(mApplicationInfo.AppWindow);
     SetPowerSavingEnabled(EditorSettingsManager::GetInstance()->GetSettings()->PowerSaving);
 
@@ -226,7 +221,6 @@ void Plu::PluEditor::OnImGuiRender()
             mEditorAppContext->EditorScenesManager->ExitPIE();
             EndGame();
             mEditorAppContext->PIEFullscreen = false;
-            gApplicationInfo->AppRenderingManager->SetImGuiRenderingIgnorance(false);
             gApplicationInfo->AppWindow->SetCursorVisibility(true);
         }
         return;
@@ -616,84 +610,11 @@ void Plu::PluEditor::OnImGuiRenderForWindow(EditorWindowInfo& windowInfo)
     }
 }
 
-// True if any ImGui texture still has work in flight that the render thread will act on - either a
-// pending create/update/destroy (Status != OK) or a destroy QUEUED for next frame
-// (WantDestroyNextFrame, Status still OK this frame). A frame that leaves work pending MUST be
-// handed to the render thread in lockstep: its draw commands reference those textures and the
-// render thread has to upload them BEFORE it draws (otherwise GetTexID()==0 asserts), and the atlas
-// must not be mutated again until that pass is done.
-//
-// WantDestroyNextFrame is the crucial one: when a font-atlas rebuild creates a new texture it marks
-// the old one WantDestroyNextFrame but leaves its Status at OK for this frame. Checking Status alone
-// would let us drop out of lockstep here, and then NEXT frame the Main thread flips that texture to
-// WantDestroy / bumps UnusedFrames while the render thread is concurrently rendering the previous
-// snapshot (which still lists the old texture) and destroys it mid-flight -> GetTexID()==0. Staying
-// in lockstep until the whole create->destroy->remove flush is done (a few frames, UnusedFrames-
-// gated) keeps that destroy frame on the Main thread alone. Call after ImGui::Render() (when
-// GetPlatformIO().Textures is up to date).
-static bool ImGuiHasPendingTextureWork()
-{
-    const ImGuiPlatformIO& platformIo = ImGui::GetPlatformIO();
-    for (ImTextureData* tex : platformIo.Textures) {
-        if (tex->Status != ImTextureStatus_OK || tex->WantDestroyNextFrame) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Power saving: how often the shader/script watchers are polled, in frames or out of them.
+// Power saving: how often the script watchers are polled, in frames or out of them.
 static constexpr float kFileWatchIntervalSeconds = 1.5f;
 // Half of ImGui's text cursor blink period (InputTextCursorBlink: 1.2 s cycle, visible ~0.8 s) is
 // not exposed, so redraw often enough to catch both edges.
 static constexpr float kTextCursorBlinkSeconds = 0.4f;
-
-// Order-dependent 64-bit hash over raw bytes, eight at a time. Only has to tell "same draw data
-// as last frame" from "different" — not cryptographic, not stable across runs.
-static UInt64 HashBytes(UInt64 hash, const void* data, size_t size)
-{
-    const unsigned char* bytes = static_cast<const unsigned char*>(data);
-    while (size >= sizeof(UInt64)) {
-        UInt64 word;
-        memcpy(&word, bytes, sizeof(word));
-        hash = (hash ^ word) * 0x9E3779B97F4A7C15ULL;
-        hash ^= hash >> 32;
-        bytes += sizeof(word);
-        size -= sizeof(word);
-    }
-    UInt64 tail = size;
-    memcpy(&tail, bytes, size);
-    hash = (hash ^ tail) * 0x9E3779B97F4A7C15ULL;
-    return hash ^ (hash >> 32);
-}
-
-// Everything that decides what a window's ImGui frame looks like on screen: geometry, clip rects,
-// textures, draw order. Two frames with the same hash present the same pixels (the scene image is
-// a texture id here — its contents are the scene snapshot's business, not this hash's).
-static UInt64 HashImGuiDrawData(UInt64 hash, UInt32 windowID, const ImDrawData* drawData)
-{
-    hash = HashBytes(hash, &windowID, sizeof(windowID));
-    if (!drawData || !drawData->Valid) return hash;
-    hash = HashBytes(hash, &drawData->DisplayPos, sizeof(drawData->DisplayPos));
-    hash = HashBytes(hash, &drawData->DisplaySize, sizeof(drawData->DisplaySize));
-    hash = HashBytes(hash, &drawData->FramebufferScale, sizeof(drawData->FramebufferScale));
-    for (const ImDrawList* list : drawData->CmdLists) {
-        hash = HashBytes(hash, list->VtxBuffer.Data, static_cast<size_t>(list->VtxBuffer.Size) * sizeof(ImDrawVert));
-        hash = HashBytes(hash, list->IdxBuffer.Data, static_cast<size_t>(list->IdxBuffer.Size) * sizeof(ImDrawIdx));
-        // Field by field: ImDrawCmd has padding and a callback pointer.
-        for (const ImDrawCmd& cmd : list->CmdBuffer) {
-            // The raw reference, not GetTexID(): that asserts on a texture the render thread has
-            // not uploaded yet (a fresh font atlas), which is a normal state on this thread.
-            hash = HashBytes(hash, &cmd.ClipRect, sizeof(cmd.ClipRect));
-            hash = HashBytes(hash, &cmd.TexRef._TexData, sizeof(cmd.TexRef._TexData));
-            hash = HashBytes(hash, &cmd.TexRef._TexID, sizeof(cmd.TexRef._TexID));
-            hash = HashBytes(hash, &cmd.VtxOffset, sizeof(cmd.VtxOffset));
-            hash = HashBytes(hash, &cmd.IdxOffset, sizeof(cmd.IdxOffset));
-            hash = HashBytes(hash, &cmd.ElemCount, sizeof(cmd.ElemCount));
-        }
-    }
-    return hash;
-}
 
 static bool IsAnyImGuiKeyDown()
 {
@@ -751,46 +672,18 @@ void Plu::PluEditor::OnTick(float deltaTime)
         }
     }
 
-    // Build this frame's ImGui UI on the Main thread, then hand the draw data to the render
-    // thread. ImGui_ImplSDL2_NewFrame()/ImGui::NewFrame() run here (input + display size, no
-    // GL); the OpenGL3 backend submits the cloned draw data on the render thread.
+    // Build this frame's ImGui UI on the Main thread. Nothing draws the result until the Vulkan
+    // renderer takes it over.
     if (ImGuiContext* ctx = mApplicationInfo.AppWindow->GetImGuiContext()) {
         PLU_PROFILE_SCOPE("ImGui Build");
         ImGui::SetCurrentContext(ctx);
 
-        // ImGui 1.92 dynamic fonts rebuild/grow the shared font atlas (create a new ImTextureData,
-        // destroy the old) whenever glyphs are (re)baked - not only on the frame the font size
-        // changes, but on later frames too as new glyphs are lazily baked at the new size. The
-        // lock-free ImGui handoff only deep-copies draw lists, not texture state, so if the atlas
-        // mutates while the render thread is reading a snapshot the two threads race: the render
-        // thread either asserts in ImGui's create/destroy paths, or draws a freshly created texture
-        // before it was uploaded (GetTexID()==0). While any texture work is in flight we drive the
-        // handoff in lockstep so only one thread touches the atlas at a time.
-        //
-        // Engage BEFORE NewFrame() when we already know a mutation is coming (queued font-size
-        // change) or a previous frame left work in flight - this covers the destroy side, where the
-        // mutation would otherwise race a render-thread read of the prior snapshot.
-        const ImGuiStyle& style = ImGui::GetStyle();
-        bool lockstepEngaged = (style._NextFrameFontSizeBase != 0.0f) || mImGuiAtlasSettling;
-        if (lockstepEngaged) {
-            mApplicationInfo.AppRenderingManager->BeginImGuiLockstep();
-        }
-
-        // One frame per window, all published together (EndImGuiFrameSubmit) so the render thread
-        // never mixes windows from different frames. Each window has its own ImGui context; they
-        // share the font atlas, which is why the lockstep above wraps the whole loop rather than
-        // any single window.
+        // One frame per window; each window has its own ImGui context, sharing the font atlas.
         // Snapshot: building a window's UI may add a window (the "Move to New Window" menu), and
         // that would reallocate the manager's array mid-iteration. Records themselves are heap
         // allocated and only freed at the start of a frame, so the pointers stay valid.
         DynamicArray<EditorWindowInfo*> windowsThisFrame = mEditorAppContext->EditorWindowsManager->GetWindows();
         UInt32 builtWindowCount = 0;
-        // Windows built this frame, submitted together after the loop. A context's draw data stays
-        // valid until its own next NewFrame(), so deferring the copy is safe — and lets a probe
-        // frame that changed nothing skip the copy altogether.
-        struct BuiltWindow { UInt32 WindowID; ImGuiContext* Context; };
-        DynamicArray<BuiltWindow> builtWindows;
-        UInt64 imguiHash = 0;
         // A held button or key produces no further OS events, yet drags and ImGui's own key repeat
         // advance every frame. Likewise a focused text field: its cursor blinks on a timer.
         bool heldInput = false;
@@ -801,8 +694,8 @@ void Plu::PluEditor::OnTick(float deltaTime)
             if (!window) continue;
             ImGuiContext* windowCtx = window->GetImGuiContext();
             if (!windowCtx) continue;
-            // A window on its way out keeps its context for another frame or two (the render thread
-            // has to let go first) but must not get any more frames built for it.
+            // A window on its way out keeps its context for another frame or two but must not get
+            // any more frames built for it.
             if (mApplicationInfo.AppWindowsManager->IsWindowClosing(windowInfo->WindowID)) continue;
 
             ImGui::SetCurrentContext(windowCtx);
@@ -818,67 +711,21 @@ void Plu::PluEditor::OnTick(float deltaTime)
             OnImGuiRenderForWindow(*windowInfo);
 
             // Feed the window hit-test (SDL/Win32 drag handling): when an ImGui item is hovered
-            // the OS title-bar drag must yield so clicks reach the UI. Previously set on the render
-            // thread in Renderer.cpp; that path is gone with the ImGui snapshot handoff, so refresh
-            // it here on the Main thread (same thread the hit-test callback runs on).
+            // the OS title-bar drag must yield so clicks reach the UI. Refreshed here on the Main
+            // thread (same thread the hit-test callback runs on).
             window->ImGuiItemHovered = ImGui::IsAnyItemHovered();
             builtWindowCount++;
             if (ImGui::IsAnyMouseDown() || IsAnyImGuiKeyDown()) heldInput = true;
             if (ImGui::GetIO().WantTextInput) wantsTextInput = true;
             ImGui::Render();
-            builtWindows.PushBack(BuiltWindow{window->GetWindowID(), windowCtx});
-            imguiHash = HashImGuiDrawData(imguiHash, window->GetWindowID(), ImGui::GetDrawData());
         }
         // Back to the main window's context: everything below (and every caller that does not set
         // the context itself) assumes it is current.
         ImGui::SetCurrentContext(ctx);
 
-        // Did this frame actually leave texture work pending (e.g. a lazily-baked glyph just created
-        // a new atlas texture on an otherwise free-running frame)? If so its snapshot MUST be
-        // uploaded by the render thread before it draws, so engage lockstep now even if we didn't
-        // pre-engage. The mutation already happened during building, but a newly created texture is
-        // a fresh object the prior snapshot doesn't reference, so engaging here still prevents the
-        // render thread from drawing it un-uploaded. The atlas is shared by every window's context,
-        // so window 0's texture list covers them all.
-        const bool texturesPending = ImGuiHasPendingTextureWork();
-        if (texturesPending && !lockstepEngaged) {
-            mApplicationInfo.AppRenderingManager->BeginImGuiLockstep();
-            lockstepEngaged = true;
-        }
-
-        // Power saving: a probe frame (the pointer moved, nothing else happened) goes to the render
-        // thread only if it would look different from what is already on screen — a hover
-        // highlight, a tooltip. Lockstep frames always go: the render thread is parked waiting for
-        // one, and it carries the texture uploads.
-        if (!IsProbeFrame() || lockstepEngaged || imguiHash != mPublishedImGuiHash) {
-            mApplicationInfo.AppRenderingManager->BeginImGuiFrameSubmit();
-            for (const BuiltWindow& built : builtWindows) {
-                ImGui::SetCurrentContext(built.Context);
-                mApplicationInfo.AppRenderingManager->SubmitImGuiDrawData(built.WindowID, ImGui::GetDrawData());
-            }
-            ImGui::SetCurrentContext(ctx);
-            mApplicationInfo.AppRenderingManager->EndImGuiFrameSubmit();
-            mPublishedImGuiHash = imguiHash;
-        }
-
-        if (lockstepEngaged) {
-            // Hand this snapshot to the render thread for exactly one upload+draw pass, then re-scan:
-            // uploaded textures are now OK, but a destroy can still be in flight (UnusedFrames-gated),
-            // so stay engaged until everything is back at ImTextureStatus_OK, then resume the normal
-            // lock-free free-running handoff.
-            mApplicationInfo.AppRenderingManager->StepImGuiLockstep();
-            mImGuiAtlasSettling = ImGuiHasPendingTextureWork();
-            if (!mImGuiAtlasSettling) {
-                mApplicationInfo.AppRenderingManager->EndImGuiLockstep();
-            }
-        } else {
-            mImGuiAtlasSettling = false;
-        }
-
-        // Power saving: things that need the next frame although no OS event will announce it.
-        // The atlas is still settling, or a window is still on its way in or out (both are
-        // multi-frame handshakes with the render thread).
-        bool needsNextFrame = mImGuiAtlasSettling || windowsThisFrame.Size() != builtWindowCount;
+        // Power saving: things that need the next frame although no OS event will announce it —
+        // a window still on its way in or out (a multi-frame handshake).
+        bool needsNextFrame = windowsThisFrame.Size() != builtWindowCount;
         // An import runs a step per frame.
         if (mAssetImporter) needsNextFrame = true;
         if (needsNextFrame || heldInput) RequestContinuousRedraw();
@@ -902,7 +749,6 @@ void Plu::PluEditor::PollFileWatchers(float deltaTime)
     mFileWatchTimer += deltaTime;
     if (mFileWatchTimer < kFileWatchIntervalSeconds) return;
     mFileWatchTimer = 0.0f;
-    mEditorAppContext->EditorShaderManager->CheckForShaderChanges();
     mEditorAppContext->EditorPythonManager->CheckForScriptsChanges();
 }
 

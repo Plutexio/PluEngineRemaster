@@ -6,7 +6,6 @@
 #include "PluEngine/FrameDemand.h"
 
 #include <functional>
-#include <glad/glad.h>
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "glm/gtc/type_ptr.hpp"
@@ -23,16 +22,12 @@
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
 #include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include "PluEngine/Gameplay/Scenes/ScenesManager.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
-#include "PluEngine/Render/Renderer.h"
-#include "PluEngine/Gameplay/RenderSnapshotBuilder.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
 #include "PluEngine/Core/Widgets/Buttons.h"
 #include "Utils/AttachPointOverlay.h"
+#include "Utils/GizmoUtils.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 extern Plu::EditorAppContext* gEditorAppContext;
@@ -91,11 +86,8 @@ namespace
 	// global = parent * local. Attach points ride their parent node's animated global matrix, so
 	// they follow the pose exactly as they will at runtime.
 	//
-	// Projection uses the *exact* view/projection the last frame was rendered with
-	// (RenderSnapshotBuilder::GetLastFrame*Matrix), not a freshly rebuilt one. That guarantees
-	// the joints land on the skinned mesh pixels regardless of FBO/window aspect: the displayed
-	// texture and these matrices come from the same frame, and NDC maps linearly onto the whole
-	// image rectangle. Everything is clipped to that rectangle so nothing bleeds outside.
+	// Projection is rebuilt from the editor render camera for the image rectangle's aspect, and NDC
+	// maps linearly onto that rectangle. Everything is clipped to it so nothing bleeds outside.
 	// Highlights the selected bone / attach point and, when `allowPick` is set, reports whichever
 	// one is clicked this frame so the caller can update the shared selection.
 	BoneOverlayResult DrawBoneOverlay(Plu::SkeletalMeshComponent* component, ImVec2 imagePos, ImVec2 imageSize,
@@ -109,8 +101,9 @@ namespace
 		SkeletonNode* root = skeleton->RootNode.GetRaw();
 		if (!root) return result;
 
-		const Matrix4 viewProj =
-			RenderSnapshotBuilder::GetLastFrameProjectionMatrix() * RenderSnapshotBuilder::GetLastFrameViewMatrix();
+		IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+		const Matrix4 viewProj = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y)
+			* GetEditorCameraViewMatrix(camera);
 		const Matrix4 componentWorld = component->GetRenderMatrix();
 
 		auto project = [&](const Vec3& world, ImVec2& out) -> bool {
@@ -403,29 +396,11 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 		SyncAttachPointPreviews(parentViewport.GetRaw(),
 		                        meshObject ? meshObject->MeshComponent.GetRaw() : nullptr, overlay);
 
-		FrameBuffer* renderFBO = gApplicationInfo->AppRenderingManager->RequestMainFrameBuffer().GetRaw();
-
-		ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-		float availW = viewportSize.x;
-		float availH = viewportSize.y;
-
-		float texAspect = (float)renderFBO->GetWidth() / (float)renderFBO->GetHeight();
-		float availAspect = availW / availH;
-
-		ImVec2 imageSize;
-		if (availAspect > texAspect) {
-			imageSize.y = availH;
-			imageSize.x = imageSize.y * texAspect;
-		} else {
-			imageSize.x = availW;
-			imageSize.y = imageSize.x / texAspect;
-		}
-
-		GLuint texID = renderFBO->GetColorTexture()->GetID();
-		ImTextureID imguiTex = (ImTextureID)(intptr_t)texID;
+		// No renderer yet: the preview is an empty area of the available size.
+		ImVec2 imageSize = ImGui::GetContentRegionAvail();
 
 		ImVec2 pos = ImGui::GetCursorScreenPos();
-		ImGui::Image(imguiTex, imageSize, ImVec2(0,1), ImVec2(1,0));
+		ImGui::Dummy(imageSize);
 
 		bool hovered = ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + imageSize.x, pos.y + imageSize.y));
 
@@ -433,8 +408,7 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 		if (parentViewport && parentViewport->NeedsFraming && FrameCameraToMesh(meshObject.GetRaw(), imageSize))
 			parentViewport->NeedsFraming = false;
 
-		// Bone overlay is projected into the exact image rectangle with the same aspect the FBO
-		// rendered at, so joints line up with the skinned mesh underneath. It highlights the bone
+		// Bone overlay is projected into the image rectangle with the editor camera. It highlights the bone
 		// selected in the hierarchy panel and lets the user click a joint/line to (re)select it; a
 		// gizmo on the selected bone (translate/rotate/scale, world/local) poses it temporarily.
 		if (parentViewport && parentViewport->ShowBones && meshObject && meshObject->MeshComponent) {
@@ -459,8 +433,9 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 
 			// One gizmo, one target: the hierarchy keeps bone and attach point selection mutually
 			// exclusive, so whichever is set gets the handles.
-			Matrix4 view = RenderSnapshotBuilder::GetLastFrameViewMatrix();
-			Matrix4 proj = RenderSnapshotBuilder::GetLastFrameProjectionMatrix();
+			IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+			Matrix4 view = GetEditorCameraViewMatrix(camera);
+			Matrix4 proj = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y);
 			ImGuizmo::SetOrthographic(false);
 			ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
 			ImGuizmo::SetRect(pos.x, pos.y, imageSize.x, imageSize.y);

@@ -17,11 +17,6 @@ namespace Plu
 
 namespace Plu
 {
-	class ShaderProgram;
-}
-
-namespace Plu
-{
 	PLU_ENUM(PyExport, PyNamespace=Plu)
 	enum class PerspectiveType
 	{

@@ -28,8 +28,7 @@ void Plu::EngineAssetManager::DispatchAssetSaveBinary(PluUUID uuid)
         bool saved = mAssetLoaders[assetDesc->AssetType->TypeName]->DispatchAssetSave(assetDesc,
                 mApplicationInfo->AppAssetManager,
                 mApplicationInfo->AppObjectManager,
-                mApplicationInfo->AppScenesManager,
-                mApplicationInfo->AppShaderManager
+                mApplicationInfo->AppScenesManager
         );
         if (saved) {
             PLU_CORE_TRACE("Asset Saved by Binary! UUID {}", uuid.getUUID());
@@ -47,8 +46,7 @@ void Plu::EngineAssetManager::DispatchAssetSaveJSON(PluUUID uuid)
         bool saved = mAssetLoaders[assetDesc->AssetType->TypeName]->DispatchAssetSave(assetDesc,
                 mApplicationInfo->AppAssetManager,
                mApplicationInfo->AppObjectManager,
-               mApplicationInfo->AppScenesManager,
-               mApplicationInfo->AppShaderManager
+               mApplicationInfo->AppScenesManager
         );
         if (saved) {
             PLU_CORE_TRACE("Asset Saved by JSON! UUID {}", uuid.getUUID());
@@ -76,8 +74,7 @@ void Plu::EngineAssetManager::LoadJSONAssetData(TUsePointer<AssetDescriptor> ass
     if (mAssetLoaders.Contains(typeName)) {
         mAssetLoaders[typeName]->DispatchAssetLoad(assetDesc, mApplicationInfo->AppAssetManager,
                                                    mApplicationInfo->AppObjectManager,
-                                                   mApplicationInfo->AppScenesManager,
-                                                   mApplicationInfo->AppShaderManager);
+                                                   mApplicationInfo->AppScenesManager);
         return;
     }
     TypeInfo* assetType = TypeRegistry::GetInstance()->GetTypeOfName(typeName);
@@ -85,7 +82,6 @@ void Plu::EngineAssetManager::LoadJSONAssetData(TUsePointer<AssetDescriptor> ass
     DeserializationContext* dc = new DeserializationContext();
     dc->assetManager = mApplicationInfo->AppAssetManager;
     dc->scenesManager = mApplicationInfo->AppScenesManager;
-    dc->shaderManager = mApplicationInfo->AppShaderManager;
     void* loadedAsset = assetType->DeSerializeFromJSON(dc, json);
     delete dc;
     dc = nullptr;
@@ -104,8 +100,7 @@ void Plu::EngineAssetManager::LoadBinaryAssetData(TUsePointer<AssetDescriptor> a
     if (mAssetLoaders.Contains(assetDesc->AssetType->TypeName)) {
         mAssetLoaders[assetDesc->AssetType->TypeName]->DispatchAssetLoad(assetDesc, mApplicationInfo->AppAssetManager,
                                                    mApplicationInfo->AppObjectManager,
-                                                   mApplicationInfo->AppScenesManager,
-                                                   mApplicationInfo->AppShaderManager);
+                                                   mApplicationInfo->AppScenesManager);
         UInt64 uuidToSend = assetDesc->Uuid;
         GetObjectEventDispatcher()->Dispatch("LoadedAssetData", &uuidToSend);
         return;

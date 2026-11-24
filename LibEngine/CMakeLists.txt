@@ -39,8 +39,8 @@ set(PLU_THIRDPARTY_PCH_HEADERS
 # ─────────────────────────────────────────────────────────────────────────────
 # spdlog compiled once instead of header-only. Header-only, every translation unit compiled
 # spdlog's and the bundled fmt's implementation again: 57% of the code in a trivial object file, and
-# 40–47% of its compile time. SHARED for the same reason as glad below: the logger registry is
-# global state, and a static archive would give every engine library a registry of its own.
+# 40–47% of its compile time. SHARED because the logger registry is global
+# state, and a static archive would give every engine library a registry of its own.
 set(PLU_SPDLOG_DIR "${PLU_THIRDPARTY_DIR}/spdlog")
 add_library(spdlog SHARED
         "${PLU_SPDLOG_DIR}/src/spdlog.cpp"
@@ -65,8 +65,15 @@ target_link_libraries(spdlog PUBLIC Threads::Threads)
 add_library(json INTERFACE)
 target_include_directories(json INTERFACE "${PLU_THIRDPARTY_DIR}/nlohmann")
 
-add_library(stb_image INTERFACE)
-target_include_directories(stb_image INTERFACE "${PLU_THIRDPARTY_DIR}/stb_image")
+# stb_image + stb_image_write compiled once, in stb.cpp, instead of an IMPLEMENTATION define in
+# whichever module happened to need them. SHARED so every module links the same copy.
+add_library(stb SHARED "${PLU_THIRDPARTY_DIR}/stb_image/stb.cpp")
+add_library(stb::stb ALIAS stb)
+target_include_directories(stb PUBLIC "${PLU_THIRDPARTY_DIR}/stb_image")
+set_target_properties(stb PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+)
 
 add_library(pybind11 INTERFACE)
 target_include_directories(pybind11 INTERFACE "${PLU_THIRDPARTY_DIR}/pybind11/include")
@@ -86,23 +93,6 @@ target_include_directories(ImGuizmo PUBLIC "${PLU_THIRDPARTY_DIR}/ImGuizmo")
 set_target_properties(ImGuizmo PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(ImGuizmo PUBLIC imgui::imgui)
 
-# glad is SHARED, and has to be: it is nothing but global function pointers, filled in once by
-# gladLoadGL() from the platform module. As a static archive every library that links it would get
-# its own copy of that table and only the platform module's would be initialised — the first GL
-# call from anywhere else would dereference a null pointer.
-if (WIN32)
-    add_library(glad SHARED "${PLU_THIRDPARTY_DIR}/glad/glad.c" "${PLU_THIRDPARTY_DIR}/glad/glad_wgl.c")
-else ()
-    add_library(glad SHARED "${PLU_THIRDPARTY_DIR}/glad/glad.c")
-endif ()
-target_include_directories(glad PUBLIC "${PLU_THIRDPARTY_DIR}/glad")
-set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
-if (WIN32)
-    # glad's own export macro; without it nothing is visible outside the DLL.
-    target_compile_definitions(glad PRIVATE GLAD_GLAPI_EXPORT_BUILD)
-    target_compile_definitions(glad PUBLIC GLAD_GLAPI_EXPORT)
-endif ()
-
 # PluBase: common types, logging, asserts, UUIDs and thread affinity, a library of its own so other
 # projects can use it without the engine. Here, after the third-party targets it links.
 add_subdirectory("${CMAKE_SOURCE_DIR}/PluBase" "${CMAKE_BINARY_DIR}/PluBase")
@@ -114,11 +104,59 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/PluNetwork" "${CMAKE_BINARY_DIR}/PluNetwor
 
 # Shared libraries outside the engine modules that, like the modules, have to sit next to the
 # executable.
-set(PLU_THIRDPARTY_SHARED_LIBS glad spdlog PluBase PluNetwork
+set(PLU_THIRDPARTY_SHARED_LIBS spdlog stb PluBase PluNetwork
         CACHE INTERNAL "Third-party shared libraries consumers copy next to their executable."
 )
 
-find_package(OpenGL REQUIRED)
+# Vulkan renderer stack, linked by PluRender. Vulkan itself comes from the system SDK/loader;
+# VMA (vulkan-memory-allocator) and Slang (shader-slang, prebuilt binaries) from vcpkg.
+find_package(Vulkan REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+if (WIN32 AND CMAKE_CROSSCOMPILING)
+    # slangConfig.cmake does a REQUIRED find_program("slangc"), which on a Linux host never matches
+    # slangc.exe. It is a Windows binary the host could not run anyway; named here so the lookup
+    # is skipped.
+    set(SLANGC_EXECUTABLE "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/shader-slang/slangc.exe"
+            CACHE FILEPATH "slangc of the Windows Slang package (cross build, not runnable on the host)" FORCE)
+endif ()
+find_package(slang CONFIG REQUIRED)
+# The shader-slang port is a prebuilt, release-only package: its targets know only a RELEASE
+# location in <prefix>/lib, while every other Debug dependency lives in <prefix>/debug/lib. That puts
+# a cycle into the Debug RPATH (slang wants lib/ first, Jolt & co. debug/lib/) and CMake warns for
+# every target. The port also installs identical copies into debug/lib — point Debug at those.
+if (NOT WIN32 AND TARGET slang::slang)
+    get_target_property(_plu_slang_release slang::slang IMPORTED_LOCATION_RELEASE)
+    get_target_property(_plu_slang_soname slang::slang IMPORTED_SONAME_RELEASE)
+    cmake_path(GET _plu_slang_release PARENT_PATH _plu_slang_libdir)
+    cmake_path(GET _plu_slang_libdir PARENT_PATH _plu_slang_prefix)
+    cmake_path(GET _plu_slang_release FILENAME _plu_slang_file)
+    set(_plu_slang_debug "${_plu_slang_prefix}/debug/lib/${_plu_slang_file}")
+    if (EXISTS "${_plu_slang_debug}")
+        set_property(TARGET slang::slang APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+        set_target_properties(slang::slang PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${_plu_slang_debug}"
+                IMPORTED_SONAME_DEBUG "${_plu_slang_soname}"
+        )
+    endif ()
+endif ()
+# Magick++ for image loading. Not in vcpkg — taken from the system. The imported targets carry the
+# MAGICKCORE_QUANTUM_DEPTH / MAGICKCORE_HDRI_ENABLE defines from pkg-config, so they always match the
+# installed build instead of being hardcoded. The Linux -> Windows cross build defines the same
+# targets itself, from the official Windows build (cmake/PluWindowsCrossImageMagick.cmake).
+if (NOT TARGET ImageMagick::Magick++)
+    find_package(ImageMagick REQUIRED COMPONENTS Magick++ MagickCore)
+    # pkg-config also hands out -fopenmp — how ImageMagick itself was built, not something its users
+    # need. With Clang it would turn every PluRender translation unit into an OpenMP one (and libomp
+    # into a link dependency the moment anything there uses a pragma).
+    foreach (_plu_im_target IN ITEMS ImageMagick::Magick++ ImageMagick::MagickCore)
+        get_target_property(_plu_im_options ${_plu_im_target} INTERFACE_COMPILE_OPTIONS)
+        if (_plu_im_options)
+            list(REMOVE_ITEM _plu_im_options -fopenmp)
+            set_target_properties(${_plu_im_target} PROPERTIES INTERFACE_COMPILE_OPTIONS "${_plu_im_options}")
+        endif ()
+    endforeach ()
+endif ()
+
 find_package(Python3 COMPONENTS Interpreter Development)
 find_package(Jolt CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)

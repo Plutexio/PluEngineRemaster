@@ -18,8 +18,7 @@ Plu::String Plu::SkeletalMeshAssetLoader::GetSupportedAssetType()
 
 bool Plu::SkeletalMeshAssetLoader::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
     TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-    TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
     TOwningPointer<SkeletalMesh> skeletalMesh = CreateOwning<SkeletalMesh>();
     if (!LoadSkeletalMesh(assetDesc->AssetPath, *skeletalMesh, assetManager))
@@ -53,7 +52,7 @@ Plu::TypeInfo * Plu::SkeletalMeshAssetLoader::GetAssetTypeViewportClass()
 
 bool Plu::SkeletalMeshAssetLoader::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
     TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-    TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+    TUsePointer<SceneManager> sceneManager)
 {
     TUsePointer<SkeletalMesh> skeletalMesh = assetManager->GetAssetData(assetDesc);
     if (!skeletalMesh) return false;

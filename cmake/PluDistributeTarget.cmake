@@ -3,8 +3,7 @@
 # Adds a target that packages <exe target> into <dist dir> through cmake/PluDistribute.cmake: the
 # executable, every engine module and engine-side shared library (PLU_MODULES +
 # PLU_THIRDPARTY_SHARED_LIBS), the vcpkg libraries they need, engine resources, and — for a Linux ->
-# Windows cross build — the embeddable Python. Extra arguments are passed to the script as-is
-# (e.g. -DPYARMOR_EXE=... for the editor).
+# Windows cross build — the embeddable Python and ImageMagick. Extra arguments are passed to the script as-is.
 function(plu_add_distribute_target NAME EXE_TARGET DIST_DIR)
     # Built from PLU_MODULES rather than spelled out, so a new engine module is packaged without
     # anyone remembering this list (a hand-written one silently left PluEffects out).
@@ -20,6 +19,7 @@ function(plu_add_distribute_target NAME EXE_TARGET DIST_DIR)
             list(APPEND _extra
                     -DPYTHON_RUNTIME_DIR=${PLU_WINDOWS_PYTHON_RUNTIME_DIR}
                     -DOBJDUMP=${PLU_LLVM_OBJDUMP}
+                    -DIMAGEMAGICK_DIR=${PLU_WINDOWS_IMAGEMAGICK_DIR}
             )
         endif()
     else()

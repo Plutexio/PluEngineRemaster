@@ -15,9 +15,6 @@
 #include "PluEngine/Effects/Particles/ParticleEmitterInstance.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "PluEngine/Render/GLFrameBuffer.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include <glad/glad.h>
 #include <chrono>
 #include <cmath>
 
@@ -122,24 +119,12 @@ void Plu::ParticlePreviewPanel::DrawPreview(float deltaTime)
 
 	if (ImGui::CollapsingHeader("CPU benchmark")) DrawBenchmark();
 
-	FrameBuffer* renderFBO = gApplicationInfo->AppRenderingManager->RequestMainFrameBuffer().GetRaw();
-	if (!renderFBO || renderFBO->GetHeight() == 0) return;
-
-	const ImVec2 available = ImGui::GetContentRegionAvail();
-	if (available.x <= 1.0f || available.y <= 1.0f) return;
-	const float textureAspect = static_cast<float>(renderFBO->GetWidth()) / static_cast<float>(renderFBO->GetHeight());
-	ImVec2 imageSize;
-	if (available.x / available.y > textureAspect) {
-		imageSize.y = available.y;
-		imageSize.x = imageSize.y * textureAspect;
-	} else {
-		imageSize.x = available.x;
-		imageSize.y = imageSize.x / textureAspect;
-	}
+	// No renderer yet: the preview is an empty area of the available size.
+	const ImVec2 imageSize = ImGui::GetContentRegionAvail();
+	if (imageSize.x <= 1.0f || imageSize.y <= 1.0f) return;
 
 	const ImVec2 imagePos = ImGui::GetCursorScreenPos();
-	const ImTextureID texture = (ImTextureID)(intptr_t)renderFBO->GetColorTexture()->GetID();
-	ImGui::Image(texture, imageSize, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::Dummy(imageSize);
 
 	if (viewport && viewport->NeedsFraming && spawner) {
 		FrameCamera(Vec2(imageSize.x, imageSize.y));

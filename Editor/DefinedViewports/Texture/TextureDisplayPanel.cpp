@@ -6,12 +6,7 @@
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 
 #include "PluEngine/Application.h"
-#include "PluEngine/AssetTypes/Material/Material.h"
-#include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 #include "PluEngine/AssetTypes/Texture/Texture.h"
-#include "PluEngine/Render/RenderingManager.h"
-#include "PluEngine/Render/GLTexture.h"
-#include "PluEngine/AssetTypes/ShaderCode.h"
 
 extern Plu::ApplicationInfo* gApplicationInfo;
 
@@ -34,40 +29,8 @@ void Plu::TextureDisplayPanel::OnUpdate(float deltaTime)
 	{
 		TUsePointer<TextureInfo> textureInfo = gApplicationInfo->AppAssetManager->GetAssetData(GetParentViewport()->GetAssetDescriptor());
 		if (textureInfo) {
-			TUsePointer<Texture> texture = gApplicationInfo->AppRenderingManager->GetTextureForInfo(textureInfo);
-			if (!texture) {
-				gApplicationInfo->AppRenderingManager->RequestTextureFromInfo(textureInfo);
-			} else {
-				ImVec2 viewportSize = ImGui::GetContentRegionAvail();
-
-				float availW = viewportSize.x;
-				float availH = viewportSize.y;
-
-				float texAspect = (float)textureInfo->RawData.Width / (float)textureInfo->RawData.Height;
-				float availAspect = availW / availH;
-
-				ImVec2 imageSize;
-
-				// Dopasowanie bez zniekształcenia:
-				if (availAspect > texAspect) {
-					// Obszar UI jest bardziej poziomy → ograniczamy wysokość
-					imageSize.y = availH;
-					imageSize.x = imageSize.y * texAspect;
-				} else {
-					// Obszar UI jest bardziej pionowy → ograniczamy szerokość
-					imageSize.x = availW;
-					imageSize.y = imageSize.x / texAspect;
-				}
-
-				// Uzyskaj ID tekstury (ważne: to musi być zwykła tekstura, nie multisample!)
-				GLuint texID = texture->GetID();
-
-				// ImGui chce "ImTextureID"
-				ImTextureID imguiTex = (ImTextureID)(intptr_t)texID;
-
-				// Uwaga: OpenGL odwraca oś Y → dlatego UV są odwrotnie.
-				ImGui::Image(imguiTex, imageSize, ImVec2(0,1), ImVec2(1,0));
-			}
+			// No renderer yet, so no GPU texture to show: only what the asset itself knows.
+			ImGui::Text("%d x %d", textureInfo->RawData.Width, textureInfo->RawData.Height);
 		}
 	}
 	EndPanel();

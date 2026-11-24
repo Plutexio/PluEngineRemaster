@@ -30,7 +30,7 @@ namespace Plu
 		bool IsAssetCreatable() override;
 #endif
 		String GetSupportedAssetType() override;
-		bool LoadAssetData(TUsePointer<AssetDescriptor> assetDesc, TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager) override;
+		bool LoadAssetData(TUsePointer<AssetDescriptor> assetDesc, TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager) override;
 	};
 }
 

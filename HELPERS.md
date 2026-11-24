@@ -365,321 +365,40 @@ Editor-only drawing (`Editor/DefinedViewports/BlendSpace/BlendSpaceDrawing.h`): 
 
 ---
 
-## Renderer / cienie — `PluEngine/Renderer/RenderUtils.h` (`namespace Plu`)
+## Render utils — `PluEngine/Render/RenderUtils.h` (`namespace Plu`)
 
-Stałe kamery: `kCameraNearClip = 0.1f`, `kCameraFarClip = 100000.0f`. Zasięg cieni nie jest już globalną stałą — to ustawienie per światło (`DirectionalLight::ShadowDistance`, domyślnie 150 m).
+The OpenGL renderer is gone (shadows, culling, shader introspection, GL resource wrappers, the ImGui
+render handoff); what is left here is API-agnostic. Camera constants: `kCameraNearClip = 0.1f`,
+`kCameraFarClip = 100000.0f`.
 
-| Funkcja | Opis |
+| Function | Description |
 |---|---|
-| `DynamicArray<Vec3> GetFrustumCornersWorldSpace(const Matrix4& proj, const Matrix4& view)` | 8 narożników frustum w przestrzeni świata (alokuje). |
-| `void GetFrustumCornersWorldSpace(const Matrix4& proj, const Matrix4& view, Vec3 Out[8])` | Wariant bez alokacji — pisze do tablicy wywołującego. Używany na ścieżce kaskad (per klatka). |
-| `Matrix4 GetCascadeProjectionMatrix(float fovY, float aspect, float near, float far)` | Projekcja perspektywiczna pod-frustum jednej kaskady. |
-| `void ComputeCascadeSplits(const CascadeConfig&, float NearClip, DynamicArray<float>& Out)` | Podział `[NearClip, ShadowDistance]` na `CascadeCount` odległości (`SplitLambda`: 0=liniowy, 1=logarytmiczny). `Out` jest `Clear()`owane — capacity zostaje, więc w ustalonym stanie zero alokacji. |
-| `Int32 ComputeAutoPcfTapCount(float PcfRadiusTexels)` | Liczba tapów PCF, która dokładnie pokrywa dysk o danym promieniu: `ceil(pi * r²)`, clamp do `[1, kMaxShadowPcfTaps]`. Jeden tap to sprzętowe 2x2, czyli uśrednia ~1 teksel², więc dysk o polu `pi*r²` tekseli potrzebuje tylu tapów — mniej daje obrączki na miękkiej krawędzi, więcej czyta drugi raz to samo. Używane przez `Renderer::ClampShadowSettings`, gdy `DirectionalLight::ShadowPcfAutoTaps` jest włączone. |
-| `void ComputeCascadeMatrices(cameraView, fovY, aspect, nearClip, lightDir, config, splits, Out, perCascadeRes = nullptr)` | Macierze światła (proj*view) wszystkich kaskad CSM do `Out` (też bez alokacji). **Stabilność**: stała baza światła (`lookAt(-lightDir, 0, up)` — nic z kamery), promień sfery zaokrąglany w górę do 1/16 m, snap środka do siatki teksela **w tej bazie** (snap w bazie zależnej od kamery jest matematycznym no-opem). Bez marginesu near — pass cieni używa `GL_DEPTH_CLAMP` (pancaking). `perCascadeRes` to rozdzielczości **tego samego** zestawu, z którego zbudowano atlas — niezgodność wsadza snap na nieistniejącą siatkę. |
-| `void ComputeCascadeResolutions(Int32 BaseResolution, Int32 Count, Int32 Falloff, Int32* Out)` | Rozdzielczość każdej kaskady: `Base >> (i / Falloff)`, podłoga `kMinCascadeResolution`. `Falloff <= 0` → wszędzie `Base`. Wynik jest nierosnącym ciągiem potęg dwójki, czego wymaga pakowanie atlasu niżej. |
-| `void BuildShadowAtlasLayout(const Int32* Resolutions, Int32 Count, ShadowAtlasRect* OutRects, Int32& OutW, Int32& OutH)` | Pakuje kwadraty kaskad w jeden atlas (shelf packing, szerokość = największa kaskada). Dla nierosnącego ciągu potęg dwójki każda półka wypełnia się dokładnie, więc marnuje się tylko ogon ostatniej (0–7%). Atlas kwadratowy o boku potęgi 2 marnowałby dużo więcej: `{2048,2048,1024,1024,512}` mieści się w 2048x5632, ale wymagałoby 4096². |
-
-`struct ShadowCascadeData { Matrix4 ViewProj; float SplitDistance; float TexelWorldSize; float Radius; float DepthRange; Int32 Resolution; }` —
-`TexelWorldSize` (= `2*Radius/Resolution`) niesie normal-offset odbiorcy, `DepthRange` przelicza bias w metrach na `[0,1]` głębi kaskady,
-`Resolution` to bok kwadratu tej kaskady w atlasie (kaskady nie mają już wspólnej rozdzielczości).
-
-`struct ShadowAtlasRect { Int32 X, Y, Size; }` — kwadrat jednej kaskady w atlasie, w tekselach.
-
-`struct CascadeConfig { Int32 CascadeCount; float ShadowDistance; float SplitLambda; Int32 Resolution; Int32 ResolutionFalloff; }`
-— `Resolution` dotyczy **najbliższej** kaskady, reszta schodzi w dół według `ResolutionFalloff`.
-
-`Plu::kMaxShadowCascades` (= 6) wymiaruje tablicę w bloku GLSL `ShadowData` — jedno miejsce, żaden
-`#define` nie jest synchronizowany ręcznie. To **tylko górna granica tablicy**: liczba passów głębi
-to `DirectionalLight::ShadowCascadeCount`, więc podniesienie stałej nic nie kosztuje per klatkę.
-`Plu::kMinCascadeResolution` (= 256) to podłoga falloffu.
-`Plu::kMaxShadowPcfTaps` (= 32) odpowiada `MAX_PCF_TAPS` w `PBR.frag` (limit pętli filtra PCF).
-
-`struct ShadowDataGPU` — mirror std140 bloku `ShadowData` (**UBO binding 2**) z PBR.frag: tablica
-`ShadowCascadeGPU` (macierz + `AtlasScaleBias` + `Params`), `InvAtlasSize`, fade, blend,
-`CascadeCount`, flaga debug, `PcfTapCount`, `PcfRotateSamples` oraz parametry contact shadows
-(`ContactShadowSteps` = 0 to JEDYNY wyłącznik czytany przez shader — wszystko, co je wyłącza,
-zwija się do niego w `UpdateShadowDataBuffer`). Wypełniany i uploadowany
-**bezwarunkowo co klatkę** przez `Renderer::UpdateShadowDataBuffer` (bez światła → `CascadeCount = 0`),
-więc shadery nigdy nie czytają stanu z poprzedniej klatki. Offsety pilnowane `static_assert`ami —
-przy zmianie struktury zmień **oba** miejsca (C++ i GLSL).
-
-`struct ShadowCascadeGPU { Matrix4 ViewProj; Vec4 AtlasScaleBias; Vec4 Params; }` (96 B) — struktura,
-nie równoległe tablice, bo w std140 tablica skalarów ma stride 16 B: stary układ upychał cztery
-kaskady w jeden `vec4` i to właśnie ograniczało liczbę kaskad do czterech. `AtlasScaleBias` mapuje
-`[0,1]` kaskady na UV atlasu (`uv = proj.xy * xy + zw`), `Params` = (split, teksel w metrach,
-bias w `[0,1]`, wolne).
-
-### Ostrość cieni kierunkowych
-
-Filtr PCF w `PBR.frag` to **dysk Vogela** (`VogelDiskSample`, złoty kąt) o `pcfTapCount` próbkach
-i promieniu `pcfRadiusTexels`, opcjonalnie obracany per piksel przez `InterleavedGradientNoise`
-(`gl_FragCoord`). Każdy tap to sprzętowe porównanie `sampler2DShadow`, czyli już 2x2 PCF.
-`pcfRadiusTexels == 0` lub `pcfTapCount == 1` zwija filtr do jednego pobrania — najostrzejsza
-krawędź, jaką mapa potrafi dać.
-
-Kaskady dzielą **jeden atlas 2D**, nie tablicę tekstur — każda ma własny kwadrat i własną
-rozdzielczość (`ShadowResolutionFalloff`). Konsekwencje dla shadera: (1) poza `[0,1]` kaskady trzeba
-zwrócić 1.0 **jawnie**, bo sąsiadem w atlasie jest inna kaskada, a nie kolor bordera; (2) dysk PCF
-jest clampowany do prostokąta kaskady z zapasem pół teksela, bo sprzętowy tap jest bilinearny;
-(3) promień w tekselach przelicza się na UV jednym `invAtlasSize` — teksel atlasu **jest** tekselem
-kaskady, niezależnie od jej rozdzielczości.
-
-Liczba tapów **nie jest suwakiem jakości** — to budżet próbek, który musi nadążyć za promieniem.
-Dlatego `DirectionalLight::ShadowPcfAutoTaps` (domyślnie **on**) wylicza ją z promienia przez
-`ComputeAutoPcfTapCount` i `ShadowPcfTaps` jest wtedy ignorowane. Skala: promień 1,5 teksela →
-8 tapów, 3,0 → 29, 4,0 i wyżej → limit 32. Stąd bierze się typowe „32 tapy wyglądają jak 8" —
-przy małym promieniu ósemka pokrywa dysk w całości i nadmiar próbek liczy w kółko to samo.
-Rozdzielczanie do konkretnej liczby dzieje się na CPU (`Renderer::ClampShadowSettings`), więc UBO
-i statystyki pokazują liczbę faktycznie próbkowaną, nie tryb.
-
-Dwie osie sterują wyglądem krawędzi i mylenie ich to najczęstszy błąd:
-
-- **Ostrość** = szerokość półcienia → `ShadowPcfRadius` (mniej = ostrzej).
-- **Pikselowatość** = teksel kaskady większy niż piksel ekranu → `ShadowResolution`
-  (512…8192, dotyczy **najbliższej** kaskady), `ShadowCascadeCount`, `ShadowDistance`,
-  `ShadowSplitLambda`. Sam mniejszy promień PCF tego **nie naprawi** — odsłoni.
-
-### Contact shadows (screen-space) i depth prepass
-
-Kaskada nie rozdziela milimetrów — jej teksel ma stały rozmiar w metrach i rośnie z kwadratem
-odległości splitu, więc detal poniżej ~2 cm przestaje rzucać cień długo przed końcem zasięgu.
-**Contact shadows** liczą cień per PIKSEL EKRANU: krótki promień (`ContactShadowLength`, metry)
-maszerowany w przestrzeni widoku, rzutowany na ekran i porównywany z głębią sceny. Nie mają
-schodków z definicji, bo ich „teksel" jest pikselem. Widzą wyłącznie to, co jest w buforze głębi —
-nic spoza kadru ani zza innych obiektów — więc to **dodatek do kaskad na krótkim dystansie**, nie
-ich zamiennik. Podział pracy: kaskady niosą scenę, contacty niosą detal.
-
-Próbki wzdłuż promienia są rozłożone **kwadratowo**, nie równomiernie: przy 16 krokach na 25 cm
-pierwsza wypada ~1 mm od powierzchni, kolejne co 3–7 mm, a dalekie rozciągają się do centymetrów.
-To nie kosmetyka — równomierny rozkład dawał jedną rozdzielczość na cały promień
-(25 cm / 12 = **2,1 cm**), grubszą niż detal, który miał rzucić cień, więc promień nad nim
-przeskakiwał i contact shadows „działały", nie dając nic widocznego. Z tego samego powodu
-`ContactShadowBias` musi być **mniejszy niż detal** — to martwy dystans na starcie każdego
-promienia (domyślnie 2 mm; centymetr chował całe detale za pierwszą próbką).
-
-Wynik jest **wygaszany przy świetle stycznym** (`smoothstep(0, 0.3, N·L)`). To nie kosmetyka:
-przy takim kącie promień biegnie niemal równolegle do powierzchni i o trafieniu decyduje
-dyskretyzacja bufora głębi, a nie geometria — to źródło resztki acne, której bias już nie usuwa
-(a przy wartościach, które by ją usunęły, zaczyna zjadać detale). Te same miejsca mają `N·L`
-bliskie zeru, więc są ledwo oświetlone i cień kontaktowy nie ma tam czego przyciemnić — oddajemy
-pole dokładnie tam, gdzie efekt jest niewidoczny, a artefakt najsilniejszy.
-
-Bias działa na DWIE strony: wzdłuż promienia (żeby pierwsza próbka nie trafiła we własny fragment)
-**oraz wzdłuż normalnej, skalowany `tan(θ)` kąta padania**. Ta druga część jest tą, która usuwa
-acne: przy świetle padającym stycznie promień biegnie prawie równolegle do powierzchni, więc
-przesuwanie go do przodu nie oddala go od niej i pierwsze próbki łapią własną geometrię — widać to
-jako szarpane, postrzępione zaciemnienie na płaskich powierzchniach. Reguła `tan` jest ta sama,
-której używają biasy kaskad.
-
-**Distance limits (pixel footprint).** A screen pixel grows linearly with distance
-(`PixelWorldSize(depthView)` in the lit shaders — ~13 cm at 100 m, 1080p, 70° FOV), so a
-fixed-metre ray and a fixed-millimetre bias stop meaning anything far away: each sample reads the
-depth at its pixel's centre, up to half a pixel sideways, and a 2 mm bias no longer lifts the ray
-above its own surface — every distant lit surface shadowed itself. Two rules fix it: the effective
-bias is `max(ContactShadowBias, pixelWorld)` (one pixel along the normal is enough at any view
-angle), and the whole result fades out by `smoothstep(2, 4, ContactShadowLength / pixelWorld)` —
-i.e. by how many pixels the ray spans, so the cut-off moves out with resolution and in with FOV.
-This fade is separate from the cascade fade on purpose: contact shadows are combined with `min()`
-after it, so the cascade fade never reached them.
-
-Parametry na `DirectionalLight`: `ContactShadows`, `ContactShadowLength` (0…1 m),
-`ContactShadowSteps` (4…`kMaxContactShadowSteps` = 64, tyle pobrań głębi na oświetlony piksel —
-to jedyne realne pokrętło wydajności; podniesienie zagęszcza przede wszystkim BLISKIE próbki),
-`ContactShadowThickness` (zakładana grubość okludera;
-bufor głębi trzyma powierzchnię, nie bryłę, więc bez górnego ograniczenia tło zasłaniałoby
-wszystko przed sobą), `ContactShadowBias`. Wynik łączy się z kaskadą przez `min()` — mnożenie
-podwajałoby zaciemnienie tam, gdzie oba źródła widzą ten sam okluder.
-
-`CastShadows` wyłącza je razem z kaskadami — to wyłącznik cieni **całego światła**, nie tylko CSM.
-Wspólny predykat `Renderer::AreContactShadowsActive` trzyma to w jednym miejscu i steruje **także
-pominięciem prepassa**: bez konsumenta cały pass geometrii byłby czystym kosztem. Dokładając
-kolejnego konsumenta głębi sceny (SSAO, SSR) dopisz go do tego predykatu, inaczej dostanie bufor,
-którego nikt w tej klatce nie odświeżył.
-
-Karmi je **depth prepass** (`Renderer::RenderDepthPrepass`, `mDepthPrepassBuffer`), pass 0 klatki:
-- osobny FBO `FrameBufferType::DepthOnly` (D32F — precyzja idzie wprost w linearyzację głębi
-  w promieniu);
-- rysuje shaderami głębi **dokładnie to**, co pass oświetlenia: zakres kamery w `CullShadowCasters`
-  jest kopiowany z `batch.VisibleCount` (culling z MAIN), a **nie** cullowany ponownie — instancja
-  obecna w głębi, ale nieobecna w kolorze, zasłania bez cieniowania, czyli robi czarną dziurę;
-- **Exception: components with `CastsShadow = false` are left out** (static batches and skeletal
-  meshes alike), so the flag turns off their contact shadows too — they neither shadow their
-  surroundings nor themselves. Leaving geometry OUT is safe: there is no early-Z, and every ray
-  starts from the shaded fragment's own position, not from the prepass depth;
-- **NIE daje early-Z i celowo nie blituje głębi do głównego bufora.** Shadery głębi liczą
-  `gl_Position` inaczej niż shadery materiałów — `lightSpaceMatrix * model * skinMatrix * pos`
-  (gdzie `proj*view` złożono na CPU) kontra `projection * view * model * (skinMatrix * pos)`.
-  Matematycznie to samo, ale inne grupowanie mnożeń to inne zaokrąglenia, więc wyniki różnią się
-  o kilka ulp. Pass oświetlenia testujący `GL_LEQUAL` przeciw takiej głębi gubi przegrywające
-  fragmenty do tła — plamy na modelach, najgorzej na skeletal meshach (najdłuższy łańcuch mnożeń).
-  Early-Z wymaga, żeby oba passy liczyły pozycję **tą samą ekspresją** (plus `invariant
-  gl_Position`); do tego czasu prepass istnieje wyłącznie po to, by karmić contact shadows.
-
-Tekstura głębi sceny siedzi na slocie **13** (`sceneDepthTexture`, bez samplera porównującego) —
-samplery silnika rosną od 15 w dół. Jest **osobnym obiektem** od bufora głębi passa oświetlenia:
-samplowanie własnego załącznika to feedback loop.
-
-`ShadowResolutionFalloff` (domyślnie 2) połowi rozdzielczość co N kaskad. Teksel kaskady rośnie
-mniej więcej z kwadratem jej odległości, więc dalekie kaskady i tak liczą w decymetrach — oddanie
-im tylu tekseli co bliskiej to czysta strata. Przy 4 kaskadach i 2048 daje to atlas 2048x5120
-(40 MB, 10,5 MPix) zamiast 2048x8192 (64 MB, 16,8 MPix) bez różnicy z bliska. `0` = wszystkie
-kaskady w `ShadowResolution`, czyli dokładnie dawne zachowanie.
-
-`ShadowPcfRotate` jest półśrodkiem między nimi: rozbija schodki na dither szerokości piksela, więc
-mały promień wygląda ostro zamiast blokowo. Kosztem jest lekki szum na krawędzi (bez temporalnego
-wygładzania nie ma go czym uśrednić) — wyłącz, jeśli w danej scenie przeszkadza bardziej niż schodki.
-
-VRAM mapy cieni to pole atlasu × 4 B (D32F), czyli suma kwadratów kaskad po falloffie plus ogon
-ostatniej półki — przy 4 kaskadach i 2048 wychodzi 40 MB (`ShadowResolutionFalloff = 2`) zamiast
-64 MB przy jednolitych. Bazowe 4096 daje 176 MB przy 5 kaskadach; 8192 łącz z mniejszym
-`ShadowDistance` albo mniejszą liczbą kaskad. Atlas rosnący ponad `GL_MAX_TEXTURE_SIZE` nie gasi
-cieni — `Renderer::BuildCascadeAtlas` schodzi z bazową rozdzielczością o połowę, aż się zmieści.
-
-### Frustum culling — `PluEngine/Renderer/RenderUtils.h`
-
-| Funkcja | Opis |
-|---|---|
-| `Frustum ExtractFrustumPlanes(const Matrix4& viewProj)` | 6 płaszczyzn frustum (Gribb-Hartmann, znormalizowane) z macierzy view*proj. `struct Frustum { Vec4 Planes[6]; }` — `(nx,ny,nz,d)`, wewnątrz gdy `dot(n,p)+d >= 0`. |
-| `bool SphereInFrustum(const Frustum&, const Vec3& center, float radius)` | Test sfera-vs-frustum (6 testów płaszczyzna-punkt). |
-| `bool SphereInFrustumNoNear(const Frustum&, const Vec3& center, float radius)` | To samo bez płaszczyzny near. **Tego** używa culling casterów **kaskad**: pass kaskad renderuje z `GL_DEPTH_CLAMP`, więc caster przed płaszczyzną near jest spłaszczany NA nią i dalej zasłania — test near wyciąłby dokładnie obiekty między światłem a sceną. Sloty cieni spotów są odwrotnie: **nie** mają depth clampa (pancaking pod projekcją perspektywiczną tworzy fałszywy cień przy wierzchołku stożka), więc używają zwykłego `SphereInFrustum`. |
-
-### Światła stożkowe — `PluEngine/Renderer/RenderUtils.h`
-
-Stałe: `kMaxVisibleSpotLights` (64, rozmiar SSBO 5 — nadmiar odrzuca MAIN po ważności), `kMaxSpotShadowSlots` (8, warstwy atlasu cieni), `kSpotShadowResolution` (1024, ~32 MB na cały atlas), `kSpotShadowNearClip` (0.05 m).
-
-| Funkcja | Opis |
-|---|---|
-| `void ComputeSpotBoundingSphere(apex, dir, range, halfAngleRad, OutCenter, OutRadius)` | Sfera opisana na stożku, do cullingu światła względem frustum kamery. Dwa przypadki, bo najmniejsza sfera zmienia charakter na 45°: półkąt ≤ 45° → środek na osi w `range / (2·cos²θ)`, promień taki sam (sfera dotyka wierzchołka i obręczy); powyżej → środek w `range·cosθ`, promień `range·sinθ` (najszersza jest sama podstawa). Znacznie ciaśniejsza niż sfera o promieniu `range` wokół wierzchołka, a to **jedyny** test decydujący, czy światło w ogóle trafi na GPU. |
-| `Matrix4 ComputeSpotLightMatrix(apex, dir, range, outerHalfAngleRad)` | Macierz light-space mapy cienia spota: kwadratowa projekcja perspektywiczna o FOV = pełny kąt zewnętrzny, `near = kSpotShadowNearClip`, `far = range`. Wektor „up" to oś świata najmniej równoległa do `dir` — bez tego `lookAt` degeneruje się dla lampy świecącej pionowo w dół (czyli typowego przypadku). |
-| `void AppendConeWireframe(OutLineVerts, apex, dir, range, halfAngleRad, color, segments = 24, maxHalfAngleRad = π/2 - 0.01)` | Dopisuje wireframe stożka (okrąg podstawy + 4 szprychy z wierzchołka) do bufora linii interleaved pos(3)+color(3) — tego samego formatu, co debug fizyki, więc rysuje go istniejący pass `RenderDebugGeometry` bez nowego shadera. Obręcz leży na **sferze** o promieniu `range`, nie na płaskiej pokrywie — tam realnie kończy się światło. The half-angle is clamped to `maxHalfAngleRad` (just under 90° by default, the spot light limit); pass up to `π` for cones wider than a hemisphere (particle launch cones). |
+| `DynamicArray<Vec3> GetFrustumCornersWorldSpace(const Matrix4& proj, const Matrix4& view)` | The 8 frustum corners in world space (allocates). |
+| `void GetFrustumCornersWorldSpace(const Matrix4& proj, const Matrix4& view, Vec3 Out[8])` | Same without allocating — writes into the caller's array. |
+| `void AppendConeWireframe(OutLineVerts, apex, dir, range, halfAngleRad, color, segments = 24, maxHalfAngleRad = π/2 - 0.01)` | Appends a cone wireframe (base circle + 4 spokes from the apex) to a line buffer, interleaved pos(3)+color(3) — the physics debug format. The rim lies on the **sphere** of radius `range`, not on a flat cap. The half-angle is clamped to `maxHalfAngleRad` (just under 90° by default, the spot light limit); pass up to `π` for cones wider than a hemisphere (particle launch cones). |
 | `void AppendSphereWireframe(OutLineVerts, center, radius, color, segments = 32)` | Sphere wireframe as three axis-aligned great circles, same line format as `AppendConeWireframe`. Both are the low-level builders behind `DebugDrawAdapter::DrawDebugCone/DrawDebugSphere` — to draw into a scene, use the adapter (section Physics → Debug drawing), not these directly. |
 
-### Static mesh: draw calls i bounding box — `PluEngine/AssetTypes/StaticMesh/StaticMesh.h`, `PluEngine/AssetTypes/MeshBounds.h`
+### Mesh bounding boxes — `PluEngine/AssetTypes/MeshBounds.h`, mesh components
 
-| Symbol | Opis |
+| Symbol | Description |
 |---|---|
-| `void DrawStaticMesh(const StaticMesh*, RenderingManager*)` | Jeden `glDrawElements`. |
-| `void DrawStaticMeshInstanced(const StaticMesh*, RenderingManager*, UInt32 instanceCount)` | Jeden `glDrawElementsInstanced` — `instanceCount` instancji naraz, dane per-instancja idą przez SSBO `InstanceMatrices` (indeks `gl_InstanceID` + uniform `instanceBaseIndex`, patrz `Renderer::RenderSnapshot` i `Renderer::RenderShadowPass`). Wywołuje `OnStaticMeshRender` **raz**, nie N razy (to flaga żywotności dla eviction, nie licznik populacji). Programy z blokiem `InstanceMatrices` (`BasicVertInstanced.vert`, `OnlyPositionInstanced.vert`) celowo **nie mają** `uniform mat4 model` — dla nich to jedyna poprawna ścieżka rysowania, niezależnie od liczby instancji. |
-| `EngineAssets::OnlyPositionInstancedShader` | Shader głębi (SSBO `InstanceMatrices`) dla static meshy w mapach cieni (`Renderer::RenderShadowPass`) — silnikowy, **zawsze** instanced (nie opt-in per materiał jak główny pass, bo depth pass nie używa materiału sceny). Zastąpił dawny `OnlyPositionShader`, który wraz z `OnlyPosition.vert` został usunięty. |
-| `BoundingBox CreateBoundingBoxForStaticMesh(StaticMesh*)` | Chodzi po **każdym wierzchołku** — nigdy per klatka, cache'uj (patrz `StaticMeshComponent::MeshBoundingBoxComputed` / `InstancedStaticMeshComponent`). |
-| `BoundingBox CreateBoundingBoxForSkeletalMesh(SkeletalMesh*)` | To samo dla skeletal mesha (bind pose). Cache'owane w `SkeletalMeshComponent::MeshBoundingBox` + `MeshBoundingBoxComputed`. Animacja wypycha wierzchołki poza te bounds — `RenderSnapshotBuilder` rozdmuchuje promień przed użyciem do cullingu. |
-| `StaticMeshComponent::MeshBoundingBox` / `MeshBoundingBoxComputed` | Bounding box (local space) komponentu; `MeshBoundingBoxComputed` to twardy guard — liczony raz w `SetStaticMesh` (jeśli mesh już załadowany) albo leniwie w `RenderSnapshotBuilder`, gdy mesh dojedzie asynchronicznie. |
+| `BoundingBox CreateBoundingBoxForStaticMesh(StaticMesh*)` | Walks **every vertex** — never per frame, cache it (see `StaticMeshComponent::MeshBoundingBoxComputed` / `InstancedStaticMeshComponent`). |
+| `BoundingBox CreateBoundingBoxForSkeletalMesh(SkeletalMesh*)` | Same for a skeletal mesh (bind pose). Cached in `SkeletalMeshComponent::MeshBoundingBox` + `MeshBoundingBoxComputed`. Animation pushes vertices outside these bounds — inflate the radius before culling with it. |
+| `StaticMeshComponent::MeshBoundingBox` / `MeshBoundingBoxComputed` | Local-space bounding box of the component; `MeshBoundingBoxComputed` is the hard guard — computed once in `SetStaticMesh` when the mesh is already loaded (`StaticMesh::IsLoaded`, i.e. GPU-resident — nothing sets it until the Vulkan renderer uploads meshes). |
 | `void StaticMeshComponent::SetMeshBoundingBox(const BoundingBox&)`, `void InstancedStaticMeshComponent::SetMeshBoundingBox(const BoundingBox&)` | The only supported way to change `MeshBoundingBox`: sets it, raises `MeshBoundingBoxComputed` and drops the cached world bounds derived from it. Assigning the field directly leaves those caches on the old box. |
-| `void StaticMeshComponent::GetWorldBoundingSphere(Vec3& center, float& radius)` | World-space bounding sphere of the component (local box through the world transform), cached against `GetTransformVersion()` — a component that did not move answers from memory. This is what `RenderSnapshotBuilder` puts into `InstanceCullData` per instance per frame. |
-| `const DynamicArray<InstanceBoundingSphere>* InstancedStaticMeshComponent::GetInstanceWorldBounds()` | Per-instance world spheres, parallel (same index) to `GetInstanceWorldMatrices()` / `GetInstanceNormalMatrices()` and built in the same cache rebuild. Deriving them per frame in the snapshot builder cost three `glm::length` plus a matrix-vector product per instance. |
+| `void StaticMeshComponent::GetWorldBoundingSphere(Vec3& center, float& radius)` | World-space bounding sphere of the component (local box through the world transform), cached against `GetTransformVersion()` — a component that did not move answers from memory. |
+| `const DynamicArray<InstanceBoundingSphere>* InstancedStaticMeshComponent::GetInstanceWorldBounds()` | Per-instance world spheres, parallel (same index) to `GetInstanceWorldMatrices()` / `GetInstanceNormalMatrices()` and built in the same cache rebuild. |
 
-### Introspekcja shaderów — `PluEngine/Shaders/ShaderProgram.h`
+### Engine asset constants — `ReflectionCache/EngineAssets.h`
 
-| Symbol | Opis |
-|---|---|
-| `bool ShaderProgram::HasBoneMatricesBlock()` | Czy zlinkowany program deklaruje blok SSBO `BoneMatrices` (vertex skinning). GL query cache'owane per link (reset przy `UnloadProgram`/`LoadFromBinary`); wołać z **render threadu** po `IsLoaded()`. Renderer używa tego do warninga, gdy skeletal mesh dostaje materiał bez skinningu (mesh stałby w bind pose po cichu). |
-| `bool ShaderProgram::HasInstanceDataBlock()` | Jak wyżej, dla bloku SSBO `InstanceMatrices` (instancing static meshy). Renderer używa tego do wyboru `DrawStaticMeshInstanced` vs fallback per-obiekt (opt-in: materiał na programie bez tego bloku renderuje się identycznie jak dziś). |
-| `ShaderProgram::Set*Uniform(...)` | Settery uniformów: lokacja cache'owana per nazwa (jeden lookup `Find`), **no-op bez żadnego wywołania GL**, gdy uniform nie istnieje w programie (lokacja -1) — ustawianie uniformów globalnych na wszystkich programach jest tanie. `SetTextureUniform` przy braku uniformu **nie binduje** tekstury. |
-| `static ShaderProgram::ResetBindCache()` | `ShaderProgram::Bind()` deduplikuje `glUseProgram` cache'em aktualnie zbindowanego programu (render thread only). Wołać po każdym miejscu, które binduje/kasuje program **poza** `ShaderProgram::Bind` (np. backend ImGui) — `Renderer::RenderSnapshot` robi to na starcie każdej klatki, `UnloadProgram` przy kasowaniu. |
+`Plu::EngineAssets::*` (one `UInt64` UUID per `.pluasset` under `EngineAssets/`) is refreshed by the
+**build**: `EngineAssetsIndexer.py` hangs on the `EngineAssetsIndex` target, which `Engine` depends on, so
+it runs **before** compilation and only when a `.pluasset` or the script itself changes. No manual run.
 
-**Punkty bindingu buforów (silnikowa konwencja, nie zmieniać bez powodu):**
-
-| Binding | Blok | Kto binduje |
-|---|---|---|
-| SSBO `0` | `BoneMatrices` — palety skinningu **wszystkich** skeletal meshy klatki | `Renderer::UploadSkeletalPalettes`, raz na klatkę |
-| SSBO `1` | `InstanceMatrices` — dane instancji static meshy | `Renderer::RenderSnapshot`, raz na klatkę |
-| UBO `2` | `ShadowData` — parametry cieni kaskadowych | `Renderer::UpdateShadowDataBuffer`, **bezwarunkowo** co klatkę |
-| SSBO `3` | `VisibleInstanceIndices` — indeksy casterów, które przeszły culling **wszystkich** frustów cieni klatki (najpierw kaskady, potem sloty spotów) | `Renderer::CullShadowCasters` |
-| UBO `4` | `SpotLightData` — `spotLightOffset` / `spotLightCount` / `invSpotShadowResolution` / `spotShadowSlotCount` | `Renderer::UpdateSpotLightBuffers`, **bezwarunkowo** co klatkę |
-| SSBO `5` | `SpotLights` — `SpotLightGPU[]`, wszystkie widoczne światła stożkowe klatki | `Renderer::UpdateSpotLightBuffers` |
-| SSBO `6` | `SpotLightIndices` — `uint[]`, lista indeksów, po której iteruje shader | `Renderer::UpdateSpotLightBuffers` |
-
-Atlas map cieni kaskadowych siedzi na slocie tekstury **15** (ostatnim gwarantowanym przez GL 4.5), atlas cieni spotów na **14**, a tekstury materiału startują od **0** (`SetSlotsUsed(0)`). Samplery silnika rosną od 15 **w dół**, tekstury materiału od 0 w górę — nowy sampler silnikowy bierz z tego końca.
-
-**Bufor indeksów (SSBO 6) to inwestycja pod clustered forward.** Dziś zawiera `[0, count)`, a `spotLightOffset` wynosi 0 — jedna globalna lista. Po dodaniu clustered forward ten sam bufor trzyma listy per klaster, a `spotLightOffset`/`spotLightCount` pochodzą z lookupu do siatki; pętla w `PBR.frag` nie zmienia się wcale. Dlatego dane świateł idą **blokami**, a nie tablicą luźnych uniformów: członkowie bloków są niewidoczni dla `ShaderCodeParser`, więc nie zaśmiecają listy parametrów materiału.
-
-**Bufory spotów są alokowane raz na `kMaxVisibleSpotLights` i nigdy nie realokowane** — MAIN przycina snapshot do tego limitu, więc `BindBase` z `Initialize` zostaje ważny na całą sesję (patrz uwaga o `Resize` niżej).
-
-**Dlaczego nie slot 0:** `RenderFromMaterial` woła `SetTextureUniform` **tylko** dla samplerów, którym faktycznie przypisano teksturę — sampler bez tekstury zostaje na domyślnym slocie 0. Dwa samplery **różnych typów** (`sampler2D` materiału + `sampler2DShadow` kaskad albo `sampler2DArrayShadow` spotów) na tym samym slocie w jednym programie to `INVALID_OPERATION` przy rysowaniu; NVIDIA to ignoruje, Mesa odrzuca draw i scena robi się czarna. Zmieniając slot cieni zmień **oba** miejsca: `Renderer::kShadowTextureUnit` i `layout(binding = ...)` w `PBR.frag`.
-
-Wszystkie `BindBase` idą **po** ewentualnym `Resize` — `Resize` tworzy nowe ID bufora, a indeksowany punkt bindowania trzymałby skasowany. Palety skinningu liczy raz na klatkę `Renderer::BuildSkeletalPalettes` (płaski scratch + zakresy per obiekt), a `UploadSkeletalPalettes` wysyła je **jednym** uploadem; rysowanie adresuje swój zakres uniformem `paletteBaseIndex` (`BasicVertSkeletal.vert`, `OnlyPositionSkeletal.vert`). Analogicznie `instanceBaseIndex` — w passie głównym offset w `instances`, a w `OnlyPositionInstanced.vert` offset w `visibleIndices`.
-
-### Shadery oświetlenia — `EngineAssets/Shaders/`
-
-| `.frag` | Model | Parametry materiału | Cienie |
-|---|---|---|---|
-| `PBR.frag` | Cook-Torrance (GGX + Smith + Schlick), tonemapping Reinhard | albedo, normal, metallic, roughness, occlusion (mapa + skalar każdy), `ambientColor` | kaskady + spoty |
-| `StylizedLit.frag` | Czysty Lambert (`albedo * N·L`), bez specularu, **bez** roughness/metallic/AO, bez tonemappingu | `albedoColor`/`albedoMap`, `normalMap`+`normalStrength`, `ambientColor` | kaskady + spoty (identyczny kod) |
-| `CelShaded.frag` | Cel/toon: N·L **kwantowane** do `shadeSteps` pasów, cień progowany do binarnego, rim light | j.w. + `shadeSteps`, `bandSoftness`, `shadowTint`, `rimColor`, `rimPower` | kaskady + spoty (PCF liczony w pełni, progowany dopiero wynik) |
-| `UnlitSimpleColor.frag` | Brak oświetlenia — tryby debugowe (normalne, UV, głębia, kolory wierzchołków) | `BaseColor`, `DebugMode`, `ColorTexture` | brak |
-
-Każdy z nich obsługuje **wszystkie trzy** vertex shadery (`BasicVert` / `BasicVertInstanced` / `BasicVertSkeletal`) — program to para (vert, frag), więc nowy `.frag` to trzy nowe `.pluasset`, a **żadnego** nowego `.vert`. Wzorzec: `Static*Program`, `Static*InstancedProgram`, `Skeletal*Program`.
-
-**Typy parametrów materiału:** `RenderFromMaterial` ma settery dla `sampler2D` / `float` / `vec3` (oraz `bool`, którego PBR używa na flagach map). Liczbę całkowitą wystawiaj jako `float` i zaokrąglaj w shaderze — tak robi `shadeSteps` w `CelShaded.frag`.
-
-`StylizedLit.frag` i `CelShaded.frag` **powielają** z `PBR.frag` deklaracje bloków cieni (`ShadowData`, `SpotLightData`, `SpotLights`, `SpotLightIndices`), samplery (sloty 15 i 14) oraz funkcje `VogelDiskSample` / `InterleavedGradientNoise` / `FilterCascade` / `ShadowVisibility` / `SpotShadowVisibility`. Silnik **nie ma `#include` dla GLSL**, więc innej drogi nie ma — zmieniając format `ShadowDataGPU` / `SpotLightGPU` albo slot tekstury, przejdź przez **wszystkie trzy** pliki.
-
-**Uwaga przy cel shadingu:** progowany jest wyłącznie kąt padania i widoczność cienia. Tłumienie odległością i miękka krawędź stożka spota zostają **ciągłe** — pasmowanie ich rysuje koncentryczne obręcze na podłodze, co czyta się jako błąd, a nie jako styl. Funkcji pochodnych (`fwidth`) do antialiasingu pasów **nie używaj**: pętla po spotach jest pełna `continue`, a pochodne w niejednorodnym przepływie sterowania są niezdefiniowane — stąd `bandSoftness` jako stała szerokość przejścia.
-
-**Dodając nowy shader do `EngineAssets/`:** UUID kodu przydziela sam edytor przy starcie (`EditorShaderManager::ShaderCodeScan` → `EngineAssets/ShaderCodeUuids.json`), ale program `.pluasset` potrzebuje go **z góry** — przy ręcznym dodawaniu wpisz UUID do `ShaderCodeUuids.json` sam.
-
-Samo `EngineAssets.h` (stałe `Plu::EngineAssets::*`) odświeża **build**: `EngineAssetsIndexer.py` wisi na targecie `EngineAssetsIndex`, od którego zależy `Engine`, więc leci **przed** kompilacją i przelicza się dokładnie wtedy, gdy zmieni się któryś `.pluasset` albo sam skrypt. Ręczne uruchamianie nie jest potrzebne.
-
-**Uwaga przy dokładaniu podobnych generatorów:** to musi być osobny **target**, a nie `add_custom_command(TARGET ... PRE_BUILD)`. `PRE_BUILD` honoruje wyłącznie generator Visual Studio; na Ninja/Makefiles CMake degraduje go do `PRE_LINK`, czyli uruchamia **po** kompilacji, która wygenerowanego nagłówka potrzebuje. Generator refleksji radzi sobie mimo tego tylko dlatego, że ma dodatkowy bootstrap w `execute_process` na etapie konfiguracji.
-
-**Uwaga:** każdy nowy luźny uniform sterowany przez silnik musi trafić do `engineOnlyUniforms` w `PythonTools/ShaderCodeParser.py` w tej samej zmianie — inaczej parser wciągnie go jako parametr materiału i `RenderFromMaterial` nadpisze go zserializowaną wartością w środku klatki (w pliku udokumentowane dwa takie błędy). `RenderFromMaterial` pilnuje tego teraz także w runtime: parametr o nazwie silnikowej (`model`, `normalMatrix`, `view`, `projection`, `cameraPos`, `time`, `dirLightDir`, `dirLightColor`, `shadowCascades`, `instanceBaseIndex`, `paletteBaseIndex`) jest pomijany i raz na sesję logowany ostrzeżeniem. Sama lista w parserze nie wystarcza, bo chroni tylko materiały tworzone **po** jej rozszerzeniu — materiał zapisany wcześniej wiezie martwy wpis w swoim JSON-ie i nadpisywał nim wartość silnikową (tak `time = 0` w materiale trawy zatrzymał wiatr na fazie zero: shader liczył `sin(time + …)` z zerem co klatkę). Stary wpis znika z assetu przy ponownym zapisie materiału.
-
-### Pass głębi: warianty shaderów materiału — `Renderer::ResolveDepthProgram`
-
-Depth prepass i mapy cieni **nie** rysują już wszystkiego jednym silnikowym shaderem głębi. Dla każdego batcha renderer bierze **wariant głębi** materiału: jego własny vertex shader zlinkowany z `EngineShaders/Empty.frag`. Powód jest poprawnościowy: `OnlyPositionInstanced.vert` nie zna animacji wierzchołków z materiału, więc trawa odchylana wiatrem w passie oświetlenia trafiała do bufora głębi i do mapy cieni w pozycji spoczynkowej — cień stał w miejscu, a contact shadows marszowały po głębi geometrii, której na ekranie nie było.
-
-| Element | Zasada |
-|---|---|
-| Cache wariantów | Klucz to **UUID vertex shadera**, nie materiału — trzydzieści materiałów na `BasicVertInstanced.vert` dzieli jeden program głębi. `Renderer::mDepthVariants`, budowane leniwie na wątku renderu, zwalniane w `Shutdown`. |
-| Rejestracja | Wariant ląduje na liście `IShaderManager::GetRenderableShaderPrograms()`, więc dostaje uniformy globalne klatki i hot reload jak każdy inny program. Zbudowany w środku klatki łapie je dopiero od następnej (jedna klatka z `time = 0`). |
-| Parametry materiału | `RenderFromMaterial` leci **także** na wariancie — parametr materiału może sterować stopniem wiatru czy mapą przemieszczenia, a wariant to osobny program z własnym stanem uniformów. |
-| `view` / `projection` | Passy głębi ustawiają je **osobno**, nie premnożone (`ShadowCascadeData::View`/`Proj`, `Renderer::mSpotShadowViews`/`mSpotShadowProjs`). Dzięki temu materiałowy VS liczy `gl_Position` tym samym wyrażeniem we wszystkich passach — to był warunek wstępny wariantów, a przy okazji kasuje główną przeszkodę dla early-Z. |
-| Materiał nieinstancingowy | Wariant rysuje się tak jak w passie głównym: jeden draw na instancję z `model`/`normalMatrix` w uniformie. |
-| Skeletal | To samo, z jednym zabezpieczeniem: wariant bez bloku `BoneMatrices` (materiał bez skinningu w VS) wraca na silnikowy `OnlyPositionSkeletal` — inaczej cień byłby w bind pose. |
-
-**Konwencja dla własnych shaderów instancingu:** vertex shader musi adresować instancje przez blok widocznych indeksów, tak jak `BasicVertInstanced.vert`:
-
-```glsl
-layout(std430, binding = 3) buffer VisibleInstanceIndices { uint visibleIndices[]; };
-...
-InstanceData inst = instances[visibleIndices[instanceBaseIndex + gl_InstanceID]];
-```
-
-Tej indirekcji używają **wszystkie** passy (główny bierze zakres kamery, kaskada swój podzbiór), więc dopiero ona pozwala jednemu shaderowi obsłużyć je wszystkie. Shader instancingowy bez tego bloku nadal działa — `HasVisibleIndexBlock()` wykrywa starą konwencję, pass główny adresuje mu bufor instancji wprost, a pass głębi wraca na shader silnikowy (czyli zostaje ze starym rozjazdem) — i raz na program leci ostrzeżenie z instrukcją migracji.
-
-**Pułapka przy edycji shaderów silnikowych:** skompilowane programy lądują w cache'u binarnym (`<projekt>/Cache/<driver>/<uuid>.plubin`) kluczowanym **wyłącznie UUID-em** — zmiana źródła poza działającym edytorem go nie unieważnia. Po ręcznej edycji `.vert`/`.frag` (albo po `git pull`) skasuj `Cache/Linux_Driver*`, inaczej silnik wczyta stary binarny program. Działający edytor łapie zmiany plików przez `efsw` i rekompiluje sam.
-
-### Wrappery zasobów GL — `PluEngine/Renderer/`
-
-| Symbol | Plik | Opis |
-|---|---|---|
-| `class Texture` (`PLU_CLASS`, `EngineObject`) | `Renderer/GLTexture.h` | Tekstura 2D **lub tablica warstw**: `Create`/`CreateFromInfo`/`CreateDepth` (opcjonalne `Use16Bit` = D16 zamiast D32F), `CreateDepthArray(w, h, layers, Use16Bit)` → `GL_TEXTURE_2D_ARRAY` D32F, `Bind(unit)`, streaming mipów, `SaveTexture`. Move-only. Target trzymany w obiekcie (`GetTarget`/`IsArray`/`GetLayerCount`); operacje z natury 2D (streaming mipów, `SaveTexture`) mają `PLU_CORE_ASSERT` na target. |
-| `class FrameBuffer` (`PLU_CLASS`, `EngineObject`) | `Renderer/GLFrameBuffer.h` | FBO: `Create` (opcjonalne `Use16BitDepth` dla DepthOnly)/`CreateWithTexture`/`CreateDepthOnly`/`CreateWithDepthTextureLayer(array, layer, objMgr)`, `Bind`/`Resize`/`BlitTo`, `FrameBufferType` (Color/ColorDepth/DepthOnly/DepthStencil). Move-only. FBO warstwy **nie jest właścicielem** tablicy (kilka FBO celuje w tę samą teksturę) i **nie wspiera `Resize`** — właściciel przebudowuje całość; używa go dziś atlas cieni **spotów**. Atlas kaskad CSM to zwykły `CreateDepthOnly` (FBO jest właścicielem tekstury), a kaskady rozdziela `glViewport`, nie osobne załączniki. |
-| `template<typename T> class UniformBuffer` | `Renderer/GLUniformBuffer.h` | Wrapper UBO na jeden blok POD `T` (std140). Header-only, move-only, jak `ShaderStorageBuffer`. API: `Create(init,usage)`, `Update(data)`, `Bind`/`BindBase(binding)`, `Destroy`. Zawartość widzą **wszystkie** programy naraz — dlatego parametry cieni ustawia się raz na klatkę, a nie per program. std140 jest ostrzejszy niż std430: `vec3`/`vec4`/`mat4` wyrównane do 16 B, elementy tablic **zawsze** dopadowane do 16 B — deklaruj wektory/macierze pierwsze, skalary na końcu i asertuj offsety. |
-| `class SamplerObject` | `Renderer/GLSamplerObject.h` | Wrapper obiektu samplera GL (filtrowanie/wrap/porównanie **na jednostce teksturującej**, nie na teksturze). Header-only, move-only. API: `Create`, `SetFilter`, `SetWrap(s, t, border)`, `SetCompareMode(func)`/`DisableCompareMode`, `Bind(unit)`, `static Unbind(unit)`. Dzięki temu ta sama tekstura głębi jest w passie światła samplerem porównującym (sprzętowy PCF), a poza nim zwykłą teksturą (podgląd w panelach). **Pamiętaj o `Unbind` przed ImGui** — sampler porównujący zostawiony na slocie renderuje tekstury UI na czarno. |
-
-**Pułapka: feedback loop.** Tekstura zbindowana do samplowania **nie może** być jednocześnie celem renderu. Atlas cieni jest bindowany na slot 15 w passie głównym, a w następnej klatce pass cieni renderuje *do niej* — dlatego `Renderer::UnbindShadowTexture()` zdejmuje **teksturę i sampler** ze slotu i na końcu klatki, i przed pętlą kaskad. Część sterowników (NVIDIA) to toleruje, część (Mesa/iGPU) zgłasza `INVALID_OPERATION` i zostawia mapy niezapisane — a niewyczyszczona mapa głębi czyta się jako „wszystko zasłonięte", czyli **czarna scena**.
-| `template<typename T> class ShaderStorageBuffer` | `Renderer/GLShaderStorageBuffer.h` | Wrapper SSBO na dowolny POD `T` (std430). **Header-only, NIE `EngineObject`** — szablonu nie da się zreflektować, więc to zwykły typ (trzymaj jak `Texture`). Move-only, `static_assert(is_trivially_copyable)`. API: `Create(count,usage)`/`CreateFromData`/`CreateFromArray`, `Bind`/`BindBase(binding)`/`BindRange`, `Update`/`SetData` (orphaning), `Resize`, `Map`/`MapRange`/`Unmap`, `GetData`, gettery `GetID`/`GetCount`/`GetSizeBytes`/`IsValid`. |
-
-Uwaga (`ShaderStorageBuffer`): wszystkie metody robią GL → wołać z **render threadu** (main nie ma kontekstu GL). Przy deklarowaniu `T` pamiętaj o std430. **`Vec3` jako `T` jest blokowane `static_assert`em** (12 B w C++ vs 16 B stride tablicy `vec3` w std430) — użyj `Vec4` albo dopadowanego structa; `Vec4`/`Matrix4`/`Vec2` pasują 1:1. Guard aktywny gdy glm jest dostępne (`__has_include(<glm/fwd.hpp>)`).
-
-### Main→Render handoff ImGui
-
-| Symbol | Plik | Opis |
-|---|---|---|
-| `void RenderingManager::BeginImGuiFrameSubmit()` / `SubmitImGuiDrawData(UInt32 windowID, ImDrawData*)` / `EndImGuiFrameSubmit()` | `Managers/RenderingManager.h` | API z wątku Main: Begin resetuje slot zapisu, Submit robi deep-copy danych rysowania jednego okna (po `ImGui::Render()` w jego kontekście), End publikuje **całą klatkę** — wszystkie okna razem, żeby render nie zmieszał okna A z klatki N z oknem B z klatki N-1. Aplikacja sama prowadzi swoje klatki ImGui — silnik nie woła żadnego `OnImGuiRender()`. |
-| `struct ImGuiDrawSnapshot` | `Renderer/ImGuiDrawSnapshot.h` | Snapshot jednego okna: `CopyFrom(ImDrawData*)` klonuje `CmdLists` (`ImDrawList::CloneOutput`) i kopiuje listę tekstur do pamięci własnej slotu (bo `GetPlatformIO().Textures` jest przebudowywany co klatkę); `Clear()` zwalnia klony. Wzorzec jak [[`RenderSnapshot`]]. |
-| `struct ImGuiFrameSnapshot` | `Renderer/ImGuiDrawSnapshot.h` | Cała klatka: `BeginWrite()` / `AddWindow(windowID, drawData)` / `EndWrite()`, tablica `ImGuiWindowDrawSnapshot` (windowID + `ImGuiDrawSnapshot`). Wpisy są poolowane między klatkami, więc stała liczba okien nie alokuje. Render czyta tylko pierwsze `ActiveCount` wpisów. |
-| `void RenderingManager::CreateImGuiContextForWindow(const TUsePointer<IWindow>&)` | `Managers/RenderingManager.h` | Main: tworzy kontekst ImGui dla okna (dzieląc font atlas okna 0) i zleca renderowi postawienie jego backendu GL. `InitializeImGuiContext()` to skrót na okno 0. |
-| `void RenderingManager::RequestImGuiContextTeardown(UInt32)` / `bool IsImGuiContextTornDown(UInt32)` / `void DestroyImGuiContextForWindow(UInt32)` | `Managers/RenderingManager.h` | Handshake zamykania okna: zgłoś → odpytuj aż render potwierdzi, że przestał w nie rysować → dopiero wtedy niszcz kontekst i okno. Okno bez kontekstu ImGui raportuje gotowość od razu. |
-
-Uwaga: backend `ImGui_ImplOpenGL3_*` (Init/NewFrame/RenderDrawData/Shutdown) żyje na **render threadzie** (potrzebuje bieżącego kontekstu GL) i jego dane siedzą w `io.BackendRendererUserData`, czyli **per kontekst**; backend SDL3/Win32 (input/platform) na Main. Flaga `ImGuiBackendFlags_RendererHasTextures` jest ustawiana w `ImGuiRenderState::CreateContext` na Main, by atlas był spójny od pierwszej klatki. `GImGui` jest thread-local (overlay port `vcpkg-overlays/imgui`) — bez tego oba wątki nadpisywałyby sobie bieżący kontekst; szczegóły w `MULTITHREADING.md`.
-
-| Symbol | Plik | Opis |
-|---|---|---|
-| `class ImGuiRenderState` | `Renderer/ImGuiRenderState.h` | Cykl życia **jednego** kontekstu ImGui (`RenderingManager` trzyma po jednym na okno): `CreateContext(window, sharedAtlas)` na Main (kontekst + IO/DPI + styl silnika + backend platformowy Win32/SDL3; `sharedAtlas` = atlas okna 0), `DestroyContext()` na Main, `InitRendererBackend()`/`ShutdownRendererBackend()` na render threadzie (backend OpenGL3). |
-| `class OpenGLRenderState` | `Renderer/OpenGLRenderState.h` | Domyślny stan GL kontekstu renderera (depth test `GL_LESS`, blending, polygon mode, debug output przy kontekście debugowym). Pole `RenderingManager`; `Initialize()` woła render thread zaraz po `MakeGLContextCurrent()` — stan GL jest per-kontekst i obowiązuje na obu platformach. |
+**When adding similar generators:** make it a separate **target**, not `add_custom_command(TARGET ...
+PRE_BUILD)`. `PRE_BUILD` is honoured only by the Visual Studio generator; Ninja/Makefiles degrade it to
+`PRE_LINK`, i.e. it runs **after** the compilation that needs the generated header. The reflection
+generator gets away with it only thanks to its extra `execute_process` bootstrap at configure time.
 
 ### Okna — `PluEngine/Window/WindowsManager.h`, `PluEngine/Window/Window.h`
 
@@ -694,7 +413,6 @@ okno główne: manager je zna, ale nigdy nie niszczy — jego zamknięcie kończ
 | `bool WindowsManager::IsAnyWindowFocused()` | Czy którekolwiek okno silnika ma fokus — tym warunkowany jest update inputu. |
 | `UInt32 IWindow::GetWindowID()` | **Id silnika** (monotoniczny licznik z `PlutexCreateWindow`), nie id platformy. Okno główne = 0. Id SDL: `SDLWindow::GetSDLWindowID()`. |
 | `IVec2 IWindow::GetWindowPosition()` / `SetWindowPosition(IVec2)` | Pozycja lewego górnego rogu na pulpicie — do zapisu układu okien. |
-| `void IWindow::ApplySwapInterval(bool)` | Ustawia swap interval na **kontekście** GL bez zmiany ustawienia vsync okna. Tylko render thread — reszta silnika używa `SetVSyncEnabled`. |
 | `WindowProperties::Position` / `Resizable` / `InitImGui` | Pozycja (`{-1,-1}` = wyśrodkuj), czy okno da się skalować, czy `WindowsManager` ma mu stworzyć kontekst ImGui. |
 
 ---
@@ -1255,30 +973,9 @@ Export from the UI: the **Profiler** panel's `Export CSV` button asks for a dest
 
 Export from a script: `--profiler-export-after <seconds>` makes `Application::Run` write the CSV once, that many seconds after the main loop starts, then carry on running (kill the process or close the window when done). `--profiler-export-path <path>` picks the destination (default `profiler.csv` relative to the working directory). Unlike the panel button there is no thread filter — the dump holds every thread. The arguments are registered by `Application::AddEngineArguments(parser)`, which each executable's `main()` calls before `parse_args`; an app that skips it simply has no such flags (reading them is guarded, not an error).
 
-### GPU timery — `PluEngine/Renderer/GPUProfiler.h`
-
-`PLU_PROFILE_SCOPE*` mierzy tylko czas CPU-side submitu komend GL, nie faktyczne wykonanie na GPU (kolejka komend jest asynchroniczna) — dlatego wszystkie CPU-passy potrafią wyglądać "tanio", a cały realny koszt wypływa dopiero tam, gdzie CPU musi poczekać na GPU (typowo `SwapBuffer`). `GPUProfileScope`/`PLU_PROFILE_SCOPE_GPU` mierzy realny czas GPU przez parę znaczników `GL_TIMESTAMP`. Wynik trafia do tego samego rejestru `Profiler` pod pseudo-wątkiem **`GPU`** (`RecordForThread`), pod własną nazwą sondy — filtr wątku w panelu oddziela je od timerów CPU. Publikacja jest opóźniona o 1-3 klatki (async) — normalne, nie błąd.
-
-| Makro / Funkcja | Opis |
-|---|---|
-| `PLU_PROFILE_SCOPE_GPU(name)` | Scoped GPU timer (RAII). Tylko wątek renderu (wymaga kontekstu GL). |
-| `GPUProfileScope::PollResults()` | Odbiera gotowe wyniki i publikuje je do `Profiler`; wołane raz na klatkę w `RenderingManager::RenderThreadLoop`. |
-
-### "Hottest" assety renderowania — `PluEngine/Renderer/RenderUsageStats.h`
-
-Globalny rejestr `RenderUsageStats` (plain singleton, jak `Profiler`) zliczający które **static meshe** i **tekstury** są najczęściej używane w passie sceny. Zapis i odczyt dzieją się na wątku MAIN (`RenderSnapshotBuilder` liczy — tylko w edytorze, pod `PLU_ENGINE_EDITOR_BUILD`; panel czyta), więc **bez synchronizacji**. Podgląd: panel **Render / GPU** → zakładka **Hottest Assets**. Liczy wyłącznie tekstury materiałów — mapy cieni (kaskady CSM) są silnikowe i **nie** są liczone. Klucz map to surowy `UInt64` UUID; nazwę rozwiązuje panel przez `AssetManager`.
-
-| Funkcja `RenderUsageStats` | Opis |
-|---|---|
-| `RenderUsageStats::GetInstance()` | Singleton rejestru użycia assetów. |
-| `BeginFrame()` | Nowa klatka: `CurrentFrameUses` → `LastFrameUses`, zeruje akumulator. Woła się raz/klatkę. |
-| `RecordMesh(uuid)` / `RecordTexture(uuid)` | Zlicza użycie (inkrementuje bieżącą klatkę + sumę). `uuid==0` ignorowane. |
-| `GetMeshUsage()` / `GetTextureUsage()` | Const-ref do rejestru (`HashMap<UInt64, AssetUsageEntry>`) — odczyt na tym samym wątku co zapis (MAIN). |
-| `Clear()` | Zeruje wszystkie liczniki. |
-
 ### FPS per-wątek — `PluEngine/PluUtils.h` (`namespace Plu`)
 
-Wątek Main (pętla gry/UI) i wątek Render chodzą niezależnie (rozdzielone przez TripleBuffer `RenderSnapshot`), więc mają różne tempo klatek. Każda pętla publikuje swoją deltę przez setter; gettery zwracają FPS. Wszystko thread-safe (atomiki). Settery są wołane przez silnik (`Application::Run` dla Main, `RenderingManager::RenderThreadLoop` dla Render) — w kodzie zwykle wołasz tylko gettery.
+Wątek Main (pętla gry/UI) i wątek Render chodzą niezależnie (rozdzielone przez TripleBuffer `RenderSnapshot`), więc mają różne tempo klatek. Każda pętla publikuje swoją deltę przez setter; gettery zwracają FPS. Wszystko thread-safe (atomiki). Settery woła silnik (`Application::Run` dla Main; dla Render — renderer, gdy znów będzie istniał) — w kodzie zwykle wołasz tylko gettery.
 
 | Funkcja | Opis |
 |---|---|
@@ -1307,17 +1004,12 @@ it freezes until the mouse moves. All functions are thread-safe.
 
 **Probe frames and the scene.** A pointer move with no button held never re-renders the scene — only a
 changed ImGui frame is presented (over the unchanged scene image). Scene state that reacts to plain hover
-therefore needs `RequestRedraw()` from whoever changes it. `RenderSnapshotBuilder::DiscardFrame()` runs in
-place of `BuildSnapshotAndPublish` on such frames and drops the per-frame debug geometry the tick queued.
+therefore needs `RequestRedraw()` from whoever changes it.
 
 Related hooks: `Application::OnIdleTick(dt)` (runs instead of `OnTick` while idle, ~4 Hz — cheap
-housekeeping only), `Application::WantsContinuousFrames()` (editor: `IsInPIE()`),
-`RenderingManager::NotifyFrameAvailable()` (wakes a sleeping render thread; call after publishing a
-`RenderSnapshot`). Thread-side details are in `MULTITHREADING.md`, section "Power saving".
+housekeeping only), `Application::WantsContinuousFrames()` (editor: `IsInPIE()`).
 
 ### Liczniki renderu (draw calls / instancje / culling) — `PluEngine/PluUtils.h` (`namespace Plu`)
-
-> Liczniki kaskad cieni i spotów mieszkają w `PluEngine/Render/RenderUsageStats.h`, nie w `PluUtils.h`: ich tablice są wymiarowane stałymi renderera (`kMaxShadowCascades`, `kMaxSpotShadowSlots`), których PluCore nie zna.
 
 Ten sam wzorzec co FPS per-wątek: `Renderer::RenderSnapshot` (render thread) liczy realne draw calle podczas rysowania (po batchowaniu/cullingu) i publikuje finalne wartości klatki tu; panel **Render / GPU** (main thread) czyta gettery. Bezpośredni odczyt `RenderSnapshot::StatDrawCalls`/`StatInstancesDrawn`/`StatCulledCount` z main threadu **nie jest bezpieczny** (wyścig z render threadem) — te pola to tylko roboczy akumulator wewnątrz `Renderer::RenderSnapshot`.
 
@@ -1326,24 +1018,16 @@ Ten sam wzorzec co FPS per-wątek: `Renderer::RenderSnapshot` (render thread) li
 | `UInt32 GetStatDrawCalls()` | Realne draw calle ostatniej klatki (main pass **i** pass cieni). `PLU_FUNCTION` (Python). |
 | `UInt32 GetStatInstancesDrawn()` | Suma narysowanych instancji (niezależnie od tego, czy poszły jednym `glDrawElementsInstanced`, czy fallbackiem). `PLU_FUNCTION` (Python). |
 | `UInt32 GetStatCulledCount()` | Ile instancji odpadło przez culling — kamerowy **plus** per-kaskadowy culling casterów cieni (jeden obiekt liczy się wielokrotnie, gdy wypada z kilku kaskad). `PLU_FUNCTION` (Python). |
-| `void SetShadowCascadeStats(const UInt32* counts, UInt32 cascadeCount)` / `UInt32 GetStatShadowCascadeCount()` / `UInt32 GetStatShadowCascadeCasters(UInt32 idx)` | Ten sam mirror, per kaskada cieni: ilu casterów faktycznie przeszło culling do mapy głębi każdej kaskady. Publikuje `Renderer::RenderSnapshot`, czyta panel Render/GPU. |
-| `void SetSpotLightStats(const UInt32* casterCounts, UInt32 slotCount, UInt32 visibleLights)` / `UInt32 GetStatVisibleSpotLights()` / `UInt32 GetStatSpotShadowSlots()` / `UInt32 GetStatSpotShadowCasters(UInt32 slot)` | Ten sam mirror dla świateł stożkowych: ile spotów przeszło culling kamery na MAIN, ile z nich dostało slot w atlasie cieni i ilu casterów narysował każdy slot. Światło widoczne **bez** slotu jest normalne — świeci, tylko nie zasłania. |
 | `void SetRenderFrameStats(UInt32 drawCalls, UInt32 instancesDrawn, UInt32 culledCount)` | Publikuje liczniki klatki (woła silnik — nie ruszaj). |
 
-### Particle debug stats — `PluEngine/Render/RenderParticleStats.h` (`namespace Plu`)
+### Particle spawner state — `PluEngine/Effects/Particles/ParticleSpawner.h` (`namespace Plu`)
 
-Render-thread particle state for the **Debug Particles** panel (View → Debug). Particles are simulated on the render thread and main never touches a `ParticleSpawner`, so the state is copied out: variable-size, hence a mutex instead of atomics. Gathering walks every particle, so it runs only on request — renew the request every frame you want data.
+Particles used to be simulated on the render thread, which is gone; the spawner API is still there.
 
 | Symbol | Description |
 |---|---|
-| `void RequestParticleDebugStats()` | Any thread. Asks the render thread to gather on its next rendered snapshot. Call every frame while looking. |
-| `bool ConsumeParticleDebugStatsRequest()` | Render thread. True (and clears the request) if somebody asked. Called by `Renderer::RenderSnapshot` after the particle tick, which publishes at most every 0.1 s (`kParticleDebugStatsInterval`) — gathering is O(alive particles), ~10 ms per million in Debug. |
-| `void PublishParticleDebugStats(ParticleDebugStats&&)` / `ParticleDebugStats GetParticleDebugStats()` | Publish (render, stamps `PublishCount`) / copy of the last published stats (any thread). `PublishCount == 0` = nothing yet; compare `SceneHandle` with the world you inspect — it is whichever world the render thread last simulated. Spawners held for other worlds are only counted (`OtherWorldSpawners`, `OtherWorldAliveParticles`). |
-| `ParticleDebugStats::SystemSpawners` (`ParticleSystemSpawnerDebugStats`) | Asset-driven spawners: render-side lifecycle (state, activation / clear / completed versions, synced request counter), `ParameterLayout` + the value block the emitters actually ran with (`UsingDefaults` when it did not match the program), and per emitter (`ParticleEmitterDebugStats`) alive / cap, emission clock, renderers, storage mode, trail samples, SoA columns, CPU and GPU bytes, bounds, and `Ops` (last-tick per-op ms). |
-| `void RequestParticleOpTimings()` / `bool ConsumeParticleOpTimingsRequest()` | Any thread / render thread. Renew every frame to time every op of every asset emitter for one tick (fills `ParticleEmitterDebugStats::Ops`, records `Particles/<emitter>/<stage> <i> <Op>` to the Profiler). Off by default — a clock read per op per block. |
 | `ParticleSpawnerDebugStats ParticleSpawner::GatherDebugStats() const` | (`PluEngine/Effects/Particles/ParticleSpawner.h`) Render thread. Alive/pool/free counts, synced request counter, loop phase, transform, and over alive particles: AABB, avg/max speed, lifetime-left range. O(alive particles). |
-| `const float* ParticleSpawner::GetPositions() const` / `UInt32 GetAliveCount() const` | Render thread. Alive particles after the last tick as interleaved xyz (`GetAliveCount() * 3` floats) — the vertex layout of `ParticlePointBuffer`, uploaded without a copy. The spawner keeps particles as dense SoA with swap-remove, so the order is **not stable** and the pointer dies with the next sync/tick. |
-| `struct ParticlePointBuffer` | (`PluEngine/Render/ParticlePointBuffer.h`) Render thread. One spawner's VAO + VBO of positions (attribute 0, vec3) drawn as `GL_POINTS`: `Upload(positions, count)` (GL objects created lazily, capacity grows 2x, storage orphaned each upload), `Draw()`, `Destroy()`. A copyable **handle**, not move-only RAII — `HashMap` copies values on rehash — so call `Destroy` exactly once. Drawn by `Renderer::RenderParticles` with `EngineAssets::ParticlePointProgram` (`uViewProj`, `uColor`); color and point size per spawner come from `ParticleClass::Color` / `PointSize` (clamped to >= 1 px). |
+| `const float* ParticleSpawner::GetPositions() const` / `UInt32 GetAliveCount() const` | Render thread. Alive particles after the last tick as interleaved xyz (`GetAliveCount() * 3` floats). The spawner keeps particles as dense SoA with swap-remove, so the order is **not stable** and the pointer dies with the next sync/tick. |
 | `const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& SceneWorld::GetParticleSpawnerComponents() const` | Main thread. Live spawner components by component UUID — the same UUID the render-side stats use. |
 
 ## Debug / asserts — `PluBase/Assert.h` (pulled in by `PluEngine/Core.h`)
@@ -1633,7 +1317,7 @@ Dla nowego typu, który ma być serializowalny/edytowalny, dopisz specjalizację
 | `TypeSerializer<TypeInfo*>::SerializeFields(TypeInfo*, void*)` | Serializuje wszystkie `PLU_PROPERTY` typu do JSON. |
 | `const char* TypeSerializer<TypeInfo*>::FieldName(const JSON& field)` | Reads the `"name"` of one entry of a serialized `"fields"` array without copying it out of the DOM. Returns `nullptr` for a malformed entry, which `FindProperty` turns into a skipped field instead of a throw. Used by both `Deserialize` overloads — a scene load does this once per field per object. |
 
-`struct DeserializationContext { TUsePointer<IShaderManager> shaderManager; TUsePointer<EngineAssetManager> assetManager; TUsePointer<SceneManager> scenesManager; }` — przekazywany do deserializacji, żeby rozwiązywać referencje na assety/sceny.
+`struct DeserializationContext { TUsePointer<EngineAssetManager> assetManager; TUsePointer<SceneManager> scenesManager; }` — przekazywany do deserializacji, żeby rozwiązywać referencje na assety/sceny.
 
 ## Python math bindings — `PluEngine/Python/PythonMath.h` (`namespace Plu`)
 
@@ -1742,6 +1426,7 @@ ImGuiWidgets::Combo("Attach to", &index, components,
 | `void DrawMoveToWindowMenu(currentWindowID, kindFilter, newWindowTitle, onMove)` | `EditorWindows/EditorWindowMoveMenu.h` | Podmenu „Move To Window" — „Move to New Window" + lista istniejących okien (bez bieżącego i bez `SinglePanel`, które są jednomiejscowe). Wołaj zaraz po `ImGui::Begin()` w `BeginPopupContextItem()` — ImGui ustawia wtedy „last item" na tab docka, czyli to jest dokładnie PPM na tabie. `onMove` dostaje docelowy `windowID`, już utworzony przy wyborze nowego okna. |
 | `String StripImGuiIDFromName(const String& imguiName)` | `EditorWindows/EditorWindowsManager.h` | Ucina id ImGui z nazwy okna (`"Details##SceneViewport"` → `"Details"`, `"###Id"` → `"Id"`). Używaj wszędzie, gdzie nazwa okna ImGui trafia do paska tytułu okna systemowego. |
 | `void DrawWindowControls(const TUsePointer<IWindow>& window, ImVec2 buttonDimensions)` | `EditorInterface.h` | Klaster minimalizuj/maksymalizuj/zamknij paska tytułu. Zamknięcie okna 0 idzie przez `OnRequestedWindowClose` (potwierdzenie niezapisanych assetów), okna wtórnego przez `EditorWindowsManager::CloseEditorWindow`. |
+| `Matrix4 GetEditorCameraViewMatrix(IRendererCamera*)` / `Matrix4 GetEditorCameraProjectionMatrix(IRendererCamera*, float aspect)` | `GizmoUtils.h` | View / projection of a viewport camera (location + Euler degrees; perspective or orthographic per `CameraOptions`, `kCameraNearClip`/`kCameraFarClip`), the old renderer's convention, GL clip space as ImGuizmo expects. For gizmos and overlays over a viewport rectangle of the given aspect; `nullptr` camera = identity view, 45° perspective. |
 | `float DrawAttachPointMarker(ImDrawList*, const Matrix4& world, float axisLength, bool selected, const std::function<bool(const Vec3&, ImVec2&)>& project, ImVec2 mouse)` | `AttachPointOverlay.h` | Rysuje marker attach pointa szkieletu (romb + kikuty osi RGB pokazujące rotację) w podglądzie 3D. `project` mapuje świat→piksele (`false` = za kamerą). Zwraca kwadrat odległości kursora od markera (`FLT_MAX` poza ekranem) do klikania. |
 | `void MarkSkeletonAssetDirty(TUsePointer<EngineAssetManager>, const Skeleton*)` | `AttachPointOverlay.h` | Brudzi asset Skeleton (po jego `Uuid`). **Do każdej edycji attach pointa zamiast `PanelChangedAsset()`** — SkeletalMesh trzyma szkielet tylko przez UUID, więc zabrudzenie assetu viewportu oznaczyłoby mesh i zmiana nigdy nie trafiłaby na dysk. |
 | `void GenerateRandomLocations(DynamicArray<Vec3>* out, UInt32 count, const Vec3& min, const Vec3& max, UInt64 seed = RandomTransformSeedAuto)` | `RandomTransformUtils.h` | Losowe lokacje w prostopadłościanie `[min, max]`. |
@@ -1784,9 +1469,6 @@ Example assets in `EngineAssets/Particles/` (constants `EngineAssets::PS_*`, tex
 | `ParticleBlockExecutor::RunSpawn / RunUpdate` | Blocks -> ops -> particles; operands resolved before the inner loop. Never calls the graph evaluator. `MulCurve` has an AVX2 gather path. |
 | `ParticleEmitterInstance` | `SetProgram` (copies the program; restarts only if layout/cap changed), `Tick(ParticleTickParams)`, `Reset`, `ComputeBounds`, `SetProfileOps` + `GetOpTimings` (per-op time, also recorded to the Profiler as `Particles/<emitter>/<spawn|update> <i> <Op>`). |
 | Scene gizmo (`SceneViewport::DrawSelectedParticleSpawnerGizmos`) | Selected asset spawner: per enabled emitter the spawn shape (point marker / sphere / oriented box / Cone sector, plus offset) and the launch cone of Init Velocity, read from the compiled program — the last `SpawnPosition` and the `SpawnVelocity` op — so it matches what the executor spawns. Legacy spawners keep the `ParticleClass` launch cone. |
-| Debug Particles panel (View → Debug) | Both spawner kinds. Asset spawners: effect name, Play / Deactivate / Stop / Pause / Resume, lifecycle main vs render side by side, parameter values, a tree per emitter (renderers, storage, memory, op count, bounds) and optional per-op timings; per-emitter bounds boxes in the viewport. |
-| `ParticleInstanceBuffer` / `ParticleInstanceGPU` (`Render/ParticleInstanceBuffer.h`) | Per-emitter sprite instances on the GPU: SSBO on `kParticleInstanceBinding` (7), 48 B std430 instance (position + rotation, half size + view-space motion, RGBA8 colour, sub-UV frame). Copyable handle: `Upload` (orphans + grows x2), `Bind`, `Destroy` exactly once. Render thread only. |
-| `Renderer::RenderTransparentParticles` | Transparent pass after the grid. Sprites: `ParticleSpriteProgram` (`ParticleSprite.vert/.frag`), attribute-less VAO + `glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, n)`. Ribbons: `ParticleRibbonProgram` (`ParticleRibbon.vert/.frag`), camera-facing strips — PerEmitter = one `glDrawArrays(GL_TRIANGLE_STRIP, 0, 2n)` through the live particles in spawn order, PerParticle = `glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 2 * samples, n)` over the trail SSBO (binding 8, `ParticleRibbonHistoryBuffer`; a sample every `kRibbonHistorySampleInterval` = 1/60 s, trails thin and fade to the tail). Ribbon width = `RibbonRendererModule::Width` metres x size / size at birth (Size Over Life tapers it); texture u = normalised age (0 at the head). An emitter may carry one Sprite and one Ribbon renderer at once (`CompiledEmitter::Sprite` / `Ribbon` slots, `HasSprite()` / `HasRibbon()`), drawn from the same particles — Sprite + PerParticle Ribbon = a sprite head with a trail. Emitters are sorted back to front (emitters, not particles), an emitter's ribbon before its sprites; Additive = `SRC_ALPHA, ONE`, AlphaBlend = `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`, both with destination alpha kept (`glBlendFuncSeparate(..., ZERO, ONE)`); depth test on, writes off, culling off — all restored afterwards. Untextured sprites draw a soft disc. Loose uniforms (`uFacingMode`, `uStretchFactor`, `uSubUVColumns/Rows`, `uHasTexture`) are set by the renderer: if a Material asset ever points at these shaders they must move to a UBO or onto `engineOnlyUniforms` in `ShaderCodeParser.py`. |
 
 
 ## Utrzymanie

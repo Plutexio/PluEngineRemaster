@@ -8,14 +8,12 @@
 #include <iostream>
 
 #include "EditorAppContext.h"
-#include "TextureViewerPanel.h"
 #include "Managers/Project/EditorProjectManager.h"
 #include "Panels/EditorPanelManager.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Render/Renderer.h"
 #include "UI/IconsFontAwesome7.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 
@@ -71,17 +69,6 @@ void Plu::EngineStatsPanel::OnUpdate(float deltaTime)
 				// 	ImGui::Text("Asset Name - %s", assetObj->GetAssetName().CStr());
 				// 	ImGui::Text("Asset Type - %s", assetObj->GetAssetType().CStr());
 				// }
-				if (mApplicationInfo->AppObjectManager->GetObjectOnIndex(i)->GetClass()->IsDerivedOfOrSame(Texture::GetStaticClass())) {
-					if (ImGui::MenuItem("View Texture")) {
-						TUsePointer<TextureViewerPanel> viewer = mEditorPanelManager->AddPanel<TextureViewerPanel>();
-						viewer->TextureToView = mApplicationInfo->AppObjectManager->GetObjectOnIndex(i);
-					}
-				} else if (mApplicationInfo->AppObjectManager->GetObjectOnIndex(i)->GetClass()->IsDerivedOfOrSame(FrameBuffer::GetStaticClass())) {
-					if (ImGui::MenuItem("View Framebuffer")) {
-						TUsePointer<TextureViewerPanel> viewer = mEditorPanelManager->AddPanel<TextureViewerPanel>();
-						viewer->FrameBufferToView = mApplicationInfo->AppObjectManager->GetObjectOnIndex(i);
-					}
-				}
 				if (ImGui::MenuItem("Serialize")) {
 					nlohmann::json json;
 					json = TypeSerializer<TypeInfo*>::Serialize(mApplicationInfo->AppObjectManager->GetObjectOnIndex(i)->GetClass(), mApplicationInfo->AppObjectManager->GetObjectOnIndex(i).GetRaw());

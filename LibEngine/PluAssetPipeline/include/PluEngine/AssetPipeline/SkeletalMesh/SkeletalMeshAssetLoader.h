@@ -83,8 +83,7 @@ namespace Plu
         String GetSupportedAssetType() override;
         bool LoadAssetData(TUsePointer<AssetDescriptor> assetDesc, TOwningPointer<IAssetData> *assetDataToPopulate,
                            TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-                           TUsePointer<SceneManager> sceneManager,
-                           TUsePointer<IShaderManager> shaderManager) override;
+                           TUsePointer<SceneManager> sceneManager) override;
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
         DynamicArray<String> GetSupportedImportExtensions() override;
@@ -92,8 +91,7 @@ namespace Plu
         void HandleAssetImporting(Path &assetPath, Path outPath, void *importSettings, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
         TypeInfo *GetAssetTypeViewportClass() override;
         bool DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc, TUsePointer<EngineAssetManager> assetManager,
-                               TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-                               TUsePointer<IShaderManager> shaderManager) override;
+                               TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager) override;
         bool IsAssetCreatable() override;
         bool CanImportAsset(Path assetPath, TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager) override;
 #endif

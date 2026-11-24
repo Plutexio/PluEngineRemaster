@@ -17,10 +17,6 @@ add_executable(PluRuntime WIN32 ${SOURCES_REFLECTION}
         RuntimeApp.h
         Mains/WindowsMain.cpp
         Mains/LinuxMain.cpp
-        Shaders/RuntimeShaderManager.h
-        Shaders/RuntimeShaderManager.cpp
-        Shaders/RuntimeShaderCode.cpp
-        Shaders/RuntimeShaderCode.h
         Python/RuntimePythonRunner.cpp
         Python/RuntimePythonRunner.h)
 
@@ -62,8 +58,8 @@ set_target_properties(PluRuntime PROPERTIES
 
 # Engine is an INTERFACE target now, so there is no single $<TARGET_FILE:Engine> to copy: every
 # module is its own shared library and all of them have to sit next to the executable, which is
-# what the $ORIGIN RPATH expects to find. glad and spdlog are shared for the same reason (one
-# function-pointer table / logger registry for the whole process) and travel with them.
+# what the $ORIGIN RPATH expects to find. spdlog is shared for the same reason (one logger
+# registry for the whole process) and travels with them.
 foreach (PLU_MODULE IN LISTS PLU_MODULES PLU_THIRDPARTY_SHARED_LIBS)
     add_custom_command(TARGET PluRuntime POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different

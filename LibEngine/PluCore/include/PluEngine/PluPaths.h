@@ -17,10 +17,4 @@
 #define PLU_BINARY_EXT ".plubin"
 #define PLU_BINARY_EXT_W L".plubin"
 
-#define PLU_SHADER_VERT_EXT ".vert"
-#define PLU_SHADER_VERT_EXT_W L".vert"
-
-#define PLU_SHADER_FRAG_EXT ".frag"
-#define PLU_SHADER_FRAG_EXT_W L".frag"
-
 #endif //PLUENGINE_PLUPATHS_H

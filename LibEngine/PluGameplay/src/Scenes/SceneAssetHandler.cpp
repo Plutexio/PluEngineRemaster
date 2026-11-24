@@ -18,8 +18,7 @@ Plu::String Plu::SceneAssetHandler::GetSupportedAssetType()
 
 bool Plu::SceneAssetHandler::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
 	TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
-	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager,
-	TUsePointer<IShaderManager> shaderManager)
+	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
 	TOwningPointer<SceneInfo> sceneInfo = CreateOwning<SceneInfo>();
 	sceneInfo->URL = assetDesc->AssetPath.GetStem();
@@ -41,7 +40,7 @@ Plu::TypeInfo * Plu::SceneAssetHandler::GetAssetTypeViewportClass()
 
 bool Plu::SceneAssetHandler::DispatchAssetSave(TUsePointer<AssetDescriptor> assetDesc,
 	TUsePointer<EngineAssetManager> assetManager, TUsePointer<EngineObjectManager> objectManager,
-	TUsePointer<SceneManager> sceneManager, TUsePointer<IShaderManager> shaderManager)
+	TUsePointer<SceneManager> sceneManager)
 {
 	sceneManager->SaveActiveScene();
 	return true;

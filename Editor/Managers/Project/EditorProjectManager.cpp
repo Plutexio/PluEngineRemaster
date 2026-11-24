@@ -15,7 +15,6 @@
 #include "EditorViewports/EditorViewportManager.h"
 #include "Managers/Assets/EditorAssetManager.h"
 #include "Managers/Python/EditorPythonManager.h"
-#include "Managers/Shaders/EditorShaderManager.h"
 #include "Panels/EditorPanelManager.h"
 #include "PluEngine/Application.h"
 #include "PluEngine/Gameplay/PluGame.h"
@@ -240,8 +239,6 @@ namespace Plu
 		PhysicsChannelsManager::GetInstance()->LoadFromJsonFile(GetPhysicsChannelsConfigPath());
 
 		CopyPythonBindsFile();
-		//Thats bad, I need to make an event system :(
-		mEditorAppContext->EditorShaderManager->ShaderCodeScan();
 		mEditorAppContext->EditorAssetManager->ScanDirectory(GetEngineAssetsPath().ToString().ToNarrow(), true);
 		mEditorAppContext->EditorAssetManager->ScanDirectory(GetProjectAssetsDirectory().ToString().ToNarrow());
 		mEditorAppContext->EditorScenesManager->Initialize(mApplicationInfo);

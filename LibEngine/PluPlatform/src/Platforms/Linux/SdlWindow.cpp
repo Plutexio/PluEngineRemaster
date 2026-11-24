@@ -4,7 +4,6 @@
 
 #include "PluEngine/Platforms/Linux/SdlWindow.h"
 
-#include "glad/glad.h"
 #include "imgui_impl_sdl3.h"
 #include "PluEngine/Platform/SDLInputBackend.h"
 #include "PluBase/ThreadAffinity.h"
@@ -17,18 +16,10 @@
 namespace Plu
 {
 	#include "PluEngine/Platforms/Linux/SdlWindow.h"
-    #include <GL/gl.h>
 
     void SDLWindow::InitSDL()
     {
         SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);
-
-        // OpenGL 3.3 Core
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                            SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     }
 
     HashMap<int, SDLWindow*> gSDLWindows;
@@ -150,11 +141,6 @@ namespace Plu
         return SDL_HITTEST_NORMAL; // SDL_HITTEST_NORMAL <- Windows behaviour
     }
 
-    // The one GL context every engine window shares, created together with the first window.
-    // Sharing it means textures/meshes/shaders uploaded once are visible in every window, and it
-    // is the reason secondary windows must not create (or make current) a context of their own.
-    static SDL_GLContext gSharedGLContext = nullptr;
-
     // Sets the engine icon (Packaging/pluengine.png, compiled in by PluPlatform's CMakeLists) on a
     // window. Covers X11 and Wayland compositors with xdg-toplevel-icon (KDE); GNOME ignores
     // per-window icons and takes the one from the app's .desktop entry.
@@ -179,10 +165,10 @@ namespace Plu
     {
         // SDL3 creates windows shown by default and dropped the x/y args from SDL_CreateWindow;
         // create hidden, position explicitly, then SDL_ShowWindow() below reveals it in place.
-        // HIGH_PIXEL_DENSITY makes the GL drawable match the display's native pixels (not the
+        // HIGH_PIXEL_DENSITY makes the drawable match the display's native pixels (not the
         // scaled-down logical size), so 3D + ImGui render crisp on HiDPI instead of being upscaled
         // by the compositor. Paired with GetWidth/GetHeight returning pixels (SDL_GetWindowSizeInPixels).
-        SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (mProperties.Resizable) {
             flags |= SDL_WINDOW_RESIZABLE;
         }
@@ -199,37 +185,6 @@ namespace Plu
             SDL_SetWindowPosition(mWindow, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         } else {
             SDL_SetWindowPosition(mWindow, mProperties.Position.x, mProperties.Position.y);
-        }
-
-        // Only the very first window sets up GL. A secondary window is created on the main thread
-        // *while the render thread owns the context* — making it current here would rip the context
-        // out from under that thread (instant crash), and GLAD is loaded already. Swap interval is a
-        // property of the context, so it is left to the render thread as well (see RenderingManager).
-        const bool isFirstWindow = gSharedGLContext == nullptr;
-        if (isFirstWindow) {
-            gSharedGLContext = SDL_GL_CreateContext(mWindow);
-            mGLContext = gSharedGLContext;
-            SDL_GL_MakeCurrent(mWindow, mGLContext);
-
-            // GLAD ładujemy tu (main thread, świeżo bieżący kontekst), żeby wskaźniki funkcji GL
-            // były gotowe zanim cokolwiek w inicjalizacji dotknie GL — analogicznie do
-            // WindowsWindow::InitOpenGL. SDL3's SDL_GL_GetProcAddress returns SDL_FunctionPointer
-            // (void(*)(void)); GLAD wants void*(*)(const char*) - the cast is the standard glue.
-            if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
-                PLU_CORE_CRITICAL("Failed to load GLAD!");
-                std::terminate();
-            }
-            PLU_CORE_ASSERT(SDL_GL_GetCurrentContext() != nullptr, "GL Context is null!");
-
-            SetVSyncEnabled(true);
-        } else {
-            mGLContext = gSharedGLContext;
-            // A secondary window never waits on vsync: the interval belongs to the shared context
-            // and only the main window's swap is allowed to block on it (see RenderingManager).
-            // Recording that here keeps SwapBuffer's reconcile from flipping the interval back to 1
-            // right after every secondary swap, i.e. from fighting the render loop each frame.
-            mRequestedVSync = false;
-            mVSyncEnabled = false;
         }
 
         SDL_SetWindowHitTest(mWindow, HitTestCallback, nullptr);
@@ -353,8 +308,8 @@ namespace Plu
 
     int SDLWindow::GetWidth()
     {
-        // Pixel size (not logical points): the render path uses this for the GL viewport, main
-        // framebuffer and blit - they must match the HIGH_PIXEL_DENSITY drawable to stay crisp.
+        // Pixel size (not logical points): the render path sizes its viewport and render targets
+        // from this - they must match the HIGH_PIXEL_DENSITY drawable to stay crisp.
         int w,h;
         SDL_GetWindowSizeInPixels(mWindow, &w, &h);
         return w;
@@ -467,50 +422,12 @@ namespace Plu
 
     void SDLWindow::SetVSyncEnabled(bool enabled)
     {
-        if (IsOnMainThread()) {
-            mRequestedVSync = enabled;
-            return;
-        }
-        ApplySwapInterval(enabled);
         mVSyncEnabled = enabled;
-    }
-
-    void SDLWindow::ApplySwapInterval(bool vsync)
-    {
-        SDL_GL_SetSwapInterval(vsync ? 1 : 0);
-        if (const char* msg = SDL_GetError()) {
-            if (strlen(msg) != 0) {
-                PLU_CORE_ERROR("SDL error: {}", msg);
-            }
-        }
     }
 
     void* SDLWindow::GetWindowHandle()
     {
         return mWindow;
-    }
-
-    void * SDLWindow::GetGLContext()
-    {
-        return mGLContext;
-    }
-
-    void SDLWindow::MakeGLContextCurrent()
-    {
-        SDL_GL_MakeCurrent(mWindow, mGLContext);
-    }
-
-    void SDLWindow::ReleaseGLContext()
-    {
-        SDL_GL_MakeCurrent(mWindow, nullptr);
-    }
-
-    void SDLWindow::SwapBuffer()
-    {
-        SDL_GL_SwapWindow(mWindow);
-        if (mRequestedVSync != mVSyncEnabled && !IsOnMainThread()) {
-            SetVSyncEnabled(mRequestedVSync);
-        }
     }
 
     void SDLWindow::SetWindowTitle(String title)
