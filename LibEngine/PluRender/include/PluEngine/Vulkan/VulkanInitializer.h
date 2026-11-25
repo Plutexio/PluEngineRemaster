@@ -17,6 +17,9 @@ namespace Plu
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;
+
+        void Init() override;
+        void Shutdown() override;
     };
 }
 

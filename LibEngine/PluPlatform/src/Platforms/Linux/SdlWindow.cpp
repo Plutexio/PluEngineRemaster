@@ -168,7 +168,7 @@ namespace Plu
         // HIGH_PIXEL_DENSITY makes the drawable match the display's native pixels (not the
         // scaled-down logical size), so 3D + ImGui render crisp on HiDPI instead of being upscaled
         // by the compositor. Paired with GetWidth/GetHeight returning pixels (SDL_GetWindowSizeInPixels).
-        SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_VULKAN;
         if (mProperties.Resizable) {
             flags |= SDL_WINDOW_RESIZABLE;
         }
