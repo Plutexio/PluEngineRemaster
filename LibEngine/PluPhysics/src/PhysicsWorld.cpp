@@ -19,9 +19,8 @@
 #include "Jolt/Physics/Collision/Shape/ScaledShape.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Core/ApplicationInfo.h"
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
-#include "PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
-#include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Physics/Components/PhysicsColliderComponent.h"
 #include "PluEngine/Gameplay/RaycastInfo.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
@@ -50,7 +49,7 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
 
     TUsePointer<PhysicsBodyComponent> bodyComponent = gameObject->GetComponentByClass(PhysicsBodyComponent::GetStaticClass());
     DynamicArray<TUsePointer<GameObjectComponent>> colliders = gameObject->GetAllComponentsByClass(PhysicsColliderComponent::GetStaticClass());
-    DynamicArray<TUsePointer<GameObjectComponent>> staticMeshColliders = gameObject->GetAllComponentsByClass(StaticMeshComponent::GetStaticClass());
+    DynamicArray<TUsePointer<GameObjectComponent>> staticMeshColliders = gameObject->GetAllComponentsByClass(TypeRegistry::GetInstance()->GetTypeOfName("StaticMeshComponent"));
 
     if (!bodyComponent || (colliders.IsEmpty() && staticMeshColliders.IsEmpty())) return;
 
@@ -116,8 +115,10 @@ void Plu::PhysicsWorld::RebuildObjectCollision(UInt64 uuid, bool deferAdd)
 #endif
 
     for (auto staticMeshCollider : staticMeshColliders) {
-        TUsePointer<StaticMeshComponent> staticMeshComponent = staticMeshCollider;
-        TUsePointer<StaticMesh> staticMesh = staticMeshComponent->GetStaticMesh();
+        TUsePointer<WorldComponent> staticMeshComponent = staticMeshCollider;
+        void* propValue = staticMeshComponent->GetClass()->FindProperty("StaticMeshToDisplay")->GetPtr(staticMeshComponent.GetRaw());
+        TUsePointer<StaticMesh>* ptrVal = static_cast<TUsePointer<StaticMesh>*>(propValue);
+        TUsePointer<StaticMesh> staticMesh = *ptrVal;
 
         if (!mShapeChangesEventsPerObjectForComponents[gameObject->GetObjectUUID()].Contains(staticMeshComponent->Uuid)) {
             mShapeChangesEventsPerObjectForComponents[gameObject->GetObjectUUID()][staticMeshComponent->Uuid] = staticMeshComponent->SubscribeToEvent("StaticMeshChanged", [this, gameObject](void*) {
@@ -348,7 +349,7 @@ void Plu::PhysicsWorld::Init()
         TUsePointer<GameObjectComponent> newComponent = *static_cast<TUsePointer<GameObjectComponent>*>(data);
         TUsePointer<GameObject> parentObject = newComponent->GetParentGameObject();
         if (newComponent->GetClass()->IsDerivedOfOrSame(PhysicsColliderComponent::GetStaticClass()) ||
-        newComponent->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())
+        newComponent->GetClass()->IsDerivedOfOrSame(TypeRegistry::GetInstance()->GetTypeOfName("StaticMeshComponent"))
         ) {
             mObjectsToCheck.Insert(parentObject->GetObjectUUID());
         }
@@ -445,7 +446,7 @@ void Plu::PhysicsWorld::Init()
         TUsePointer<GameObjectComponent> oldComponent = *static_cast<TUsePointer<GameObjectComponent>*>(data);
         TUsePointer<GameObject> parentObject = oldComponent->GetParentGameObject();
         if (oldComponent->GetClass()->IsDerivedOfOrSame(PhysicsColliderComponent::GetStaticClass()) ||
-        oldComponent->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())
+        oldComponent->GetClass()->IsDerivedOfOrSame(TypeRegistry::GetInstance()->GetTypeOfName("StaticMeshComponent"))
         )
         {
 

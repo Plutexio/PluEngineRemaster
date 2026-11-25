@@ -12,9 +12,9 @@ set(PLU_MODULES
         PluPlatform PluAssetCore
         PluAssetTypes
         PluEffects PluScripting
-        PluRender PluAssetPipeline
+        PluAssetPipeline
         PluGameplay
-        PluPhysics PluNetworking
+        PluRender PluPhysics PluNetworking
         PluApp
         CACHE INTERNAL "Engine modules, bottom-up. Consumers copy these next to their executable."
 )
@@ -302,5 +302,6 @@ endforeach ()
 # depend on PluAssetPipeline in the include graph — the asset loaders register themselves through
 # reflection rather than being called by name — so listing every module here is also what keeps the
 # pipeline in the link.
-add_library(Engine INTERFACE)
+add_library(Engine INTERFACE
+        PluRender/include/PluEngine/Render/GraphicsAPIController.h)
 target_link_libraries(Engine INTERFACE ${PLU_MODULES})

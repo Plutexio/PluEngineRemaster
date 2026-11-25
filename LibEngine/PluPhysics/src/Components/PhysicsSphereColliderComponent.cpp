@@ -2,7 +2,7 @@
 // Created by Plutex on 2026-03-09.
 //
 
-#include "PluEngine/Gameplay/Components/PhysicsSphereColliderComponent.h"
+#include "PluEngine/Physics/Components/PhysicsSphereColliderComponent.h"
 
 #include "Jolt/Physics/Collision/Shape/SphereShape.h"
 #include "PluEngine/Gameplay/GameObject.h"

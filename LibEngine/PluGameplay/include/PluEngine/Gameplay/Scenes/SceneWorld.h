@@ -19,9 +19,6 @@ namespace Plu
 	class CameraComponent;
 	class DirectionalLight;
 	class SpotLight;
-	class StaticMeshComponent;
-	class InstancedStaticMeshComponent;
-	class SkeletalMeshComponent;
 	class IRenderable;
 	struct SceneInfo;
 	class GameClient;
@@ -48,10 +45,6 @@ namespace Plu
 
 		TUsePointer<GameMode> mGameMode;
 
-		//Renderables
-		HashMap<UInt64, DynamicArray<TOwningPointer<StaticMeshComponent>>> mStaticMeshRenderables;
-		HashMap<UInt64, DynamicArray<TOwningPointer<InstancedStaticMeshComponent>>> mInstancedMeshRenderables;
-		HashMap<UInt64, DynamicArray<TOwningPointer<SkeletalMeshComponent>>> mSkeletalMeshRenderables;
 		TOwningPointer<DirectionalLight> mDirectionalLight;
 		// Keyed by object UUID, like the renderable maps above. Unlike mDirectionalLight there is
 		// no uniqueness assert — a scene may hold any number of spot lights; the shadow-slot
@@ -64,10 +57,6 @@ namespace Plu
 		// Per-world cache for GetAllGameObjectsOfClass. Was a function-local static
 		// (globally shared across worlds + not thread-safe); kept per-world here.
 		HashMap<String, DynamicArray<TUsePointer<GameObject>>> mGameObjectsPerClassCache;
-
-		// Live particle spawner components by UUID. RenderSnapshotBuilder packs the full state of
-		// each into every snapshot; the render thread creates/destroys its spawners to match.
-		HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>> mParticleSpawnerComponents;
 
 		//Debug
 		DynamicArray<float> mDebugLineVerts;   // GL_LINES,  6 floatów / wierzchołek
@@ -98,10 +87,6 @@ namespace Plu
 		// editor UI, read on MAIN by RenderSnapshotBuilder, not serialized). Reaches the shaders
 		// as ShadowData::DebugVisualizeCascades.
 		bool ShowShadowCascades = false;
-
-		// Live particle spawner components (main thread). Their particles are simulated on the
-		// render thread — read those through GetParticleDebugStats (RenderParticleStats.h).
-		[[nodiscard]] const HashMap<UInt64, TOwningPointer<ParticleSpawnerComponent>>& GetParticleSpawnerComponents() const { return mParticleSpawnerComponents; }
 
 		// Debug drawing for this world (lines, shapes, raycasts; per frame or with a duration).
 		// Main thread only. Editor gizmos draw through it too: the editor's OnTick runs before

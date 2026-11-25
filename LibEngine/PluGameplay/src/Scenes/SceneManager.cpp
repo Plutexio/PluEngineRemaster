@@ -11,7 +11,6 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/AssetCore/AssetDescriptor.h"
@@ -30,7 +29,7 @@ void Plu::SceneManager::UnloadScene(TUsePointer<SceneWorld> sceneWorld)
 		mObjectManager->DestroyObject(*mActivePIEScene->GetEngineObjectHandle());
 		mActivePIEScene = nullptr;
 		if (mActiveScene && !mIsInPIE) {
-			IRendererCamera* cameraToViewInEditor = nullptr;
+			ICamera* cameraToViewInEditor = nullptr;
 			DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 			mEditorCamera = cameraToViewInEditor;
 		}
@@ -70,7 +69,7 @@ void Plu::SceneManager::LoadScene(String url, TOwningPointer<SceneWorld>* field,
 		newWorld->Play();
 	} else {
 #ifdef PLU_ENGINE_EDITOR_BUILD
-		IRendererCamera* cameraToViewInEditor = nullptr;
+		ICamera* cameraToViewInEditor = nullptr;
 		DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 		mEditorCamera = cameraToViewInEditor;
 #endif
@@ -90,7 +89,7 @@ void Plu::SceneManager::CreateOverlayScene()
 	EngineObjectHandle newOverlayHandle = hdl;
 	GetObjectEventDispatcher()->Dispatch("NewWorldBeforeLoad", &newOverlayHandle);
 	mOverlayScene->LoadGameObjects();
-	IRendererCamera* cameraToViewInEditor = nullptr;
+	ICamera* cameraToViewInEditor = nullptr;
 	DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 	mEditorCamera = cameraToViewInEditor;
 	newOverlayHandle = hdl;
@@ -109,7 +108,7 @@ void Plu::SceneManager::UnloadOverlayScene()
 		mObjectManager->DestroyObject(*mOverlayScene->GetEngineObjectHandle());
 		mOverlayScene = nullptr;
 		if (mActiveScene && !IsInPIE()) {
-			IRendererCamera* cameraToViewInEditor = nullptr;
+			ICamera* cameraToViewInEditor = nullptr;
 			DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 			mEditorCamera = cameraToViewInEditor;
 		}
@@ -257,7 +256,7 @@ void Plu::SceneManager::ExitPIE()
 	PLU_PROFILE_SCOPE("PIE Exit");
 	mIsInPIE = false;
 	UnloadScene(mActivePIEScene);
-	IRendererCamera* cameraToViewInEditor = nullptr;
+	ICamera* cameraToViewInEditor = nullptr;
 	DispatchEvent("EditorCameraWanted", &cameraToViewInEditor);
 	mEditorCamera = cameraToViewInEditor;
 }
@@ -272,12 +271,12 @@ Plu::TUsePointer<Plu::SceneWorld> Plu::SceneManager::GetBaseSceneWorld()
 	return mActiveScene;
 }
 
-void Plu::SceneManager::SetEditorRenderCamera(IRendererCamera* camera)
+void Plu::SceneManager::SetEditorRenderCamera(ICamera* camera)
 {
 	mEditorCamera = camera;
 }
 
-Plu::IRendererCamera* Plu::SceneManager::GetEditorRenderCamera() const
+Plu::ICamera* Plu::SceneManager::GetEditorRenderCamera() const
 {
 	return mEditorCamera;
 }

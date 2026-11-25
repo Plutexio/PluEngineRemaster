@@ -2,7 +2,7 @@
 // Created by Plutex on 9/4/26.
 //
 
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBodyComponent.h"
 
 #include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 

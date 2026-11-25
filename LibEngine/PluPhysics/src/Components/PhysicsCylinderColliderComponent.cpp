@@ -2,7 +2,7 @@
 // Created by Plutex on 2026-03-09.
 //
 
-#include "PluEngine/Gameplay/Components/PhysicsCylinderColliderComponent.h"
+#include "PluEngine/Physics/Components/PhysicsCylinderColliderComponent.h"
 
 #include "Jolt/Physics/Collision/Shape/CylinderShape.h"
 #include "PluEngine/Gameplay/GameObject.h"

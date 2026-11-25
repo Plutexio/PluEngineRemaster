@@ -12,7 +12,7 @@
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 #include "PluEngine/Gameplay/GameObject.h"
 #include "PluEngine/Application.h"
-#include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/StaticMeshComponent.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Timer.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"

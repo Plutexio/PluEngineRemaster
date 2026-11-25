@@ -16,7 +16,7 @@ namespace Plu
     class GameObject;
     class WorldComponent;
     class GameClient;
-    class IRendererCamera;
+    class ICamera;
     struct SceneInfo;
     class SceneWorld;
     // Defined in WorldComponent.h; only the rule value travels through PendingAttachment, so the
@@ -38,7 +38,7 @@ namespace Plu
         // Kamera, z której renderuje się viewport edytora poza PIE. Dawniej przekazywana do
         // Renderer::SetCamera; w modelu snapshot RenderSnapshotBuilder pobiera ją stąd, gdy
         // nie ma kontrolera/pucharka. Nie-właścicielski wskaźnik (właścicielem jest edytor).
-        IRendererCamera* mEditorCamera = nullptr;
+        ICamera* mEditorCamera = nullptr;
 #endif
 
         HashMap<String, TUsePointer<SceneInfo>> mRegisteredScenesByURL;
@@ -153,8 +153,8 @@ namespace Plu
          */
         void ReloadPythonInstances(const DynamicArray<String>& typeNames);
 
-        void SetEditorRenderCamera(IRendererCamera* camera);
-        IRendererCamera* GetEditorRenderCamera() const;
+        void SetEditorRenderCamera(ICamera* camera);
+        ICamera* GetEditorRenderCamera() const;
 #endif
     };
 

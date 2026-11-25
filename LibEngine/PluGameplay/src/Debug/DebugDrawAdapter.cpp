@@ -4,10 +4,11 @@
 
 #include "PluEngine/Gameplay/Debug/DebugDrawAdapter.h"
 #include "PluEngine/PluUtils.h"
-#include "PluEngine/Render/RenderUtils.h"
 #include "PluEngine/Timer.h"
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "PluEngine/Gameplay/Debug/DebugDrawUtils.h"
 
 namespace
 {

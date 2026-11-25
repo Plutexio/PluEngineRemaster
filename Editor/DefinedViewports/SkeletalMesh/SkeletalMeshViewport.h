@@ -6,9 +6,9 @@
 #define PLUENGINE_SKELETALMESHVIEWPORT_H
 #include "EditorViewports/IEditorViewport.h"
 #include "SkeletalMeshViewport.generated.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/SkeletalMeshComponent.h"
 #include "PluEngine/Gameplay/GameObject.h"
-#include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/StaticMeshComponent.h"
 #include "Utils/GizmoUtils.h"
 
 namespace Plu

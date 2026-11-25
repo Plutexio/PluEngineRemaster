@@ -8,7 +8,7 @@
 #include "BlendSpaceViewport.generated.h"
 #include "PluEngine/Core.h"
 #include "PluEngine/Gameplay/GameObject.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/SkeletalMeshComponent.h"
 #include "PluEngine/AssetTypes/Animation/BlendSpace.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
 #include "PluBase/PluUUID.h"

@@ -2,7 +2,7 @@
 // Created by Plutex on 2026-03-09.
 //
 
-#include "PluEngine/Gameplay/Components/PhysicsBoxColliderComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBoxColliderComponent.h"
 
 #include "Jolt/Physics/Collision/Shape/BoxShape.h"
 #include "PluEngine/Gameplay/GameObject.h"

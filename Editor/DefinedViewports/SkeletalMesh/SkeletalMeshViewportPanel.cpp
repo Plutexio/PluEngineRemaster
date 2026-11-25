@@ -21,7 +21,7 @@
 #include "PluEngine/AssetTypes/Material/Material.h"
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
 #include "PluEngine/AssetTypes/Skeleton/Skeleton.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/SkeletalMeshComponent.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "UI/IconsFontAwesome7.h"
@@ -101,7 +101,7 @@ namespace
 		SkeletonNode* root = skeleton->RootNode.GetRaw();
 		if (!root) return result;
 
-		IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+		ICamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
 		const Matrix4 viewProj = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y)
 			* GetEditorCameraViewMatrix(camera);
 		const Matrix4 componentWorld = component->GetRenderMatrix();
@@ -433,7 +433,7 @@ void Plu::SkeletalMeshViewportPanel::OnUpdate(float deltaTime)
 
 			// One gizmo, one target: the hierarchy keeps bone and attach point selection mutually
 			// exclusive, so whichever is set gets the handles.
-			IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+			ICamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
 			Matrix4 view = GetEditorCameraViewMatrix(camera);
 			Matrix4 proj = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y);
 			ImGuizmo::SetOrthographic(false);

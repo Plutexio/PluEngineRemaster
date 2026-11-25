@@ -2,7 +2,7 @@
 // Created by Plutex on 7/6/26.
 //
 
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
+#include "PluEngine/Render/Components/SkeletalMeshComponent.h"
 #include "PluEngine/AssetTypes/MeshBounds.h"
 
 #include <cmath>

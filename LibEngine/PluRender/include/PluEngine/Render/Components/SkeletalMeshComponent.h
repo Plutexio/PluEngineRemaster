@@ -6,7 +6,6 @@
 #define PLUENGINE_SKELETALMESHCOMPONENT_H
 #include "PluEngine/Gameplay/WorldComponent.h"
 #include "SkeletalMeshComponent.generated.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
 #include "PluEngine/AssetTypes/Animation/BoneTransform.h"
 #include "PluEngine/AssetTypes/Animation/AnimGraphInstance.h"
@@ -20,6 +19,7 @@
 
 namespace Plu
 {
+	struct MaterialInfo;
 	struct SkeletonAttachPoint;
 	struct Animation;
 	struct SkeletalMesh;

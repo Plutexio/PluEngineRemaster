@@ -7,12 +7,12 @@
 #include "PluEngine/Core.h"
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "EditorCamera.generated.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
+#include "PluEngine/Gameplay/Components/CameraComponent.h"
 
 namespace Plu
 {
 	PLU_CLASS()
-	class EditorSceneCamera : public EngineObject, public IRendererCamera
+	class EditorSceneCamera : public EngineObject, public ICamera
 	{
 		REFLECTION_BODY_EDITORSCENECAMERA()
 	private:

@@ -13,7 +13,7 @@
 #include "PluEngine/AssetTypes/Animation/AnimGraphInstance.h"
 #include "PluEngine/AssetTypes/Animation/BlendSpace.h"
 #include "PluEngine/AssetTypes/SkeletalMesh/SkeletalMesh.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
+#include "../../../LibEngine/PluRender/include/PluEngine/Render/Components/SkeletalMeshComponent.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"

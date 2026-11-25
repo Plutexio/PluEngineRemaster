@@ -1,5 +1,5 @@
 # L4 — everything that touches the GPU, and the render thread's resources.
-plu_add_engine_module(PluRender DEPENDS PluCore PluAssetCore PluPlatform PluAssetTypes PluEffects)
+plu_add_engine_module(PluRender DEPENDS PluCore PluAssetCore PluPlatform PluAssetTypes PluGameplay PluEffects)
 
 target_link_libraries(PluRender PUBLIC glm imgui::imgui ImGuizmo stb::stb)
 

@@ -121,7 +121,7 @@ void Plu::PluEditor::OnPostInit()
 
     mEditorAppContext->EditorSceneCamera = mObjectManager->CreateObject(EditorSceneCamera::GetStaticClass());
     mApplicationInfo.AppScenesManager->GetObjectEventDispatcher()->Subscribe("EditorCameraWanted", [this](void* data) {
-        IRendererCamera** cameraFieldPtr = static_cast<IRendererCamera**>(data);
+        ICamera** cameraFieldPtr = static_cast<ICamera**>(data);
         *cameraFieldPtr = mEditorAppContext->EditorSceneCamera.GetRaw();
     });
 

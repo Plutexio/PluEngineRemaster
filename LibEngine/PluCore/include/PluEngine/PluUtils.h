@@ -12,6 +12,11 @@
 
 namespace Plu
 {
+	constexpr float kCameraNearClip = 0.1f;
+	constexpr float kCameraFarClip  = 100000.0f;
+
+
+
 	PLUCORE_API PathW GetEngineResourcesDir();
 
 	PLUCORE_API PathW GetExePath();

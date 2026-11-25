@@ -11,9 +11,10 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "PluEngine/PluTypes.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/Render/RenderUtils.h"
 #include "GizmoUtils.generated.h"
+#include "PluEngine/PluUtils.h"
+#include "PluEngine/Gameplay/Components/CameraComponent.h"
 
 namespace Plu
 {
@@ -64,7 +65,7 @@ namespace Plu
 
     // View matrix of a viewport camera (location + Euler rotation in degrees) — the convention the
     // old renderer used, so gizmos and overlays line up with what the scene renderer draws.
-    inline Matrix4 GetEditorCameraViewMatrix(IRendererCamera* camera)
+    inline Matrix4 GetEditorCameraViewMatrix(ICamera* camera)
     {
         if (!camera) return Matrix4(1.0f);
         return glm::inverse(
@@ -75,7 +76,7 @@ namespace Plu
     // Projection matrix of a viewport camera for a viewport with the given aspect ratio (width /
     // height). Perspective or orthographic per CameraOptions, clip planes kCameraNearClip/FarClip.
     // GL clip-space convention (y up, depth -1..1), which is what ImGuizmo expects.
-    inline Matrix4 GetEditorCameraProjectionMatrix(IRendererCamera* camera, float aspect)
+    inline Matrix4 GetEditorCameraProjectionMatrix(ICamera* camera, float aspect)
     {
         if (camera && camera->GetCameraOptions()->CameraPerspective == PerspectiveType::Orthographic) {
             const float halfWidth = camera->GetCameraOptions()->OrthoWidth / 2.0f;

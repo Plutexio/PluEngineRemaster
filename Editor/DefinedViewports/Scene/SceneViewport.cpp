@@ -16,7 +16,6 @@
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 #include "PluEngine/Gameplay/Objects/Lights/SpotLight.h"
-#include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "PluEngine/Render/RenderUtils.h"
 #include "PluEngine/PluUtils.h"
 #include "PluEngine/Effects/Particles/ParticleSystem.h"
@@ -25,73 +24,6 @@
 
 extern Plu::EditorAppContext* gEditorAppContext;
 extern Plu::TUsePointer<Plu::EngineObjectManager> gEngineObjectManager;
-
-namespace
-{
-	// Spawn shape and launch cone of every enabled emitter, read from the COMPILED program (the last
-	// SpawnPosition op and the SpawnVelocity op), so the gizmo shows exactly what the executor spawns —
-	// modules off the chain, overridden ones and disabled emitters included correctly for free.
-	void DrawParticleSystemSpawnerGizmo(Plu::DebugDrawAdapter& debugDraw, Plu::ParticleSpawnerComponent& spawner)
-	{
-		using namespace Plu;
-		ParticleSystem* system = spawner.ParticleSystemAsset.GetRaw();
-		if (!system) return;
-		constexpr float kLaunchLength = 1.0f;
-		constexpr float kPointMarkerRadius = 0.05f;
-		const Vec3 shapeColor = Vec3(0.3f, 0.85f, 1.0f);
-		const Vec3 coneColor = Vec3(1.0f, 0.55f, 0.1f);
-		const Vec3 axisColor = Vec3(1.0f, 0.85f, 0.3f);
-
-		const Vec3 location = spawner.GetWorldLocation();
-		const Vec3 rotation = spawner.GetWorldRotation();
-		const glm::mat3 basis = glm::mat3_cast(GetQuaternionFromEuler(rotation));
-
-		// Main thread, cached by CompileRevision; the reference is valid until the next GetCompiled call.
-		const CompiledParticleSystem& compiled = ParticleSystemCompiler::GetCompiled(*system);
-		for (const CompiledEmitter& emitter : compiled.Emitters) {
-			if (!emitter.Enabled) continue;
-
-			const ParticleOp* position = nullptr;
-			const ParticleOp* velocity = nullptr;
-			for (const ParticleOp& op : emitter.SpawnOps) {
-				if (op.Code == EParticleOpCode::SpawnPosition) position = &op;       // the last one wins, as when executed
-				else if (op.Code == EParticleOpCode::SpawnVelocity) velocity = &op;
-			}
-
-			Vec3 centre = location;
-			if (position && position->A.Index + 8 <= emitter.Constants.Size()) {
-				const float* p = emitter.Constants.Data() + position->A.Index; // radius, extent xyz, cone, offset xyz
-				centre = location + basis * Vec3(p[5], p[6], p[7]);
-				switch (static_cast<EParticleSpawnShape>(position->Flags)) {
-					case EParticleSpawnShape::Point:  debugDraw.DrawDebugSphere(centre, kPointMarkerRadius, shapeColor, 0.0f, 12); break;
-					case EParticleSpawnShape::Sphere: debugDraw.DrawDebugSphere(centre, std::max(p[0], 0.001f), shapeColor); break;
-					case EParticleSpawnShape::Box:    debugDraw.DrawDebugOrientedBox(centre, Vec3(p[1], p[2], p[3]), rotation, shapeColor); break;
-					case EParticleSpawnShape::Cone: {
-						// Solid spherical sector: apex at the centre, axis forward (-Z), reach p[0], half angle p[4].
-						const float reach = std::max(p[0], 0.001f);
-						const float halfAngle = glm::clamp(p[4], 0.0f, 180.0f);
-						const Vec3 forward = basis * Vec3(0.0f, 0.0f, -1.0f);
-						if (halfAngle >= 179.0f) debugDraw.DrawDebugSphere(centre, reach, shapeColor);
-						else if (halfAngle > 0.5f) debugDraw.DrawDebugCone(centre, forward, reach, halfAngle, shapeColor);
-						else debugDraw.DrawDebugLine(centre, centre + forward * reach, shapeColor);
-						break;
-					}
-				}
-			}
-
-			if (velocity && velocity->B.Index + 4 <= emitter.Constants.Size()) {
-				const float* p = emitter.Constants.Data() + velocity->B.Index; // direction xyz, cone angle
-				Vec3 direction = basis * Vec3(p[0], p[1], p[2]);
-				if (glm::length(direction) < 1e-6f) continue;
-				direction = glm::normalize(direction);
-				const float halfAngle = glm::clamp(p[3], 0.0f, 180.0f);
-				if (halfAngle >= 179.0f) debugDraw.DrawDebugSphere(centre, kLaunchLength, coneColor);
-				else if (halfAngle > 0.5f) debugDraw.DrawDebugCone(centre, direction, kLaunchLength, halfAngle, coneColor);
-				debugDraw.DrawDebugLine(centre, centre + direction * kLaunchLength, axisColor);
-			}
-		}
-	}
-}
 
 void Plu::SceneViewport::SubscribeToCurrentWorld()
 {
@@ -302,36 +234,6 @@ void Plu::SceneViewport::DrawSelectedParticleSpawnerGizmos()
 	const Vec3 coneColor = Vec3(1.0f, 0.55f, 0.1f);
 	const Vec3 axisColor = Vec3(1.0f, 0.85f, 0.3f);
 	DebugDrawAdapter& debugDraw = *world->GetDebugDraw();
-
-	for (const auto& component : selected->GetAllComponentsByClass(TClassPointer<GameObjectComponent>(ParticleSpawnerComponent::GetStaticClass()))) {
-		if (!component) continue;
-		ParticleSpawnerComponent* spawner = static_cast<ParticleSpawnerComponent*>(component.GetRaw());
-		if (spawner->ParticleSystemAsset) {
-			DrawParticleSystemSpawnerGizmo(debugDraw, *spawner);
-			continue;
-		}
-		const ParticleClass& particleClass = spawner->SpawnerParticleClass;
-		const Vec3 apex = spawner->GetWorldLocation();
-		const Vec3 direction = spawner->GetLaunchDirection();
-
-		// Particles spawned without a launch start at rest — only mark the spawn point.
-		if (!particleClass.LaunchOnSpawn) {
-			debugDraw.DrawDebugSphere(apex, kAtRestMarkerRadius, coneColor, 0.0f, 16);
-			continue;
-		}
-
-		// A cone that has closed into a full sphere would collapse to a point behind the apex;
-		// draw the sphere instead.
-		const float halfAngle = glm::clamp(particleClass.LaunchConeAngle, 0.0f, 180.0f);
-		if (halfAngle >= 179.0f) {
-			debugDraw.DrawDebugSphere(apex, kGizmoLength, coneColor);
-		} else {
-			debugDraw.DrawDebugCone(apex, direction, kGizmoLength, halfAngle, coneColor);
-		}
-
-		// The cone's axis, so the orientation reads even for a sphere or a very narrow cone.
-		debugDraw.DrawDebugLine(apex, apex + direction * kGizmoLength, axisColor);
-	}
 }
 
 void Plu::SceneViewport::OnUpdate(float deltaTime)

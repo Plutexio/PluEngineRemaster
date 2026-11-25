@@ -3,9 +3,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "PluEngine/Core/Objects/EngineObject.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluSTL/PluSTL_FWD.h"
 #include "IEditorViewport.generated.h"
+#include "PluEngine/Gameplay/Components/CameraComponent.h"
 
 namespace Plu
 {

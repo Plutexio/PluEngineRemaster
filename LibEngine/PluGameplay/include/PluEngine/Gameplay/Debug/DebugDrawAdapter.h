@@ -13,26 +13,14 @@
 
 namespace Plu
 {
-    // Geometry of draws that outlive their frame, already in the line/point buffer format. Not
-    // reflected — internal to DebugDrawAdapter.
     struct DebugDrawPersistentBatch
     {
         float RemainingSeconds = 0.0f;
-        // Set once the batch has been emitted. Until then, further draws with the same duration
-        // join it instead of opening a batch of their own.
         bool Sealed = false;
         DynamicArray<float> LineVerts;
         DynamicArray<float> PointVerts;
     };
 
-    // Front end for every debug draw of one SceneWorld (SceneWorld::GetDebugDraw). Writes into the
-    // world's per-frame debug buffers — interleaved pos(3)+color(3), GL_LINES / GL_POINTS — which
-    // RenderSnapshotBuilder drains into the render snapshot each frame. Main thread only, like the
-    // world itself.
-    //
-    // Units: positions and sizes in metres, rotations as engine Euler angles in degrees, cone angles
-    // in degrees. Duration in seconds: 0 draws for this frame only, anything above keeps the shape
-    // on screen for that long (counted in frame time by the snapshot builder).
     PLU_STRUCT(PyExport)
     struct PLUGAMEPLAY_API DebugDrawAdapter
     {

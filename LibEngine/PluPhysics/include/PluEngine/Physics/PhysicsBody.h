@@ -12,7 +12,7 @@
 
 #include "PluEngine/Core/Objects/EngineObject.h"
 #include "PhysicsBody.generated.h"
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBodyComponent.h"
 #include "PluEngine/Gameplay/Physics/PhysicsChannels.h"
 
 namespace Plu

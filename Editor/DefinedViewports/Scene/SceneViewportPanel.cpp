@@ -17,7 +17,6 @@
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneManager.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
-#include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
 #include "PluEngine/Physics/JoltIntializer.h"
 #include "PluEngine/Physics/PhysicsWorld.h"
 #include "PluEngine/Platform/Window.h"
@@ -47,17 +46,6 @@ void Plu::SceneViewportPanel::OnUpdate(float deltaTime)
 		if (scene)
 		{
 			if (!gApplicationInfo->AppScenesManager->IsInPIE()) JoltPhysics::GetPhysicsWorldBySceneHandle(gApplicationInfo->AppScenesManager->GetBaseSceneWorld()->GetObjectHandle())->OnUpdate(deltaTime, false);
-
-			// Particles simulate on the render thread with every fresh snapshot, input or not.
-			// Under power saving a visible viewport with a running effect has to ask for its frames.
-			if (TUsePointer<SceneWorld> world = gApplicationInfo->AppScenesManager->GetCurrentWorld()) {
-				for (const auto& spawner : world->GetParticleSpawnerComponents()) {
-					if (spawner.second->IsPlaying() && !spawner.second->IsFinished()) {
-						RequestContinuousRedraw();
-						break;
-					}
-				}
-			}
 
 			ImVec2 viewportPos  = ImGui::GetCursorScreenPos();
 			ImVec2 viewportSize = ImGui::GetContentRegionAvail();
@@ -120,7 +108,7 @@ void Plu::SceneViewportPanel::OnUpdate(float deltaTime)
 				TUsePointer<GameObject> selected = gApplicationInfo->AppObjectManager->GetObjectAsUser<GameObject>(gEditorAppContext->EditorState.SelectedGameObject);
 
 				// Matrices in locals — ImGuizmo writes through the pointers, the getters return by value.
-				IRendererCamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
+				ICamera* camera = gEditorAppContext->EditorScenesManager->GetEditorRenderCamera();
 				Matrix4 view  = GetEditorCameraViewMatrix(camera);
 				Matrix4 proj  = GetEditorCameraProjectionMatrix(camera, imageSize.x / imageSize.y);
 				Matrix4 model = selected->GetObjectWorldMatrix();

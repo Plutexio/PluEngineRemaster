@@ -7,10 +7,6 @@
 #include "PluEngine/Timer.h"
 #include "PluSTL/HashSet/HashSet.h"
 #include "PluEngine/Timer.h"
-#include "../../include/PluEngine/Gameplay/Components/PhysicsColliderComponent.h"
-#include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
-#include "PluEngine/Gameplay/Components/InstancedStaticMeshComponent.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
 #include "PluEngine/Gameplay/Objects/PlayerStart.h"
 #include "PluEngine/Gameplay/Objects/SpectatorPuppet.h"
 #include "PluEngine/Gameplay/Objects/Lights/DirectionalLight.h"
@@ -22,8 +18,6 @@
 #include "PluEngine/Gameplay/WorldComponent.h"
 #include "PluEngine/Gameplay/InputManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
-#include "PluEngine/Gameplay/Components/ParticleSpawnerComponent.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 
 namespace Plu
 {
@@ -117,25 +111,11 @@ namespace Plu
 					PLU_CORE_ERROR("Error In Python OnEndPlay of object {}, what -> {}", object->GetDisplayName().CStr(), e.what());
 				}
 			}
-			if (mStaticMeshRenderables.Contains(object->GetObjectUUID())) {
-				mStaticMeshRenderables.Remove(object->GetObjectUUID());
-			}
-			if (mInstancedMeshRenderables.Contains(object->GetObjectUUID())) {
-				mInstancedMeshRenderables.Remove(object->GetObjectUUID());
-			}
-			if (mSkeletalMeshRenderables.Contains(object->GetObjectUUID())) {
-				mSkeletalMeshRenderables.Remove(object->GetObjectUUID());
-			}
 			if (object == mDirectionalLight) {
 				mDirectionalLight = nullptr;
 			}
 			if (mSpotLights.Contains(object->GetObjectUUID())) {
 				mSpotLights.Remove(object->GetObjectUUID());
-			}
-			// Spawners are keyed by component UUID, not object UUID. Removing them here is what makes
-			// the render thread destroy their particle spawners.
-			for (const auto& spawner : object->GetAllComponentsByClass(TClassPointer<GameObjectComponent>(ParticleSpawnerComponent::GetStaticClass()))) {
-				if (spawner) mParticleSpawnerComponents.Remove(spawner->Uuid);
 			}
 			object->Cleanup();
 			mGameObjects.Remove(object->mUuid);
@@ -219,60 +199,12 @@ namespace Plu
 
 		TUsePointer<GameObjectComponent> newComponent = component;
 		DispatchEvent("NewComponent", &newComponent);
-
-		if (component->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())) {
-			if (mStaticMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID())) {
-				mStaticMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].PushBack(component);
-			} else {
-				mStaticMeshRenderables[component->GetParentGameObject()->GetObjectUUID()] = {component};
-			}
-		}
-		if (component->GetClass()->IsDerivedOfOrSame(InstancedStaticMeshComponent::GetStaticClass())) {
-			if (mInstancedMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID())) {
-				mInstancedMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].PushBack(component);
-			} else {
-				mInstancedMeshRenderables[component->GetParentGameObject()->GetObjectUUID()] = {component};
-			}
-		}
-		if (component->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) {
-			if (mSkeletalMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID())) {
-				mSkeletalMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].PushBack(component);
-			} else {
-				mSkeletalMeshRenderables[component->GetParentGameObject()->GetObjectUUID()] = {component};
-			}
-		}
-
-		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
-			mParticleSpawnerComponents[component->Uuid] = component;
-		}
 	}
 
 	void SceneWorld::DeleteGameObjectComponent(const TOwningPointer<GameObjectComponent> &component)
 	{
 		TUsePointer<GameObjectComponent> oldComponent = component;
 		DispatchEvent("DestroyComponent", &oldComponent);
-
-		if (mStaticMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID()) &&
-			component->GetClass()->IsDerivedOfOrSame(StaticMeshComponent::GetStaticClass())) {
-			mStaticMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].Remove(component);
-			return;
-		}
-		if (mSkeletalMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID()) &&
-			component->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) {
-			mSkeletalMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].Remove(component);
-			return;
-		}
-		if (mInstancedMeshRenderables.Contains(component->GetParentGameObject()->GetObjectUUID()) &&
-			component->GetClass()->IsDerivedOfOrSame(InstancedStaticMeshComponent::GetStaticClass())) {
-			mInstancedMeshRenderables[component->GetParentGameObject()->GetObjectUUID()].Remove(component);
-			return;
-		}
-
-		if (component->GetClass()->IsDerivedOfOrSame(ParticleSpawnerComponent::GetStaticClass())) {
-			// Dropping it from the map is the whole destroy: the next snapshot no longer lists it,
-			// and the render thread destroys the spawner.
-			mParticleSpawnerComponents.Remove(component->Uuid);
-		}
 	}
 
 	TUsePointer<GameObject> SceneWorld::SpawnGameObject(TClassPointer<GameObject> objectClass)

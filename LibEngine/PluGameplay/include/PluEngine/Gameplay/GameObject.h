@@ -11,11 +11,11 @@
 #include "PluEngine/Gameplay/GameObjectComponent.h"
 #include "GameObject.generated.h"
 #include "WorldComponent.h"
-#include "PluEngine/Gameplay/Components/SkeletalMeshComponent.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 
 namespace Plu
 {
+	struct StaticMesh;
 	class PhysicsCompoundShape;
 	class PhysicsBody;
 	class GameObjectComponent;
@@ -273,29 +273,10 @@ namespace Plu
 		PLU_FUNCTION()
 		[[nodiscard]] bool IsAttachedToObject(GameObject* object) const;
 
-		// Thin wrapper kept for existing content: attaches to a skeletal mesh attach point with
-		// SnapToTarget, which is what this call used to do unconditionally (it hard-set the object's
-		// location and rotation to the attach point's every frame, so an offset was impossible).
-		// New code can use AttachToComponent directly and keep an offset from the socket.
-		PLU_FUNCTION()
-		void AttachToSkeletalMeshComponent(SkeletalMeshComponent* skeletalMeshComponent, const String &attachPointName);
-		PLU_FUNCTION()
-		void DetachFromSkeletalMeshComponent();
-		PLU_FUNCTION()
-		[[nodiscard]] bool IsAttachedToSkeletalMesh() const;
-
-		// The skeletal mesh this object rides through a socket, or null. Lets the render snapshot
-		// builder find the objects whose parent frame is a bone: their world transform has to be
-		// invalidated after the pose for THIS frame is evaluated, otherwise everything riding a bone
-		// is one frame behind it (which is exactly what used to happen when this was resolved from
-		// GameObject::TickObject).
-		[[nodiscard]] TUsePointer<SkeletalMeshComponent> GetSkeletalAttachmentParent() const;
-
 		PLU_FUNCTION()
 		float GetElapsedTimeSinceSpawn() const;
 		PLU_FUNCTION()
 		void SetLifetime(float lifetime);
-
 
 		// Whether this object's physics body simulates (Dynamic) or is Static. A JPH::Body has a
 		// single motion type for the whole compound shape, so this is a per-object property, not a

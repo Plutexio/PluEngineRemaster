@@ -569,29 +569,6 @@ void Plu::GameObject::SnapToAttachParent(bool keepScale)
 	}
 }
 
-void Plu::GameObject::AttachToSkeletalMeshComponent(SkeletalMeshComponent *skeletalMeshComponent,
-                                                    const String &attachPointName)
-{
-	AttachToComponent(skeletalMeshComponent, attachPointName, EAttachmentRule::SnapToTarget);
-}
-
-void Plu::GameObject::DetachFromSkeletalMeshComponent()
-{
-	DetachFromParent(EAttachmentRule::KeepWorld);
-}
-
-bool Plu::GameObject::IsAttachedToSkeletalMesh() const
-{
-	return GetSkeletalAttachmentParent().IsValid();
-}
-
-Plu::TUsePointer<Plu::SkeletalMeshComponent> Plu::GameObject::GetSkeletalAttachmentParent() const
-{
-	if (!mAttachParentComponent || mAttachSocketName.IsEmpty()) return nullptr;
-	if (!mAttachParentComponent->GetClass()->IsDerivedOfOrSame(SkeletalMeshComponent::GetStaticClass())) return nullptr;
-	return mObjectManager->GetObjectAsUser<SkeletalMeshComponent>(*mAttachParentComponent->GetEngineObjectHandle());
-}
-
 float Plu::GameObject::GetElapsedTimeSinceSpawn() const
 {
 	return mElapsedLifetime;

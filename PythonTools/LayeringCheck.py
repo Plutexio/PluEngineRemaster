@@ -37,11 +37,11 @@ Layers = {
     "PluPlatform": 1, "PluAssetCore": 1,
     "PluAssetTypes": 2,
     "PluEffects": 3, "PluScripting": 3,
-    "PluRender": 4, "PluAssetPipeline": 4,
+    "PluAssetPipeline": 4,
     "PluGameplay": 5,
     # Above gameplay since the physics rework: PhysicsWorld builds bodies from gameplay components
     # and listens to scene events, while gameplay never names physics.
-    "PluPhysics": 6, "PluNetworking": 6,
+    "PluRender": 6, "PluPhysics": 6, "PluNetworking": 6,
     "PluApp": 7,
 }
 

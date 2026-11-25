@@ -2,9 +2,8 @@
 // Created by Plutex on 1/19/26.
 //
 
-#include "PluEngine/Gameplay/Components/StaticMeshComponent.h"
+#include "PluEngine/Render/Components/StaticMeshComponent.h"
 #include "PluEngine/AssetTypes/MeshBounds.h"
-
 #include "PluEngine/Gameplay/GameObject.h"
 
 Plu::TUsePointer<Plu::StaticMesh> Plu::StaticMeshComponent::GetStaticMesh()

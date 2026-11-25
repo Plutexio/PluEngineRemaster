@@ -40,12 +40,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.cpp
         ./DefinedViewports/BlendSpace/BlendSpaceViewport.cpp
         ./NodeGraph/NodeGraphEditor.cpp
-        ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.cpp
-        ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.cpp
-        ./DefinedViewports/ParticleSystem/ParticleGraphPanel.cpp
-        ./DefinedViewports/ParticleSystem/ParticleParametersPanel.cpp
-        ./DefinedViewports/ParticleSystem/ParticlePreviewPanel.cpp
-        ./DefinedViewports/ParticleSystem/ParticleSystemViewport.cpp
         ./DefinedViewports/Material/MaterialDetailsPanel.cpp
         ./DefinedViewports/Material/MaterialViewport.cpp
         ./DefinedViewports/Scene/SceneObjectDetailsPanel.cpp
@@ -112,14 +106,6 @@ add_executable(PluEditor WIN32 ${SOURCES_REFLECTION}
         ./DefinedViewports/BlendSpace/BlendSpaceDrawing.h
         ./DefinedViewports/BlendSpace/BlendSpacePreviewPanel.h
         ./DefinedViewports/BlendSpace/BlendSpaceViewport.h
-        ./DefinedViewports/ParticleSystem/ParticleDetailsPanel.h
-        ./DefinedViewports/ParticleSystem/ParticleEmittersPanel.h
-        ./DefinedViewports/ParticleSystem/ParticleGraphPanel.h
-        ./DefinedViewports/ParticleSystem/ParticleParametersPanel.h
-        ./DefinedViewports/ParticleSystem/ParticlePreviewPanel.h
-        ./DefinedViewports/ParticleSystem/ParticleSystemViewport.h
-        ./DefinedViewports/ParticleSystem/ParticleModuleNodeView.h
-        ./DefinedViewports/ParticleSystem/ParticleCurveParamNodeView.h
         ./EditorApp.h
         ./EditorAppContext.h
         ./EditorInterface.h

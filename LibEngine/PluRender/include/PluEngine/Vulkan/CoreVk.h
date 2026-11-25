@@ -27,7 +27,6 @@ namespace Plu
         VkCommandPool CommandPool;
         VmaAllocator Allocator;
         VkPhysicalDeviceProperties PhysicalDeviceProperties;
-
     };
 }
 

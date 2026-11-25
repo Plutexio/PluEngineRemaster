@@ -2,13 +2,13 @@
 // Created by Plutex on 2026-06-14.
 //
 
-#include "PluEngine/Gameplay/Objects/CharacterPuppet.h"
+#include "PluEngine/Physics/CharacterPuppet.h"
 
 #include "PluEngine/Gameplay/Components/CameraComponent.h"
 #include "PluEngine/Gameplay/Controller.h"
 #include "PluEngine/PluUtils.h"
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
-#include "PluEngine/Gameplay/Components/PhysicsCylinderColliderComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Physics/Components/PhysicsCylinderColliderComponent.h"
 #include "PluEngine/Gameplay/Scenes/SceneWorld.h"
 
 Plu::TUsePointer<Plu::CameraComponent> Plu::CharacterPuppet::GetCamera()

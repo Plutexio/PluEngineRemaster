@@ -11,7 +11,7 @@
 #include "StaticMeshViewportPanel.h"
 #include "PluEngine/AssetTypes/Material/Material.h"
 #include "Managers/Assets/EditorAssetManager.h"
-#include "PluEngine/Gameplay/Components/PhysicsBodyComponent.h"
+#include "PluEngine/Physics/Components/PhysicsBodyComponent.h"
 
 void Plu::EditorMeshObject::OnSetupComponents()
 {

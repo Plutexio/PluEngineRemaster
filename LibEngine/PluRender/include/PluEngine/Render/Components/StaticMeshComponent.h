@@ -6,11 +6,11 @@
 #define PLUENGINE_STATICMESHCOMPONENT_H
 #include "PluEngine/Gameplay/WorldComponent.h"
 #include "StaticMeshComponent.generated.h"
-#include "PluEngine/Render/RenderingInterfaces.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
 
 namespace Plu
 {
+	struct MaterialInfo;
 	struct StaticMesh;
 	PLU_CLASS(PyExport)
 	class PLUGAMEPLAY_API StaticMeshComponent : public WorldComponent
