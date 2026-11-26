@@ -7,8 +7,6 @@
 #include <optional>
 #include <thread>
 
-#include "PluEngine/Platforms/Linux/SdlWindow.h"
-#include "PluEngine/Platforms/Windows/WindowsWindow.h"
 #include "PluEngine/Engine.h"
 #include "PluEngine/FrameDemand.h"
 #include "PluBase/Log.h"
@@ -21,6 +19,7 @@
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
 #include "PluEngine/Profiler.h"
+#include "PluEngine/Platform/Platform.h"
 #include "PluEngine/Platform/Window.h"
 #include "PluEngine/Platform/WindowsManager.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
@@ -92,24 +91,6 @@ namespace Plu
 
         constexpr float kIdleHeartbeatSeconds = 0.25f;
         constexpr float kFrameDeltaAfterIdle = 1.0f / 60.0f;
-
-        void WaitForPlatformEvents(float timeoutSeconds)
-        {
-#ifdef PLU_PLATFORM_LINUX
-            SDLWindow::WaitForEvents(timeoutSeconds);
-#elif defined(PLU_PLATFORM_WINDOWS)
-            WindowsWindow::WaitForEvents(timeoutSeconds);
-#endif
-        }
-
-        void WakePlatformEventLoop()
-        {
-#ifdef PLU_PLATFORM_LINUX
-            SDLWindow::WakeEventLoop();
-#elif defined(PLU_PLATFORM_WINDOWS)
-            WindowsWindow::WakeEventLoop();
-#endif
-        }
     }
 
     void Application::Run()
@@ -134,14 +115,11 @@ namespace Plu
         });
         mApplicationInfo.AppInputBackend = mApplicationInfo.AppInputManager->GetInputBackend().GetRaw();
         mApplicationInfo.AppInputManager->GetInputBackend()->Init();
-#ifdef PLU_PLATFORM_WINDOWS
-        //DynamicCast<WindowsWindow>(mApplicationInfo.AppWindow)->SpawnConsoleWindow();
-        //PLU_CORE_TRACE("Console Window Spawned!");
-#endif
+        //mApplicationInfo.AppPlatform->SpawnConsoleWindow();
 
         //I think its safe to Initialize Graphics here
         try {
-            GraphicsApiController::CreateApiController(VulkanGraphicsController::GetStaticClass(), &mApplicationInfo);
+            mApplicationInfo.AppGraphicsApiController = GraphicsApiController::CreateApiController(VulkanGraphicsController::GetStaticClass(), &mApplicationInfo);
         } catch (std::exception& e) {
             PLU_CORE_CRITICAL("Error during Graphics API Controller creation! {}", e.what());
             ShutdownEnter();
@@ -194,11 +172,7 @@ namespace Plu
             }
 
             SetMainThreadDeltaTime(deltaTime);
-#ifdef PLU_PLATFORM_LINUX
-            SDLWindow::HandleSDLEvents();
-#elif defined(PLU_PLATFORM_WINDOWS)
-            mApplicationInfo.AppWindow->OnUpdate(deltaTime);
-#endif
+            mApplicationInfo.AppPlatform->PollEvents();
             PLU_PROFILE_SCOPE("Frame");
             mApplicationInfo.AppWindowsManager->ProcessPendingWindows();
             {
@@ -247,9 +221,7 @@ namespace Plu
         PLU_TIMER_START("EngineEnd");
         OnShutdown();
         mApplicationInfo.AppWindowsManager->Shutdown();
-#ifdef PLU_PLATFORM_LINUX
-        SDL_Quit();
-#endif
+        mApplicationInfo.AppPlatform->Shutdown();
     }
 
     void Application::Close()
@@ -358,15 +330,14 @@ namespace Plu
 
         mApplicationInfo.AppScenesManager = mObjectManager->CreateObject(SceneManager::GetStaticClass());
 
+        mApplicationInfo.AppPlatform = IPlatform::PlutexCreatePlatform(mObjectManager, &mApplicationInfo);
+        mApplicationInfo.AppPlatform->Init();
+
         mApplicationInfo.AppWindowsManager = mObjectManager->CreateObject(WindowsManager::GetStaticClass());
         mApplicationInfo.AppWindowsManager->Initialize(&mApplicationInfo);
 
         AnimationGraphVariableFactory::RegisterBuiltInTypes();
         ParticleParameterFactory::RegisterBuiltInTypes();
-
-#ifdef PLU_PLATFORM_LINUX
-        SDLWindow::InitSDL();
-#endif
 
         Networking::Init();
     }
@@ -378,6 +349,8 @@ namespace Plu
 
         mObjectManager->DestroyObject(*mApplicationInfo.AppWindow->GetEngineObjectHandle());
         mObjectManager->DestroyObject(*mApplicationInfo.AppWindowsManager->GetEngineObjectHandle());
+        // After the windows: they unregister from the platform while shutting down.
+        mObjectManager->DestroyObject(*mApplicationInfo.AppPlatform->GetEngineObjectHandle());
 
         mObjectManager->DestroyObject(*mApplicationInfo.AppThreadPool->GetEngineObjectHandle());
 

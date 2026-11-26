@@ -15,6 +15,8 @@
 
 namespace Plu
 {
+	class SDLPlatform;
+
 	PLU_CLASS()
 	class SDLWindow final : public IWindow
 	{
@@ -22,13 +24,6 @@ namespace Plu
 	protected:
 		void Close() override;
 	public:
-		static void InitSDL();
-		static void HandleSDLEvents();
-		// Power saving (FrameDemand.h). Blocks the calling (main) thread until an event is queued
-		// or the timeout runs out; the event stays queued for HandleSDLEvents().
-		static void WaitForEvents(float timeoutSeconds);
-		// Any thread. Breaks WaitForEvents() out of its wait.
-		static void WakeEventLoop();
 		void SetCursorVisibility(bool visible) override;
 
 		explicit SDLWindow();
@@ -37,6 +32,8 @@ namespace Plu
 		void Init() override;
 		void OnUpdate(float deltaTime) override;
 		void OnEventSDL(SDL_Event* e);
+		// SDL_EVENT_QUIT carries no window; the platform forwards it to every window as a close request.
+		void OnQuitRequested();
 		void Shutdown() override;
 
 		bool IsRunning() override;
@@ -71,6 +68,8 @@ namespace Plu
 		bool HasWindowFocus() override;
 	private:
 		SDL_Window* mWindow = nullptr;
+		// Routes SDL events to this window; set in Init(), when the window registers with it.
+		TUsePointer<SDLPlatform> mPlatform;
 
 		int mSDLWindowID = -1;
 

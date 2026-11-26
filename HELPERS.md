@@ -415,6 +415,17 @@ okno główne: manager je zna, ale nigdy nie niszczy — jego zamknięcie kończ
 | `IVec2 IWindow::GetWindowPosition()` / `SetWindowPosition(IVec2)` | Pozycja lewego górnego rogu na pulpicie — do zapisu układu okien. |
 | `WindowProperties::Position` / `Resizable` / `InitImGui` | Pozycja (`{-1,-1}` = wyśrodkuj), czy okno da się skalować, czy `WindowsManager` ma mu stworzyć kontekst ImGui. |
 
+### Platform — `PluEngine/Platform/Platform.h`
+
+Everything OS-specific that is not a single window lives in `IPlatform` (`ApplicationInfo::AppPlatform`), not in static methods of the window classes. One instance, created in `Application::EngineInit` with `IPlatform::PlutexCreatePlatform` (same scheme as `PlutexCreateWindow`: `SDLPlatform` on Linux, `WindowsPlatform` on Windows) and initialised before any window exists. Main thread only, except `WakeEventLoop`.
+
+| Symbol | Description |
+|---|---|
+| `void IPlatform::Init()` / `Shutdown()` | Bring the OS layer up / down (`SDL_Init` / `SDL_Quit` on Linux). `Shutdown` runs after `WindowsManager::Shutdown`. |
+| `void IPlatform::PollEvents()` | Drains the OS event queue once per frame and routes each event to its window (SDL: by SDL window id, `SDLPlatform::RegisterWindow`; WinAPI: `DispatchMessage` → `WindowProc`). |
+| `void IPlatform::WaitForEvents(float)` / `WakeEventLoop()` | Power saving: block the main thread until an event arrives or the timeout runs out / break that wait from any thread. |
+| `void IPlatform::SpawnConsoleWindow()` | Windows: allocates a console and adds a colour sink to both loggers. No-op on Linux. |
+
 ---
 
 ## DynamicArray (PluSTL) — `PluSTL/Array/Array.h`

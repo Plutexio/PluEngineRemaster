@@ -3,11 +3,11 @@
 //
 
 #include "PluEngine/Platforms/Linux/SdlWindow.h"
+#include "PluEngine/Platforms/Linux/SdlPlatform.h"
 
 #include "imgui_impl_sdl3.h"
 #include "PluEngine/Platform/SDLInputBackend.h"
 #include "PluBase/ThreadAffinity.h"
-#include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_LINUX
 
@@ -15,53 +15,6 @@
 
 namespace Plu
 {
-
-    void SDLWindow::InitSDL()
-    {
-        SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);
-    }
-
-    HashMap<int, SDLWindow*> gSDLWindows;
-
-    void SDLWindow::HandleSDLEvents()
-    {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            // Any OS event may change what is on screen. A bare pointer move usually does not, so
-            // it only asks for probe frames (the UI decides whether anything changed). The wake
-            // event is excluded: whoever pushed it has already stated what it needs.
-            if (e.type == SDL_EVENT_MOUSE_MOTION) RequestProbe();
-            else if (e.type != SDL_EVENT_USER) RequestRedraw();
-
-            // Not every event carries a windowID (clipboard, quit, ...) — reading e.window.windowID
-            // blindly is uninitialised stack memory there. SDL_GetWindowFromEvent knows which event
-            // types have one and returns null for the rest (0 is never a valid SDL window ID).
-            SDL_Window* eventWindow = SDL_GetWindowFromEvent(&e);
-            Uint32 windowID = eventWindow ? SDL_GetWindowID(eventWindow) : 0;
-
-            if (gSDLWindows.Contains(windowID)) {
-                gSDLWindows[windowID]->OnEventSDL(&e);
-            } else {
-                if (e.type == SDL_EVENT_QUIT) {
-                    for (auto window : gSDLWindows) {
-                        window.second->DispatchEvent("WindowCloseRequested", nullptr);
-                    }
-                }
-            }
-        }
-    }
-
-    void SDLWindow::WaitForEvents(float timeoutSeconds)
-    {
-        SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(timeoutSeconds * 1000.0f));
-    }
-
-    void SDLWindow::WakeEventLoop()
-    {
-        SDL_Event wake = {};
-        wake.type = SDL_EVENT_USER;
-        SDL_PushEvent(&wake);
-    }
 
     void SDLWindow::SetCursorVisibility(bool visible)
     {
@@ -79,14 +32,14 @@ namespace Plu
 
 #define MOUSE_GRAB_PADDING 10
 
+    // Data is the SDLWindow that installed the callback (see SDLWindow::Init).
     SDL_HitTestResult HitTestCallback(SDL_Window *Window, const SDL_Point *Area, void *Data)
     {
         int Width, Height;
         SDL_GetWindowSize(Window, &Width, &Height);
 
-        SDLWindow** windowFind = gSDLWindows.Find(SDL_GetWindowID(Window));
-        if (!windowFind) return SDL_HITTEST_DRAGGABLE;
-        SDLWindow* window = *windowFind;
+        const SDLWindow* window = static_cast<const SDLWindow*>(Data);
+        if (!window) return SDL_HITTEST_DRAGGABLE;
 
         if (window->ImGuiItemHovered) {
             return SDL_HITTEST_NORMAL;
@@ -179,13 +132,15 @@ namespace Plu
             SDL_SetWindowPosition(mWindow, mProperties.Position.x, mProperties.Position.y);
         }
 
-        SDL_SetWindowHitTest(mWindow, HitTestCallback, nullptr);
+        SDL_SetWindowHitTest(mWindow, HitTestCallback, this);
 
         mSDLWindowID = SDL_GetWindowID(mWindow);
         PLU_CORE_INFO("New Window created with engine ID {} (SDL ID {})", mWindowID, mSDLWindowID);
         mRunning = true;
 
-        gSDLWindows.Insert(mSDLWindowID, this);
+        PLU_CORE_ASSERT(mApplicationInfo && mApplicationInfo->AppPlatform, "SDLWindow::Init needs the platform - create it before any window")
+        mPlatform = StaticCast<SDLPlatform>(mApplicationInfo->AppPlatform);
+        mPlatform->RegisterWindow(mSDLWindowID, this);
 
         ApplyAppIcon(mWindow);
 
@@ -258,13 +213,18 @@ namespace Plu
 
     }
 
+    void SDLWindow::OnQuitRequested()
+    {
+        DispatchEvent("WindowCloseRequested", nullptr);
+    }
+
     void SDLWindow::Shutdown()
     {
         if (mWindow)
         {
             // Must come out of the dispatch map first: the event pump looks windows up by SDL id
             // and would keep dispatching into freed memory.
-            gSDLWindows.Remove(mSDLWindowID);
+            if (mPlatform) mPlatform->UnregisterWindow(mSDLWindowID);
             SDL_DestroyWindow(mWindow);
             mWindow = nullptr;
         }

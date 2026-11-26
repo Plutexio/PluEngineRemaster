@@ -65,7 +65,7 @@ API and the rule for UI code are in `HELPERS.md` ("Power saving / frames on dema
 Enabled only by the editor (`EditorSettings::PowerSaving`), bypassed while `WantsContinuousFrames()` (PIE).
 
 **Main** (`Application::Run`). At the top of an iteration `ConsumeFrameDemand()` says whether a frame is
-wanted. If not, Main blocks in `SDLWindow::WaitForEvents` / `WindowsWindow::WaitForEvents` for at most
+wanted. If not, Main blocks in `IPlatform::WaitForEvents` (`ApplicationInfo::AppPlatform`) for at most
 `kIdleHeartbeatSeconds` (0.25 s), pumps events (each one calls `RequestRedraw()`), and asks again. Still
 nothing: an **idle tick** — `ProcessPendingWindows`, `OnIdleTick`, `ProcessPendingLoads`,
 `ProcessClosingWindows` — and back to sleep. No `OnTick`, no scene update, no `BuildSnapshotAndPublish`,

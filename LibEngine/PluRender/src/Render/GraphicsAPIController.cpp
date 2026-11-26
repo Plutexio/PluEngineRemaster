@@ -12,7 +12,8 @@ Plu::TOwningPointer<Plu::GraphicsApiController> Plu::GraphicsApiController::Crea
 {
     PLU_CORE_ASSERT(!controllerClass.GetRawType()->IsAbstract, "Provide a valid class for GraphicsApiController!")
     TUsePointer<GraphicsApiController> newController = appInfo->AppObjectManager->CreateObject(controllerClass.GetRawType());
-    newController->Init();
+    // mAppInfo first: Init() already needs its siblings (the platform, the window).
     newController->mAppInfo = appInfo;
+    newController->Init();
     return appInfo->AppObjectManager->GetObjectAsOwner<GraphicsApiController>(newController->GetObjectHandle());
 }

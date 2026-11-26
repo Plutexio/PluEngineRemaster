@@ -1,0 +1,102 @@
+//
+// Created by Plutex on 11/26/26.
+//
+
+#include "PluEngine/Platforms/Windows/WindowsPlatform.h"
+
+#ifdef PLU_PLATFORM_WINDOWS
+
+#include <cstdio>
+#include <iostream>
+
+#include "PluBase/Log.h"
+#include "PluEngine/FrameDemand.h"
+#include "PluEngine/Timer.h"
+#include "spdlog/sinks/wincolor_sink.h"
+
+namespace Plu
+{
+    void WindowsPlatform::Init()
+    {
+        mMessageThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    }
+
+    void WindowsPlatform::Shutdown()
+    {
+        mMessageThreadId.store(0, std::memory_order_relaxed);
+    }
+
+    void WindowsPlatform::PollEvents()
+    {
+        PLU_PROFILE_SCOPE("WindowsPlatform::PollEvents");
+        MSG msg = {};
+        // hWnd = nullptr (not a window handle): cross-process OLE drag&drop delivers IDropTarget
+        // calls as RPC messages routed through a hidden window OleInitialize creates on this thread,
+        // not through our windows. Filtering PeekMessage to one window starves that hidden window's
+        // queue, so DragEnter/DragOver/Drop arrive late or never - this is what caused the drop
+        // overlay to flicker and file drops to silently do nothing. Every engine window gets its
+        // messages through WindowProc from DispatchMessage.
+        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            // Any OS message may change what is on screen. A bare pointer move usually does not, so
+            // it only asks for probe frames (the UI decides whether anything changed). WM_NULL is
+            // the wake message: whoever posted it has already stated what it needs.
+            if (msg.message == WM_MOUSEMOVE || msg.message == WM_NCMOUSEMOVE) RequestProbe();
+            else if (msg.message != WM_NULL) RequestRedraw();
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
+
+    void WindowsPlatform::WaitForEvents(float timeoutSeconds)
+    {
+        // MWMO_INPUTAVAILABLE: also return for input that was already queued before the call, not
+        // only for input arriving during it.
+        MsgWaitForMultipleObjectsEx(0, nullptr, static_cast<DWORD>(timeoutSeconds * 1000.0f), QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+
+    void WindowsPlatform::WakeEventLoop()
+    {
+        const DWORD threadId = mMessageThreadId.load(std::memory_order_relaxed);
+        if (threadId != 0) PostThreadMessage(threadId, WM_NULL, 0, 0);
+    }
+
+    DynamicArray<const char*> WindowsPlatform::GetRequiredVulkanInstanceExtensions()
+    {
+        // Spelled out rather than VK_KHR_*_EXTENSION_NAME so the platform layer needs no Vulkan headers.
+        DynamicArray<const char*> extensions;
+        extensions.PushBack("VK_KHR_surface");
+        extensions.PushBack("VK_KHR_win32_surface");
+        return extensions;
+    }
+
+    void WindowsPlatform::SpawnConsoleWindow()
+    {
+        if (!AllocConsole())
+            return; // the console already exists, or allocation failed
+
+        FILE* fp_out, * fp_err, * fp_in;
+        freopen_s(&fp_out, "CONOUT$", "w", stdout);
+        freopen_s(&fp_err, "CONOUT$", "w", stderr);
+        freopen_s(&fp_in, "CONIN$", "r", stdin);
+
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+        std::ios::sync_with_stdio(true);
+
+        mConsoleWindow = GetConsoleWindow();
+        if (mConsoleWindow)
+            SetWindowTextW(mConsoleWindow, L"Editor Console");
+
+        auto stdout_sink = std::make_shared<spdlog::sinks::wincolor_stdout_sink_mt>();
+        stdout_sink->set_level(spdlog::level::trace);
+
+        if (auto& coreLogger = Log::GetCoreLogger())
+            coreLogger->sinks().push_back(stdout_sink);
+        if (auto& clientLogger = Log::GetClientLogger())
+            clientLogger->sinks().push_back(stdout_sink);
+
+        PLU_CORE_INFO("Console Allocated");
+    }
+}
+
+#endif

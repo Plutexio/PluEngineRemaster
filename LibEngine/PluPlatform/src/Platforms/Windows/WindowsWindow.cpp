@@ -5,7 +5,6 @@
 #include "PluEngine/Platforms/Windows/WindowsWindow.h"
 
 #include "PluBase/Log.h"
-#include "PluEngine/FrameDemand.h"
 
 #ifdef PLU_PLATFORM_WINDOWS
 
@@ -19,7 +18,6 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "PluEngine/Platform/WinAPIInputBackend.h"
-#include "spdlog/sinks/wincolor_sink.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, ImGuiIO& io);
 
@@ -426,39 +424,6 @@ namespace Plu {
         SetWindowTextA(mHandle, title.CStr());
     }
 
-    void WindowsWindow::SpawnConsoleWindow()
-    {
-        if (!AllocConsole())
-            return; // konsola już istnieje lub błąd
-
-        FILE* fp_out, * fp_err, * fp_in;
-        freopen_s(&fp_out, "CONOUT$", "w", stdout);
-        freopen_s(&fp_err, "CONOUT$", "w", stderr);
-        freopen_s(&fp_in, "CONIN$", "r", stdin);
-
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-        std::ios::sync_with_stdio(true);
-
-        mConsoleWindow = GetConsoleWindow();
-        if (mConsoleWindow)
-            SetWindowTextW(mConsoleWindow, L"Editor Console");
-
-        auto stdout_sink = std::make_shared<spdlog::sinks::wincolor_stdout_sink_mt>();
-        stdout_sink->set_level(spdlog::level::trace);
-      
-        auto& logger = Log::GetCoreLogger();
-        if (logger)
-            logger->sinks().push_back(stdout_sink);
-
-        logger = Log::GetClientLogger();
-
-        if (logger)
-            logger->sinks().push_back(stdout_sink);
-
-        PLU_CORE_INFO("Console Allocated");
-    }
-
     void WindowsWindow::SetCursorVisibility(bool visible)
     {
         // ShowCursor keeps an internal counter, not a boolean state - the cursor is shown
@@ -603,39 +568,7 @@ namespace Plu {
 
     void WindowsWindow::OnUpdate(float deltaTime)
     {
-        MSG msg = {};
-        // hWnd = nullptr (not mHandle): cross-process OLE drag&drop delivers IDropTarget calls as
-        // RPC messages routed through a hidden window OleInitialize creates on this thread, not
-        // through mHandle. Filtering PeekMessage to mHandle starves that hidden window's queue, so
-        // DragEnter/DragOver/Drop arrive late or never - this is what caused the drop overlay to
-        // flicker and file drops to silently do nothing.
-        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            // Any OS message may change what is on screen. A bare pointer move usually does not, so
-            // it only asks for probe frames (the UI decides whether anything changed). WM_NULL is
-            // the wake message: whoever posted it has already stated what it needs.
-            if (msg.message == WM_MOUSEMOVE || msg.message == WM_NCMOUSEMOVE) RequestProbe();
-            else if (msg.message != WM_NULL) RequestRedraw();
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
-
-    // Thread that pumps the messages, i.e. the one WaitForEvents() blocks. Captured there rather
-    // than at static init so it does not depend on which thread loaded the module.
-    static std::atomic<DWORD> gMessageThreadId{0};
-
-    void WindowsWindow::WaitForEvents(float timeoutSeconds)
-    {
-        gMessageThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
-        // MWMO_INPUTAVAILABLE: also return for input that was already queued before the call, not
-        // only for input arriving during it.
-        MsgWaitForMultipleObjectsEx(0, nullptr, static_cast<DWORD>(timeoutSeconds * 1000.0f), QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-    }
-
-    void WindowsWindow::WakeEventLoop()
-    {
-        const DWORD threadId = gMessageThreadId.load(std::memory_order_relaxed);
-        if (threadId != 0) PostThreadMessage(threadId, WM_NULL, 0, 0);
+        // Messages are pumped for every window at once by WindowsPlatform::PollEvents.
     }
 
     void WindowsWindow::Shutdown() {

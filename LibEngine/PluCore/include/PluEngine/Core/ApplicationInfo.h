@@ -20,6 +20,7 @@ namespace Plu
     class SceneManager;
     class EngineObjectManager;
     class IWindow;
+    class IPlatform;
     class WindowsManager;
     class IPythonManager;
 
@@ -32,6 +33,8 @@ namespace Plu
     // subsystem header comes with it. Application still owns the instance and fills it in.
     struct PLUCORE_API ApplicationInfo
     {
+        // The OS layer (event pump, library init); created before any window.
+        TUsePointer<IPlatform> AppPlatform;
         // Alias of window 0; WindowsManager owns the full list.
         TUsePointer<IWindow> AppWindow;
         TUsePointer<WindowsManager> AppWindowsManager;

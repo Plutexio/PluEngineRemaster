@@ -17,6 +17,8 @@ namespace Plu
         REFLECTION_BODY_VULKANGRAPHICSCONTROLLER()
     private:
         PluVkContext mPluVkContext = {};
+
+        void CreateInstance();
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;
