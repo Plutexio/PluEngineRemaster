@@ -15,7 +15,6 @@
 
 namespace Plu
 {
-	#include "PluEngine/Platforms/Linux/SdlWindow.h"
 
     void SDLWindow::InitSDL()
     {
@@ -54,7 +53,6 @@ namespace Plu
 
     void SDLWindow::WaitForEvents(float timeoutSeconds)
     {
-        // A null event leaves whatever arrived in the queue for HandleSDLEvents().
         SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(timeoutSeconds * 1000.0f));
     }
 
@@ -68,7 +66,6 @@ namespace Plu
     void SDLWindow::SetCursorVisibility(bool visible)
     {
         if (visible) SDL_ShowCursor(); else SDL_HideCursor();
-        // SDL3 dropped the global relative-mouse toggle; it's now per-window.
         SDL_SetWindowRelativeMouseMode(mWindow, !visible);
     }
 
@@ -138,12 +135,9 @@ namespace Plu
             return SDL_HITTEST_DRAGGABLE;
         }
 
-        return SDL_HITTEST_NORMAL; // SDL_HITTEST_NORMAL <- Windows behaviour
+        return SDL_HITTEST_NORMAL;
     }
 
-    // Sets the engine icon (Packaging/pluengine.png, compiled in by PluPlatform's CMakeLists) on a
-    // window. Covers X11 and Wayland compositors with xdg-toplevel-icon (KDE); GNOME ignores
-    // per-window icons and takes the one from the app's .desktop entry.
     static void ApplyAppIcon(SDL_Window* window)
     {
         PLU_PROFILE_SCOPE("SDLWindow::ApplyAppIcon");
@@ -154,7 +148,6 @@ namespace Plu
             PLU_CORE_WARN("Failed to decode the embedded window icon: {}", SDL_GetError());
             return;
         }
-        // SDL copies the pixels, so the surface is ours to free right away.
         if (!SDL_SetWindowIcon(window, icon)) {
             PLU_CORE_WARN("Failed to set the window icon: {}", SDL_GetError());
         }
@@ -163,12 +156,7 @@ namespace Plu
 
     void SDLWindow::Init()
     {
-        // SDL3 creates windows shown by default and dropped the x/y args from SDL_CreateWindow;
-        // create hidden, position explicitly, then SDL_ShowWindow() below reveals it in place.
-        // HIGH_PIXEL_DENSITY makes the drawable match the display's native pixels (not the
-        // scaled-down logical size), so 3D + ImGui render crisp on HiDPI instead of being upscaled
-        // by the compositor. Paired with GetWidth/GetHeight returning pixels (SDL_GetWindowSizeInPixels).
-        SDL_WindowFlags flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_VULKAN;
+        SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN;
         if (mProperties.Resizable) {
             flags |= SDL_WINDOW_RESIZABLE;
         }
@@ -181,6 +169,10 @@ namespace Plu
             mProperties.Height,
             flags
         );
+        if (!mWindow) {
+            PLU_CORE_ERROR("SDL_CreateWindow failed: {}", SDL_GetError());
+            return;
+        }
         if (mProperties.Position.x < 0 || mProperties.Position.y < 0) {
             SDL_SetWindowPosition(mWindow, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         } else {

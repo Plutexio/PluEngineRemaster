@@ -200,13 +200,13 @@ void Plu::PluEditor::OnShutdown()
     mPanelManager->Shutdown();
     mEditorAppContext->EditorViewportManager->Shutdown();
     mEditorAppContext->EditorScenesManager->SetEditorRenderCamera(nullptr);
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorSceneCamera->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorSceneCamera) mObjectManager->DestroyObject(*mEditorAppContext->EditorSceneCamera->GetEngineObjectHandle());
     mEditorAppContext->EditorProjectManager->Shutdown();
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorViewportManager->GetEngineObjectHandle());
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorScenesManager->GetEngineObjectHandle());
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorAssetManager->GetEngineObjectHandle());
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorPanelManager->GetEngineObjectHandle());
-    mObjectManager->DestroyObject(*mEditorAppContext->EditorProjectManager->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorViewportManager) mObjectManager->DestroyObject(*mEditorAppContext->EditorViewportManager->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorScenesManager) mObjectManager->DestroyObject(*mEditorAppContext->EditorScenesManager->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorAssetManager) mObjectManager->DestroyObject(*mEditorAppContext->EditorAssetManager->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorPanelManager) mObjectManager->DestroyObject(*mEditorAppContext->EditorPanelManager->GetEngineObjectHandle());
+    if (mEditorAppContext->EditorProjectManager) mObjectManager->DestroyObject(*mEditorAppContext->EditorProjectManager->GetEngineObjectHandle());
     delete mEditorAppContext;
     NFD_Quit();
 }

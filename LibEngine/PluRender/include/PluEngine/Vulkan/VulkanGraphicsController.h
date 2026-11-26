@@ -6,7 +6,8 @@
 #define PLUENGINE_VULKANINITIALIZER_H
 
 #include "PluEngine/Render/GraphicsAPIController.h"
-#include "VulkanInitializer.generated.h"
+#include "PluEngine/Vulkan/CoreVk.h"
+#include "VulkanGraphicsController.generated.h"
 
 namespace Plu
 {
@@ -14,6 +15,8 @@ namespace Plu
     class PLURENDER_API VulkanGraphicsController final : public GraphicsApiController
     {
         REFLECTION_BODY_VULKANGRAPHICSCONTROLLER()
+    private:
+        PluVkContext mPluVkContext = {};
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;

@@ -17,6 +17,8 @@ namespace Plu
 
     class PLUAPP_API Application
     {
+    private:
+        void ShutdownEnter();
     protected:
         TOwningPointer<EngineObjectManager> mObjectManager;
         ApplicationInfo mApplicationInfo;

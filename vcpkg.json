@@ -26,6 +26,15 @@
       "features": ["win32-binding"],
       "platform": "windows"
     },
+    {
+      "name": "sdl3",
+      "features": ["vulkan"]
+    },
+    {
+      "name": "vulkan-loader",
+      "features": ["wayland", "xcb", "xlib"],
+      "platform": "linux"
+    },
     "imgui-node-editor",
     "vulkan-memory-allocator",
     "shader-slang"

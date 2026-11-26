@@ -12,13 +12,13 @@ namespace Plu
 	class EngineObject;
 
 	template<typename T>
-	requires EngineObjectConc<T>
 	class TClassPointer
 	{
+		static_assert(EngineObjectConc<T>, "TClassPointer, T must derive from EngineObject or be it");
+
 		TypeInfo* type;
 
 		template<typename U>
-		requires EngineObjectConc<U>
 		friend class TClassPointer;
 	public:
 		TClassPointer()

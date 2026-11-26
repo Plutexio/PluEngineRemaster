@@ -34,6 +34,8 @@
 #include "PluEngine/Core/Reflection/TypeTraits.h"
 #include "PluEngine/ThreadPool/ThreadPool.h"
 #include "PluEngine/Core/Reflection/TypeTraits.h"
+#include "PluEngine/Render/GraphicsAPIController.h"
+#include "PluEngine/Vulkan/VulkanGraphicsController.h"
 
 extern void InitPluCoreReflection();
 extern void InitPluPlatformReflection();
@@ -114,12 +116,14 @@ namespace Plu
     {
         if (!OnInit()) {
             PLU_CORE_CRITICAL("Error during initialization! Aborting launch!");
+            ShutdownEnter();
             return;
         }
         mApplicationInfo.AppWindow->Init();
 
         if (!mApplicationInfo.AppWindow->IsRunning()) {
             PLU_CORE_CRITICAL("Main window failed to initialize! Aborting launch!");
+            ShutdownEnter();
             return;
         }
 
@@ -135,13 +139,22 @@ namespace Plu
         //PLU_CORE_TRACE("Console Window Spawned!");
 #endif
 
+        //I think its safe to Initialize Graphics here
+        try {
+            GraphicsApiController::CreateApiController(VulkanGraphicsController::GetStaticClass(), &mApplicationInfo);
+        } catch (std::exception& e) {
+            PLU_CORE_CRITICAL("Error during Graphics API Controller creation! {}", e.what());
+            ShutdownEnter();
+            return;
+        }
+
+        JoltPhysics::Init(&mApplicationInfo);
+
         mApplicationInfo.AppScenesManager->Initialize(&mApplicationInfo);
         OnPostInit();
 
         PLU_CORE_TRACE("Initialized Successfully!");
         PLU_TIMER_END("EngineInit");
-
-        SetFrameDemandWakeCallback(&WakePlatformEventLoop);
 
         std::chrono::high_resolution_clock::time_point lastFrame = std::chrono::high_resolution_clock::now();
 
@@ -166,18 +179,6 @@ namespace Plu
         while (mApplicationInfo.AppWindow && mApplicationInfo.AppWindow->IsRunning()) {
             bool waitedForEvents = false;
             float idleSeconds = 0.0f;
-            const bool framesOnDemand = IsPowerSavingEnabled() && !WantsContinuousFrames();
-            FrameDemand demand;
-            if (framesOnDemand) {
-                demand = ConsumeFrameDemand();
-                if (!demand.RenderNow) {
-                    PLU_PROFILE_SCOPE("Main Idle Wait");
-                    const std::chrono::high_resolution_clock::time_point waitStart = std::chrono::high_resolution_clock::now();
-                    WaitForPlatformEvents(demand.WaitSeconds < kIdleHeartbeatSeconds ? demand.WaitSeconds : kIdleHeartbeatSeconds);
-                    idleSeconds = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - waitStart).count();
-                    waitedForEvents = true;
-                }
-            }
 
             const std::chrono::high_resolution_clock::time_point frameStart = std::chrono::high_resolution_clock::now();
             float deltaTime = waitedForEvents
@@ -198,22 +199,6 @@ namespace Plu
 #elif defined(PLU_PLATFORM_WINDOWS)
             mApplicationInfo.AppWindow->OnUpdate(deltaTime);
 #endif
-            if (framesOnDemand) {
-                const FrameDemand afterEvents = ConsumeFrameDemand();
-                demand.RenderNow = demand.RenderNow || afterEvents.RenderNow;
-                demand.MustPresent = demand.MustPresent || afterEvents.MustPresent;
-            }
-            const bool probeFrame = framesOnDemand && !demand.MustPresent;
-            SetProbeFrame(probeFrame);
-            if (framesOnDemand && !demand.RenderNow) {
-                PLU_PROFILE_SCOPE("Main Idle Tick");
-                mApplicationInfo.AppWindowsManager->ProcessPendingWindows();
-                OnIdleTick(idleSeconds);
-                if (mApplicationInfo.AppAssetManager) mApplicationInfo.AppAssetManager->ProcessPendingLoads();
-                mApplicationInfo.AppWindowsManager->ProcessClosingWindows();
-                exportProfilerIfDue(idleSeconds);
-                continue;
-            }
             PLU_PROFILE_SCOPE("Frame");
             mApplicationInfo.AppWindowsManager->ProcessPendingWindows();
             {
@@ -254,6 +239,11 @@ namespace Plu
 
             exportProfilerIfDue(deltaTime);
         }
+        ShutdownEnter();
+    }
+
+    void Application::ShutdownEnter()
+    {
         PLU_TIMER_START("EngineEnd");
         OnShutdown();
         mApplicationInfo.AppWindowsManager->Shutdown();
@@ -356,7 +346,6 @@ namespace Plu
             TypeSerializer<TypeInfo*>::Deserialize(dc, json, typeInfo, instance);
         };
         Engine::CreateEngine();
-        PLU_CORE_INFO("Engine Init");
         mObjectManager = Plu::CreateOwning<EngineObjectManager>();
         TypeRegistry::GetInstance()->mObjectManager = mObjectManager;
         mApplicationInfo.AppObjectManager = mObjectManager;
@@ -379,7 +368,6 @@ namespace Plu
         SDLWindow::InitSDL();
 #endif
 
-        JoltPhysics::Init(&mApplicationInfo);
         Networking::Init();
     }
 
