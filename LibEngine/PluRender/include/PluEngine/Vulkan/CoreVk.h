@@ -22,6 +22,7 @@ namespace Plu
         VkSwapchainKHR Swapchain;
         VkPipelineLayout PipelineLayout;
         VkPipeline GraphicsPipeline;
+        VkPhysicalDevice PhysicalDevice;
         VkDevice LogicalDevice;
         VkQueue GraphicsQueue;
         VkCommandPool CommandPool;

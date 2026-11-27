@@ -69,6 +69,28 @@ namespace Plu
         return extensions;
     }
 
+    bool WindowsPlatform::GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
+                                                       UInt32 queueFamilyIndex)
+    {
+        // The Win32 query takes no instance. The loader (vulkan-1.dll, already loaded by PluRender)
+        // exports it directly, so it is looked up there instead of linking Vulkan into this module.
+        (void)instance;
+        using PresentationSupportFn = UInt32 (__stdcall*)(VkPhysicalDevice, UInt32);
+        static const auto presentationSupport = []() -> PresentationSupportFn {
+            HMODULE loader = GetModuleHandleW(L"vulkan-1.dll");
+            if (!loader) {
+                PLU_CORE_ERROR("GetVulkanPresentationSupport: vulkan-1.dll is not loaded");
+                return nullptr;
+            }
+            return reinterpret_cast<PresentationSupportFn>(
+                GetProcAddress(loader, "vkGetPhysicalDeviceWin32PresentationSupportKHR"));
+        }();
+        if (!presentationSupport) {
+            return false;
+        }
+        return presentationSupport(physicalDevice, queueFamilyIndex) != 0;
+    }
+
     void WindowsPlatform::SpawnConsoleWindow()
     {
         if (!AllocConsole())

@@ -11,6 +11,14 @@
 
 namespace Plu
 {
+    PLU_ENUM(PyNamespace=Plu)
+    enum class PhysicalDevicePreference
+    {
+        DontCare,
+        Discrete,
+        Integrated
+    };
+
     PLU_CLASS()
     class PLURENDER_API VulkanGraphicsController final : public GraphicsApiController
     {
@@ -19,6 +27,8 @@ namespace Plu
         PluVkContext mPluVkContext = {};
 
         void CreateInstance();
+        void ChoosePhysicalDevice(PhysicalDevicePreference preference);
+        void SelectQueues();
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;

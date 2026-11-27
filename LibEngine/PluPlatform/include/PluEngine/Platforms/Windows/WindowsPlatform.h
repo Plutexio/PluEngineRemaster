@@ -46,6 +46,8 @@ namespace Plu
         void SpawnConsoleWindow() override;
 
         DynamicArray<const char*> GetRequiredVulkanInstanceExtensions() override;
+        bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
+                                          UInt32 queueFamilyIndex) override;
     };
 }
 #endif

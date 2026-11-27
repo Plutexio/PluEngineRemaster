@@ -12,6 +12,11 @@
 #include "Platform.generated.h"
 #include "PluEngine/Core/ApplicationInfo.h"
 
+// Vulkan's dispatchable handles, declared exactly as vulkan_core.h does (VK_DEFINE_HANDLE), so the
+// platform layer needs no Vulkan headers. Repeating an identical typedef is legal C++.
+typedef struct VkInstance_T* VkInstance;
+typedef struct VkPhysicalDevice_T* VkPhysicalDevice;
+
 namespace Plu
 {
     class EngineObjectManager;
@@ -43,6 +48,10 @@ namespace Plu
         virtual void SpawnConsoleWindow() = 0;
 
         virtual DynamicArray<const char*> GetRequiredVulkanInstanceExtensions() = 0;
+        // Whether queue family `queueFamilyIndex` of `physicalDevice` can present to this platform's
+        // windows. Needs no surface, so it can run while choosing the device / queues.
+        virtual bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
+                                                  UInt32 queueFamilyIndex) = 0;
 
         static TOwningPointer<IPlatform> PlutexCreatePlatform(const TUsePointer<EngineObjectManager>& objectManager,
                                                               ApplicationInfo* applicationInfo);

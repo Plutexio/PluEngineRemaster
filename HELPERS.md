@@ -425,6 +425,8 @@ Everything OS-specific that is not a single window lives in `IPlatform` (`Applic
 | `void IPlatform::PollEvents()` | Drains the OS event queue once per frame and routes each event to its window (SDL: by SDL window id, `SDLPlatform::RegisterWindow`; WinAPI: `DispatchMessage` → `WindowProc`). |
 | `void IPlatform::WaitForEvents(float)` / `WakeEventLoop()` | Power saving: block the main thread until an event arrives or the timeout runs out / break that wait from any thread. |
 | `void IPlatform::SpawnConsoleWindow()` | Windows: allocates a console and adds a colour sink to both loggers. No-op on Linux. |
+| `DynamicArray<const char*> IPlatform::GetRequiredVulkanInstanceExtensions()` | Instance extensions the platform's surfaces need (SDL: `SDL_Vulkan_GetInstanceExtensions`; Windows: `VK_KHR_surface` + `VK_KHR_win32_surface`). |
+| `bool IPlatform::GetVulkanPresentationSupport(VkInstance, VkPhysicalDevice, UInt32 queueFamilyIndex)` | Whether a queue family can present to the platform's windows, without a surface (SDL: `SDL_Vulkan_GetPresentationSupport`; Windows: `vkGetPhysicalDeviceWin32PresentationSupportKHR` looked up in `vulkan-1.dll`). `Platform.h` declares `VkInstance` / `VkPhysicalDevice` itself, so the platform layer needs no Vulkan headers. |
 
 ---
 

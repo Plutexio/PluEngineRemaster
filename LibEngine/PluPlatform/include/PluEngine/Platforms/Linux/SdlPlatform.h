@@ -35,6 +35,8 @@ namespace Plu
 		void SpawnConsoleWindow() override;
 
 		DynamicArray<const char*> GetRequiredVulkanInstanceExtensions() override;
+		bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
+		                                  UInt32 queueFamilyIndex) override;
 
 		// Event routing: SDL events carry SDL's window id, so live windows are looked up here by it.
 		// A window registers once its SDL_Window exists and must unregister before destroying it.

@@ -89,6 +89,12 @@ namespace Plu
 		return extensions;
 	}
 
+	bool SDLPlatform::GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
+	                                               UInt32 queueFamilyIndex)
+	{
+		return SDL_Vulkan_GetPresentationSupport(instance, physicalDevice, queueFamilyIndex);
+	}
+
 	void SDLPlatform::RegisterWindow(int sdlWindowID, SDLWindow* window)
 	{
 		mWindows.Insert(sdlWindowID, window);
