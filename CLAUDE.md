@@ -192,7 +192,7 @@ All types are forward-declared in `PluSTL/PluSTL_FWD.h`.
 
 ### Type aliases (PluTypes.h)
 
-`Vec2/3/4`, `IVec2/3/4`, `Matrix4`, `Quaternion` — all glm wrappers (from `PluBase/Types.h`). `JSON` = `nlohmann::json`.
+`Vec2/3/4`, `IVec2/3/4`, `UVec2/3/4`, `Matrix4`, `Quaternion` — all glm wrappers (from `PluBase/Types.h`). `JSON` = `nlohmann::json`.
 Integer aliases: `UInt8/16/32/64`, `Int8/16/32/64` (from `PluBase/Base.h`, reached through `Core.h`).
 
 **Namespace uwaga**: `Vec2`, `Vec3`, `Vec4`, `IVec2/3/4`, `Matrix4`, `Quaternion` są w **global namespace**, nie w `Plu::`. Podobnie `String`, `Path`, `PathW`, `HashMap` itp. z PluSTL. `DynamicArray` i `DefaultAllocator` mieszkają już w `Plu::`, ale `PluSTL/Array/Array.h` i `PluSTL/Allocators/Default.h` eksportują je z powrotem do global namespace przez `using`, więc obie pisownie działają. Tylko klasy silnika (`EngineObject`, `ShaderProgram`, `IShaderCode`, …) oraz smart pointery (`TOwningPointer`, `TUsePointer`) żyją w `Plu::`. W kodzie poza blokiem `namespace Plu { }` (np. w `.cpp` używającym stylu `Plu::ClassName::Method`) typy matematyczne i STL używa się bez prefixu, a typy silnika z prefixem `Plu::`.

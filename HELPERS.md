@@ -627,7 +627,7 @@ counterparts. It handles directly:
 | `float` / `double` | Bits, **after canonicalizing**: `-0.0` hashes as `+0.0` (they compare equal) and every NaN hashes alike. |
 | `T*` | The address. |
 | `std::pair<A, B>` | `DefaultHash<A>` of `first`, then `HashCombine` with `DefaultHash<B>` of `second` — both members need a `DefaultHash`, nests (`pair<String, EngineObjectHandle>`, `pair<pair<…>, …>`). Order matters. Without it a pair key would not compile: `std::pair` is never trivially copyable. |
-| `Vec2/3/4`, `IVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluBase/GlmHash.h`, pulled in by `PluBase/Types.h` (and so by `PluTypes.h`). Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
+| `Vec2/3/4`, `IVec2/3/4`, `UVec2/3/4`, `Quaternion`, `Matrix4` (any `glm::vec` / `glm::qua` / `glm::mat`) | Component by component through `DefaultHash<T>` + `HashCombine` — `PluBase/GlmHash.h`, pulled in by `PluBase/Types.h` (and so by `PluTypes.h`). Order matters, so `(1,2,3)` and `(3,2,1)` differ. |
 | `String` / `StringW` (`BasicString`), `Path` / `PathW` (`BasicPath`) | FNV-1a over the characters, so two equal strings hash equally regardless of SSO vs heap. |
 | `const char*` / `char*` / `const wchar_t*` / `wchar_t*` | The text, not the pointer. `nullptr` → 0. |
 | anything else | **Falls back to hashing the object's raw bytes.** |
