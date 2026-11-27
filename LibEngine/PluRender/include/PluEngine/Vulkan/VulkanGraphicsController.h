@@ -28,10 +28,17 @@ namespace Plu
 
         void CreateInstance();
         void ChoosePhysicalDevice(PhysicalDevicePreference preference);
-        void SelectQueues();
+        void CreateLogicalDeviceAndQueues();
+        void CreateAllocator();
+        void CreateSurface();
+
+        void CreateSwapchain();
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;
+
+        //Some constants
+        static constexpr VkFormat SwapchainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
 
         void Init() override;
         void Shutdown() override;

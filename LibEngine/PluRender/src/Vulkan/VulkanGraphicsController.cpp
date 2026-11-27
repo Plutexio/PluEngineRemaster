@@ -6,6 +6,8 @@
 
 #include "PluEngine/Core/ApplicationInfo.h"
 #include "PluEngine/Platform/Platform.h"
+#include "PluEngine/Platform/Window.h"
+#include "PluBase/Types.h"
 
 void Plu::VulkanGraphicsController::CreateInstance()
 {
@@ -82,7 +84,7 @@ void Plu::VulkanGraphicsController::ChoosePhysicalDevice(PhysicalDevicePreferenc
     PLU_CORE_INFO("Selected GPU: {}", mPluVkContext.PhysicalDeviceProperties.deviceName);
 }
 
-void Plu::VulkanGraphicsController::SelectQueues() {
+void Plu::VulkanGraphicsController::CreateLogicalDeviceAndQueues() {
     UInt32 queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(mPluVkContext.PhysicalDevice, &queueFamilyCount, nullptr);
     DynamicArray<VkQueueFamilyProperties> queueFamilies;
@@ -150,8 +152,70 @@ void Plu::VulkanGraphicsController::SelectQueues() {
     if (res != VK_SUCCESS) {
         throw std::runtime_error("Logical Device Creation");
     }
-    vkGetDeviceQueue(mPluVkContext.LogicalDevice, graphicsQueueIdx, 0, &mPluVkContext.Queue);
+    vkGetDeviceQueue(mPluVkContext.LogicalDevice, graphicsQueueIdx, 0, &mPluVkContext.GraphicsQueue);
 
+}
+
+void Plu::VulkanGraphicsController::CreateAllocator()
+{
+    VmaVulkanFunctions vkFuncs = {};
+    vkFuncs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+    vkFuncs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
+    VmaAllocatorCreateInfo allocatorCreateInfo = {};
+    allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    allocatorCreateInfo.instance = mPluVkContext.Instance;
+    allocatorCreateInfo.physicalDevice = mPluVkContext.PhysicalDevice;
+    allocatorCreateInfo.device = mPluVkContext.LogicalDevice;
+    allocatorCreateInfo.pVulkanFunctions = &vkFuncs;
+
+    VkResult res = VK_NOT_READY;
+    res = vmaCreateAllocator(&allocatorCreateInfo, &mPluVkContext.Allocator);
+
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error("Vma Allocator Creation");
+    }
+}
+
+void Plu::VulkanGraphicsController::CreateSurface()
+{
+    if (!mAppInfo->AppPlatform->CreateVulkanSurface(mAppInfo->AppWindow, mPluVkContext.Instance, &mPluVkContext.Surface)) {
+        throw std::runtime_error("Surface Creation");
+    }
+}
+
+void Plu::VulkanGraphicsController::CreateSwapchain()
+{
+    VkSurfaceCapabilitiesKHR surfaceCapabilities = {};
+    VkResult res = VK_NOT_READY;
+    res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(mPluVkContext.PhysicalDevice, mPluVkContext.Surface, &surfaceCapabilities);
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error("Surface Capabilities");
+    }
+
+    VkExtent2D swapchainExtent = surfaceCapabilities.currentExtent;
+    if (swapchainExtent.width == 0xFFFFFFFF) {
+        swapchainExtent.width = mAppInfo->AppWindow->GetWidth();
+        swapchainExtent.height = mAppInfo->AppWindow->GetHeight();
+    }
+    VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
+    swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapchainCreateInfo.surface = mPluVkContext.Surface;
+    swapchainCreateInfo.minImageCount = surfaceCapabilities.minImageCount;
+    swapchainCreateInfo.imageFormat = SwapchainImageFormat;
+    swapchainCreateInfo.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+    swapchainCreateInfo.imageExtent = swapchainExtent;
+    swapchainCreateInfo.imageArrayLayers = 1;
+    swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+    res = vkCreateSwapchainKHR(mPluVkContext.LogicalDevice, &swapchainCreateInfo, nullptr, &mPluVkContext.Swapchain);
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error("Swapchain Creation");
+    }
 }
 
 void Plu::VulkanGraphicsController::Init()
@@ -159,6 +223,11 @@ void Plu::VulkanGraphicsController::Init()
     PLU_CORE_INFO("Initializing Vulkan Graphics API...");
 
     CreateInstance();
+    ChoosePhysicalDevice(PhysicalDevicePreference::Discrete);
+    CreateLogicalDeviceAndQueues();
+    CreateAllocator();
+    CreateSurface();
+    CreateSurface();
 
     PLU_CORE_INFO("Initialized Vulkan Graphics API");
 }

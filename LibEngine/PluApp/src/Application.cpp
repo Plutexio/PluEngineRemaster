@@ -15,6 +15,7 @@
 #include "PluEngine/Scripting/PythonObjectFactory.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetTypes/AnimationGraph/AnimationGraph.h"
+#include "PluEngine/AssetTypes/Image/ImageInfo.h"
 #include "PluEngine/Effects/Particles/ParticleParameter.h"
 #include "PluEngine/Core/DiskManager.h"
 #include "PluEngine/Gameplay/Scenes/ScenesManager.h"
@@ -273,6 +274,7 @@ namespace Plu
         Plu::RegisterMainThread();
         gApplication = this;
         Plu::Log::Init();
+        InitializeImageRuntime();
 
         REFLECTION_PRIMITIVE_TYPE(int);
         REFLECTION_PRIMITIVE_TYPE(Int8);

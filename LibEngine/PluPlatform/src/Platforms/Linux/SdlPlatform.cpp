@@ -95,6 +95,21 @@ namespace Plu
 		return SDL_Vulkan_GetPresentationSupport(instance, physicalDevice, queueFamilyIndex);
 	}
 
+	bool SDLPlatform::CreateVulkanSurface(const TUsePointer<IWindow>& window, VkInstance instance,
+	                                      VkSurfaceKHR* outSurface)
+	{
+		if (!window || !outSurface) {
+			PLU_CORE_ERROR("CreateVulkanSurface: no window or output surface");
+			return false;
+		}
+		auto* sdlWindow = static_cast<SDL_Window*>(window->GetWindowHandle());
+		if (!SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, outSurface)) {
+			PLU_CORE_ERROR("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+			return false;
+		}
+		return true;
+	}
+
 	void SDLPlatform::RegisterWindow(int sdlWindowID, SDLWindow* window)
 	{
 		mWindows.Insert(sdlWindowID, window);

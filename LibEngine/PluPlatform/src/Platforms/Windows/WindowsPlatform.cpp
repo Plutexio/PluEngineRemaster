@@ -11,6 +11,7 @@
 
 #include "PluBase/Log.h"
 #include "PluEngine/FrameDemand.h"
+#include "PluEngine/Platform/Window.h"
 #include "PluEngine/Timer.h"
 #include "spdlog/sinks/wincolor_sink.h"
 
@@ -89,6 +90,61 @@ namespace Plu
             return false;
         }
         return presentationSupport(physicalDevice, queueFamilyIndex) != 0;
+    }
+
+    bool WindowsPlatform::CreateVulkanSurface(const TUsePointer<IWindow>& window, VkInstance instance,
+                                              VkSurfaceKHR* outSurface)
+    {
+        if (!window || !outSurface) {
+            PLU_CORE_ERROR("CreateVulkanSurface: no window or output surface");
+            return false;
+        }
+
+        // Mirrors VkWin32SurfaceCreateInfoKHR, so the platform layer needs no Vulkan headers.
+        struct Win32SurfaceCreateInfo
+        {
+            Int32 sType; // VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR
+            const void* pNext;
+            UInt32 flags;
+            HINSTANCE hinstance;
+            HWND hwnd;
+        };
+        constexpr Int32 kWin32SurfaceCreateInfoType = 1000009000;
+
+        using VoidFn = void (__stdcall*)();
+        using GetInstanceProcAddrFn = VoidFn (__stdcall*)(VkInstance, const char*);
+        using CreateWin32SurfaceFn = Int32 (__stdcall*)(VkInstance, const Win32SurfaceCreateInfo*,
+                                                        const void* /*pAllocator*/, VkSurfaceKHR*);
+
+        // vkCreateWin32SurfaceKHR is an instance function: resolved through the loader's
+        // vkGetInstanceProcAddr (vulkan-1.dll, already loaded by PluRender) for this instance.
+        HMODULE loader = GetModuleHandleW(L"vulkan-1.dll");
+        if (!loader) {
+            PLU_CORE_ERROR("CreateVulkanSurface: vulkan-1.dll is not loaded");
+            return false;
+        }
+        const auto getInstanceProcAddr = reinterpret_cast<GetInstanceProcAddrFn>(
+            GetProcAddress(loader, "vkGetInstanceProcAddr"));
+        const auto createSurface = getInstanceProcAddr
+            ? reinterpret_cast<CreateWin32SurfaceFn>(getInstanceProcAddr(instance, "vkCreateWin32SurfaceKHR"))
+            : nullptr;
+        if (!createSurface) {
+            PLU_CORE_ERROR("CreateVulkanSurface: vkCreateWin32SurfaceKHR not available "
+                           "(is VK_KHR_win32_surface enabled on the instance?)");
+            return false;
+        }
+
+        Win32SurfaceCreateInfo createInfo = {};
+        createInfo.sType = kWin32SurfaceCreateInfoType;
+        createInfo.hinstance = GetModuleHandleW(nullptr);
+        createInfo.hwnd = static_cast<HWND>(window->GetWindowHandle());
+
+        const Int32 result = createSurface(instance, &createInfo, nullptr, outSurface);
+        if (result != 0) { // VK_SUCCESS
+            PLU_CORE_ERROR("vkCreateWin32SurfaceKHR failed: VkResult {}", result);
+            return false;
+        }
+        return true;
     }
 
     void WindowsPlatform::SpawnConsoleWindow()

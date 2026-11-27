@@ -16,10 +16,14 @@
 // platform layer needs no Vulkan headers. Repeating an identical typedef is legal C++.
 typedef struct VkInstance_T* VkInstance;
 typedef struct VkPhysicalDevice_T* VkPhysicalDevice;
+// Non-dispatchable handle, declared as vulkan_core.h does on 64-bit targets (the only ones the engine
+// builds for); on 32-bit Vulkan makes it a uint64_t instead.
+typedef struct VkSurfaceKHR_T* VkSurfaceKHR;
 
 namespace Plu
 {
     class EngineObjectManager;
+    class IWindow;
 
     PLU_CLASS(Abstract)
     class PLUPLATFORM_API IPlatform : public EngineObject
@@ -52,6 +56,10 @@ namespace Plu
         // windows. Needs no surface, so it can run while choosing the device / queues.
         virtual bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
                                                   UInt32 queueFamilyIndex) = 0;
+        // Creates a presentation surface for `window` on `instance` and writes it to `outSurface`.
+        // Logs and returns false on failure. The caller owns the surface (vkDestroySurfaceKHR).
+        virtual bool CreateVulkanSurface(const TUsePointer<IWindow>& window, VkInstance instance,
+                                         VkSurfaceKHR* outSurface) = 0;
 
         static TOwningPointer<IPlatform> PlutexCreatePlatform(const TUsePointer<EngineObjectManager>& objectManager,
                                                               ApplicationInfo* applicationInfo);

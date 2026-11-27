@@ -1,6 +1,6 @@
 # ImageMagick (Magick++) for the Linux -> Windows cross build, included from the root CMakeLists.txt.
 #
-# ImageMagick is not in vcpkg, and on Linux PluRender takes it from the system through
+# ImageMagick is not in vcpkg, and on Linux PluAssetTypes takes it from the system through
 # FindImageMagick. A Linux host has no Windows build of it, so the official one is fetched instead:
 # the "-dll" installer from the ImageMagick GitHub release. It is built with MSVC — the same ABI as
 # clang-cl here, which matters for a C++ library like Magick++ — and carries the headers and the
@@ -8,7 +8,7 @@
 # (one-time host setup: `pacman -S innoextract` / `apt install innoextract`).
 #
 # Defines the same imported targets FindImageMagick does (ImageMagick::Magick++,
-# ImageMagick::MagickCore), so LibEngine skips find_package and PluRender links them unchanged. The
+# ImageMagick::MagickCore), so LibEngine skips find_package and PluAssetTypes links them unchanged. The
 # quantum depth / HDRI defines need no flags here: the Windows build bakes them into
 # MagickCore/magick-baseconfig.h. Keep the variant (Q16-HDRI) equal to the Linux one.
 #

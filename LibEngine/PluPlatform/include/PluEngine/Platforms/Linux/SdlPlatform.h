@@ -37,6 +37,8 @@ namespace Plu
 		DynamicArray<const char*> GetRequiredVulkanInstanceExtensions() override;
 		bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
 		                                  UInt32 queueFamilyIndex) override;
+		bool CreateVulkanSurface(const TUsePointer<IWindow>& window, VkInstance instance,
+		                         VkSurfaceKHR* outSurface) override;
 
 		// Event routing: SDL events carry SDL's window id, so live windows are looked up here by it.
 		// A window registers once its SDL_Window exists and must unregister before destroying it.

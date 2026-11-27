@@ -151,6 +151,20 @@ Assety są w rejestrze trzymane po UUID **i** po ścieżce (`mAssetPathMap`, `mA
 | `void RelocateAssets(const Path& oldPath, const Path& newPath)` | Po zmianie nazwy / przeniesieniu pliku assetu **albo całego katalogu** przepisuje ścieżki w rejestrze (UUID bez zmian, więc referencje działają dalej). Sama nie rusza dysku — wołaj po udanym `std::filesystem::rename`. |
 | `bool AnyAssetsUnderDirectory(const Path& directory) const` | Czy w katalogu (rekurencyjnie) siedzi choć jeden zarejestrowany asset. Używane m.in. do blokowania kasowania folderu z assetami. |
 
+## Images / textures — `PluEngine/AssetTypes/Image/ImageInfo.h`, `PluEngine/AssetPipeline/Textures/TextureImporter.h` (`namespace Plu`)
+
+`ImageInfo` is the texture asset (`IAssetData`, type name `"ImageInfo"` in the `.plubin` header): decoded 8-bit pixels, tightly packed, **top row first** (no vertical flip — Vulkan convention), 1–4 channels (R / RG / RGB / RGBA). Decoding goes through ImageMagick, which only `PluAssetTypes` links; `TextureImage` (PluRender) uploads an `ImageInfo` to the GPU.
+
+| Function | Description |
+|---|---|
+| `void InitializeImageRuntime()` | Initialises ImageMagick. Called once by `Application::EngineInit`; do not call it again. |
+| `static TOwningPointer<ImageInfo> ImageInfo::LoadFromFile(const Path& path, ImageLoader loader = Magick, const ImageLoadOptions& options = {})` | Decodes an image file. Null (and a log line) on failure. `ImageLoadOptions::OptimizeChannels` (default on) drops channels the image does not use — grayscale → 1 channel, no alpha → no alpha channel; off = always RGBA. `Flip` mirrors vertically. `ImageLoader::STBI` is not implemented yet. |
+| `static TOwningPointer<ImageInfo> ImageInfo::LoadFromMemory(const UInt8* data, UInt64 size, ...)` | Same, from an encoded blob in memory (PNG/JPG/... embedded in a model). |
+| `static TOwningPointer<ImageInfo> ImageInfo::FromPixels(UInt32 w, UInt32 h, UInt32 channels, ImageContents contents, DynamicArray<UInt8>&& pixels)` | Wraps already decoded pixels (asserts `pixels.Size() == w*h*channels`). |
+| `GetWidth()` / `GetHeight()` / `GetChannels()` / `GetPixels()` / `GetMemorySize()` / `IsGrayscale()` / `HasAlpha()` | Accessors; `GetMemorySize()` = pixel bytes. |
+| `bool TextureImport::ImportTexture(const PathW& origin, const PathW& outPath)` | Source image → `ImageInfo` `.plubin` (new UUID). `ImportTextureFromMemory(data, size, outPath)` does the same for an embedded blob. |
+| `TOwningPointer<ImageInfo> TextureImport::LoadTexture(const PathW& path)` | Reads an `ImageInfo` `.plubin` (UUID included); null if it is missing, truncated or another type. |
+
 ## Import meshy z Assimp — `PluEngine/Assets/AssetLoaders/Mesh/MeshProcessing.h` (`namespace Plu::MeshProcessing`)
 
 Wspólny kod konwersji sceny Assimp → geometria silnika, używany przez importer static **i** skeletal mesha (nie duplikuj tego w nowych importerach). Packery zapisują atrybuty w formacie wierzchołka `Vertex` (patrz `SetupStaticMeshGL`).

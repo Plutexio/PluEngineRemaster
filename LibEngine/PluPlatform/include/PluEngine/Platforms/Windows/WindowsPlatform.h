@@ -48,6 +48,8 @@ namespace Plu
         DynamicArray<const char*> GetRequiredVulkanInstanceExtensions() override;
         bool GetVulkanPresentationSupport(VkInstance instance, VkPhysicalDevice physicalDevice,
                                           UInt32 queueFamilyIndex) override;
+        bool CreateVulkanSurface(const TUsePointer<IWindow>& window, VkInstance instance,
+                                 VkSurfaceKHR* outSurface) override;
     };
 }
 #endif
