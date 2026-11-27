@@ -8,7 +8,7 @@
 #include "PluEngine/AssetCore/AssetDescriptor.h"
 #include "PluEngine/AssetCore/EngineAssetManager.h"
 #include "PluEngine/AssetTypes/StaticMesh/StaticMesh.h"
-#include "PluEngine/AssetTypes/Texture/Texture.h"
+#include "PluEngine/AssetTypes/Image/ImageInfo.h"
 #include "PluEngine/Core/Objects/EngineObjectManager.h"
 
 #ifdef PLU_ENGINE_EDITOR_BUILD
@@ -46,15 +46,15 @@ bool Plu::TextureAssetHandler::IsAssetCreatable()
 
 Plu::String Plu::TextureAssetHandler::GetSupportedAssetType()
 {
-	return "TextureInfo";
+	return "ImageInfo";
 }
 
 bool Plu::TextureAssetHandler::LoadAssetData(TUsePointer<AssetDescriptor> assetDesc,
 	TOwningPointer<IAssetData> *assetDataToPopulate, TUsePointer<EngineAssetManager> assetManager,
 	TUsePointer<EngineObjectManager> objectManager, TUsePointer<SceneManager> sceneManager)
 {
-	TOwningPointer<TextureInfo> textureInfo = CreateOwning<TextureInfo>();
-	TextureImport::LoadTexture(assetDesc->AssetPath.ToString().ToWide(), textureInfo.GetRaw());
-	*assetDataToPopulate = textureInfo;
+	TOwningPointer<ImageInfo> image = TextureImport::LoadTexture(assetDesc->AssetPath.ToString().ToWide());
+	if (!image) return false;
+	*assetDataToPopulate = image;
 	return true;
 }

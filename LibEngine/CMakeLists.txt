@@ -139,14 +139,14 @@ if (NOT WIN32 AND TARGET slang::slang)
         )
     endif ()
 endif ()
-# Magick++ for image loading. Not in vcpkg — taken from the system. The imported targets carry the
+# Magick++ for image loading (PluAssetTypes, ImageInfo). Not in vcpkg — taken from the system. The imported targets carry the
 # MAGICKCORE_QUANTUM_DEPTH / MAGICKCORE_HDRI_ENABLE defines from pkg-config, so they always match the
 # installed build instead of being hardcoded. The Linux -> Windows cross build defines the same
 # targets itself, from the official Windows build (cmake/PluWindowsCrossImageMagick.cmake).
 if (NOT TARGET ImageMagick::Magick++)
     find_package(ImageMagick REQUIRED COMPONENTS Magick++ MagickCore)
     # pkg-config also hands out -fopenmp — how ImageMagick itself was built, not something its users
-    # need. With Clang it would turn every PluRender translation unit into an OpenMP one (and libomp
+    # need. With Clang it would turn every PluAssetTypes translation unit into an OpenMP one (and libomp
     # into a link dependency the moment anything there uses a pragma).
     foreach (_plu_im_target IN ITEMS ImageMagick::Magick++ ImageMagick::MagickCore)
         get_target_property(_plu_im_options ${_plu_im_target} INTERFACE_COMPILE_OPTIONS)

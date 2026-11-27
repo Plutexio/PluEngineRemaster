@@ -6,7 +6,7 @@
 #define PLUENGINE_PARTICLERENDERERNODES_H
 
 #include "PluEngine/Effects/Particles/Nodes/ParticleModuleNode.h"
-#include "PluEngine/AssetTypes/Texture/Texture.h"
+#include "PluEngine/AssetTypes/Image/ImageInfo.h"
 #include "PluEngine/Effects/Particles/ParticleAttributes.h"
 #include "PluSTL/Pointers/TUsePointer.h"
 #include "ParticleRendererNodes.generated.h"
@@ -24,7 +24,7 @@ namespace Plu
 		REFLECTION_BODY_SPRITERENDERERMODULE()
 
 		PLU_PROPERTY()
-		TUsePointer<TextureInfo> Texture;
+		TUsePointer<ImageInfo> Texture;
 		PLU_PROPERTY()
 		EParticleBlendMode Blend = EParticleBlendMode::Additive;
 		PLU_PROPERTY()
@@ -50,7 +50,7 @@ namespace Plu
 		REFLECTION_BODY_RIBBONRENDERERMODULE()
 
 		PLU_PROPERTY()
-		TUsePointer<TextureInfo> Texture;
+		TUsePointer<ImageInfo> Texture;
 		PLU_PROPERTY()
 		EParticleBlendMode Blend = EParticleBlendMode::Additive;
 		// PerEmitter: one ribbon through all live particles in spawn order (a trail behind a moving spawner).

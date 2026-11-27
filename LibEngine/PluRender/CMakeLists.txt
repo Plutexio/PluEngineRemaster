@@ -12,5 +12,5 @@ target_compile_definitions(PluRender PUBLIC
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
 )
 
-# Shader compilation and image loading stay inside the module.
-target_link_libraries(PluRender PRIVATE slang::slang ImageMagick::Magick++ ImageMagick::MagickCore)
+# Shader compilation stays inside the module.
+target_link_libraries(PluRender PRIVATE slang::slang)
