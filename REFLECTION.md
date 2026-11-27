@@ -217,7 +217,7 @@ PLU_API void InternalHelper();
 
 ## Math types in Python
 
-`Vec2/3/4`, `IVec2/3/4`, `Quaternion` and `Matrix4` are ordinary pybind11 classes, bound by hand in
+`Vec2/3/4`, `IVec2/3/4`, `UVec2/3/4`, `Quaternion` and `Matrix4` are ordinary pybind11 classes, bound by hand in
 `LibEngine/src/PluEngine/Python/PythonMath.cpp` (`RegisterMathTypes`). The generator treats them like
 any other registered type: no converter lambda, no unpacking — a `Vec3` parameter is a `Vec3`
 parameter, and a `Vec3` field becomes a plain `def_readwrite`.

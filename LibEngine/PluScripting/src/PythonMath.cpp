@@ -84,10 +84,14 @@ namespace
 		   .def(py::self * py::self)
 		   .def(py::self * ComponentT())
 		   .def(ComponentT() * py::self)
-		   .def(-py::self)
 		   .def(py::self += py::self)
 		   .def(py::self -= py::self)
 		   .def(py::self *= ComponentT());
+
+		// No unary minus on unsigned vectors: -UVec2(1, 2) would wrap to (4294967295, 4294967294).
+		// Binary subtraction still wraps the same way – that is glm's (and C++'s) unsigned semantics.
+		if constexpr (std::is_signed_v<ComponentT>)
+			cls.def(-py::self);
 
 		// Division only for float vectors – a component-wise integer divide by zero would take the
 		// whole editor down with SIGFPE, and a script has no way to see it coming.
@@ -171,6 +175,29 @@ void Plu::RegisterMathTypes(py::module_& module)
 	     .def_readwrite("z", &IVec4::z)
 	     .def_readwrite("w", &IVec4::w);
 	AllowSequenceConversion<IVec4>();
+
+	// Negative Python ints are rejected (TypeError) on every path into a UVec – constructors,
+	// __setitem__, the named components and the tuple/list conversion – rather than wrapped.
+	py::class_<UVec2> uvec2 = BindVectorCommon<UVec2, 2>(module, "UVec2");
+	uvec2.def(py::init<UInt32, UInt32>(), py::arg("x"), py::arg("y"))
+	     .def_readwrite("x", &UVec2::x)
+	     .def_readwrite("y", &UVec2::y);
+	AllowSequenceConversion<UVec2>();
+
+	py::class_<UVec3> uvec3 = BindVectorCommon<UVec3, 3>(module, "UVec3");
+	uvec3.def(py::init<UInt32, UInt32, UInt32>(), py::arg("x"), py::arg("y"), py::arg("z"))
+	     .def_readwrite("x", &UVec3::x)
+	     .def_readwrite("y", &UVec3::y)
+	     .def_readwrite("z", &UVec3::z);
+	AllowSequenceConversion<UVec3>();
+
+	py::class_<UVec4> uvec4 = BindVectorCommon<UVec4, 4>(module, "UVec4");
+	uvec4.def(py::init<UInt32, UInt32, UInt32, UInt32>(), py::arg("x"), py::arg("y"), py::arg("z"), py::arg("w"))
+	     .def_readwrite("x", &UVec4::x)
+	     .def_readwrite("y", &UVec4::y)
+	     .def_readwrite("z", &UVec4::z)
+	     .def_readwrite("w", &UVec4::w);
+	AllowSequenceConversion<UVec4>();
 
 	// No __getitem__/__iter__ here on purpose: glm's quaternion component order behind operator[]
 	// depends on GLM_FORCE_QUAT_DATA_*, so indexing would silently mean different things across

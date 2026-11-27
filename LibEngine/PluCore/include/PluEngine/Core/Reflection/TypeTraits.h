@@ -767,6 +767,75 @@ namespace Plu
 	};
 
 	template <>
+	struct TypeSerializer<glm::uvec2>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::uvec2*>(dataToSerialize);
+			return { v.x, v.y };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::uvec2*>(outValue);
+			v.x = json[0].get<glm::uint>();
+			v.y = json[1].get<glm::uint>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::uvec2*>(value)->x, 2);
+		}
+	};
+
+	template <>
+	struct TypeSerializer<glm::uvec3>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::uvec3*>(dataToSerialize);
+			return { v.x, v.y, v.z };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::uvec3*>(outValue);
+			v.x = json[0].get<glm::uint>();
+			v.y = json[1].get<glm::uint>();
+			v.z = json[2].get<glm::uint>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::uvec3*>(value)->x, 3);
+		}
+	};
+
+	template <>
+	struct TypeSerializer<glm::uvec4>
+	{
+		static nlohmann::json Serialize(void* dataToSerialize)
+		{
+			auto& v = *static_cast<glm::uvec4*>(dataToSerialize);
+			return { v.x, v.y, v.z, v.w };
+		}
+
+		static void Deserialize(DeserializationContext*, const nlohmann::json& json, void* outValue)
+		{
+			auto& v = *static_cast<glm::uvec4*>(outValue);
+			v.x = json[0].get<glm::uint>();
+			v.y = json[1].get<glm::uint>();
+			v.z = json[2].get<glm::uint>();
+			v.w = json[3].get<glm::uint>();
+		}
+
+		static bool EditorControl(void* value, const String& name)
+		{
+			return ImGuiWidgets::DragVector(name.CStr(), &static_cast<glm::uvec4*>(value)->x, 4);
+		}
+	};
+
+	template <>
 	struct TypeSerializer<glm::quat>
 	{
 		static nlohmann::json Serialize(void* dataToSerialize)

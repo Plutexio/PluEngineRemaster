@@ -29,6 +29,15 @@ namespace Plu
                                     int min = 0, int max = 0, const char* format = "%d",
                                     ImGuiSliderFlags flags = 0);
 
+        /**
+         * Unsigned variant of DragVector (DragScalar U32 per component), same layout and axis colours.
+         * `min == max` means "only the type's own range" [0, UINT32_MAX] rather than fully unbounded:
+         * an unbounded unsigned drag would wrap below zero to ~4 billion.
+         */
+        PLUCORE_API bool DragVector(const char* label, UInt32* values, int components, float speed = 1.0f,
+                                    UInt32 min = 0, UInt32 max = 0, const char* format = "%u",
+                                    ImGuiSliderFlags flags = 0);
+
         inline bool DragVec2(const char* label, Vec2* value, float speed = 0.1f, float min = 0.0f, float max = 0.0f,
                              const char* format = "%.3f", ImGuiSliderFlags flags = 0)
         {
@@ -61,6 +70,24 @@ namespace Plu
 
         inline bool DragIVec4(const char* label, IVec4* value, float speed = 1.0f, int min = 0, int max = 0,
                               const char* format = "%d", ImGuiSliderFlags flags = 0)
+        {
+            return DragVector(label, &value->x, 4, speed, min, max, format, flags);
+        }
+
+        inline bool DragUVec2(const char* label, UVec2* value, float speed = 1.0f, UInt32 min = 0, UInt32 max = 0,
+                              const char* format = "%u", ImGuiSliderFlags flags = 0)
+        {
+            return DragVector(label, &value->x, 2, speed, min, max, format, flags);
+        }
+
+        inline bool DragUVec3(const char* label, UVec3* value, float speed = 1.0f, UInt32 min = 0, UInt32 max = 0,
+                              const char* format = "%u", ImGuiSliderFlags flags = 0)
+        {
+            return DragVector(label, &value->x, 3, speed, min, max, format, flags);
+        }
+
+        inline bool DragUVec4(const char* label, UVec4* value, float speed = 1.0f, UInt32 min = 0, UInt32 max = 0,
+                              const char* format = "%u", ImGuiSliderFlags flags = 0)
         {
             return DragVector(label, &value->x, 4, speed, min, max, format, flags);
         }

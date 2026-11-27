@@ -5,6 +5,7 @@
 #include "PluEngine/Core/Widgets/DragVector.h"
 
 #include <algorithm>
+#include <limits>
 #include <imgui_internal.h>
 
 namespace Plu
@@ -84,5 +85,19 @@ bool Plu::ImGuiWidgets::DragVector(const char* label, int* values, int component
 {
     return DragVectorImpl(label, components, [&](int i) {
         return ImGui::DragInt("##v", &values[i], speed, min, max, format, flags);
+    });
+}
+
+bool Plu::ImGuiWidgets::DragVector(const char* label, UInt32* values, int components, float speed, UInt32 min,
+                                   UInt32 max, const char* format, ImGuiSliderFlags flags)
+{
+    // Bounded on purpose: ImGui only catches unsigned over/underflow for a bounded drag, so an
+    // "unclamped" request gets the full [0, UINT32_MAX] range instead.
+    if (min == max) {
+        min = 0;
+        max = std::numeric_limits<UInt32>::max();
+    }
+    return DragVectorImpl(label, components, [&](int i) {
+        return ImGui::DragScalar("##v", ImGuiDataType_U32, &values[i], speed, &min, &max, format, flags);
     });
 }

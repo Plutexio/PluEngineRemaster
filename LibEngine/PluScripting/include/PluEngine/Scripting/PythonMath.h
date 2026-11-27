@@ -11,7 +11,7 @@
 
 namespace Plu
 {
-	// Registers the glm math types (Vec2/3/4, IVec2/3/4, Quaternion, Matrix4) as pybind11 classes.
+	// Registers the glm math types (Vec2/3/4, IVec2/3/4, UVec2/3/4, Quaternion, Matrix4) as pybind11 classes.
 	//
 	// Called by the generated PluEngineBindings.cpp as the very first thing in the module, before
 	// enums and classes: pybind11 resolves parameter types, return types and default arguments at

@@ -887,22 +887,29 @@ CPP_TO_PY_TYPE: dict = {
     "IVec2":      "IVec2",       "glm::ivec2": "IVec2",
     "IVec3":      "IVec3",       "glm::ivec3": "IVec3",
     "IVec4":      "IVec4",       "glm::ivec4": "IVec4",
+    "UVec2":      "UVec2",       "glm::uvec2": "UVec2",
+    "UVec3":      "UVec3",       "glm::uvec3": "UVec3",
+    "UVec4":      "UVec4",       "glm::uvec4": "UVec4",
     "Quaternion": "Quaternion",  "glm::quat":  "Quaternion",  "Quat": "Quaternion",
     "Matrix4":    "Matrix4",     "glm::mat4":  "Matrix4",
 }
 
 # Typy matematyczne wystawione do Pythona przez RegisterMathTypes – zarejestrowane w module przed
 # enumami i klasami, więc mogą być domyślnymi wartościami argumentów.
-MATH_TYPE_NAMES: set = {"Vec2", "Vec3", "Vec4", "IVec2", "IVec3", "IVec4", "Quaternion", "Matrix4"}
+MATH_TYPE_NAMES: set = {"Vec2", "Vec3", "Vec4", "IVec2", "IVec3", "IVec4", "UVec2", "UVec3", "UVec4",
+                         "Quaternion", "Matrix4"}
 
-# (nazwa, typ składowej, składowe, czy zmiennoprzecinkowy) – musi odpowiadać RegisterMathTypes.
+# (name, component type, components, is floating point, is signed) – must match RegisterMathTypes.
 MATH_VECTOR_STUBS: list = [
-    ("Vec2",  "float", ["x", "y"],           True),
-    ("Vec3",  "float", ["x", "y", "z"],      True),
-    ("Vec4",  "float", ["x", "y", "z", "w"], True),
-    ("IVec2", "int",   ["x", "y"],           False),
-    ("IVec3", "int",   ["x", "y", "z"],      False),
-    ("IVec4", "int",   ["x", "y", "z", "w"], False),
+    ("Vec2",  "float", ["x", "y"],           True,  True),
+    ("Vec3",  "float", ["x", "y", "z"],      True,  True),
+    ("Vec4",  "float", ["x", "y", "z", "w"], True,  True),
+    ("IVec2", "int",   ["x", "y"],           False, True),
+    ("IVec3", "int",   ["x", "y", "z"],      False, True),
+    ("IVec4", "int",   ["x", "y", "z", "w"], False, True),
+    ("UVec2", "int",   ["x", "y"],           False, False),
+    ("UVec3", "int",   ["x", "y", "z"],      False, False),
+    ("UVec4", "int",   ["x", "y", "z", "w"], False, False),
 ]
 
 
@@ -914,7 +921,7 @@ def WriteMathStubs(P) -> None:
     P.write("# Math types – hand-written bindings (PluEngine/Scripting/PythonMath.h).\n")
     P.write("# Tuples and lists convert implicitly wherever one of these is expected.\n\n")
 
-    for Name, Comp, Components, IsFloat in MATH_VECTOR_STUBS:
+    for Name, Comp, Components, IsFloat, IsSigned in MATH_VECTOR_STUBS:
         P.write(f"class {Name}:\n")
         for C in Components:
             P.write(f"    {C}: {Comp}\n")
@@ -927,7 +934,8 @@ def WriteMathStubs(P) -> None:
         P.write(f"    def __getitem__(self, index: int) -> {Comp}: ...\n")
         P.write(f"    def __setitem__(self, index: int, value: {Comp}) -> None: ...\n")
         P.write(f"    def __iter__(self) -> Iterator[{Comp}]: ...\n")
-        P.write(f"    def __neg__(self) -> {Name}: ...\n")
+        if IsSigned:
+            P.write(f"    def __neg__(self) -> {Name}: ...\n")
         P.write(f"    def __add__(self, other: {Name}) -> {Name}: ...\n")
         P.write(f"    def __sub__(self, other: {Name}) -> {Name}: ...\n")
         P.write(f"    def __mul__(self, other: {Name} | {Comp}) -> {Name}: ...\n")
@@ -1969,7 +1977,7 @@ def GeneratePybindBindings(Data: List[FileData], AllClasses: List[TypeInfo] = []
         B.write(Code)
     B.write("PYBIND11_EMBEDDED_MODULE(PluEngine, m) {\n")
     B.write('    m.doc() = "PluEngine Python bindings";\n\n')
-    # Vec2/3/4, IVec2/3/4, Quaternion and Matrix4 – hand-written bindings. They go before every
+    # Vec2/3/4, IVec2/3/4, UVec2/3/4, Quaternion and Matrix4 – hand-written bindings. They go before every
     # module: pybind11 resolves default argument values when .def() runs.
     B.write("    // Math types (hand-written bindings)\n")
     B.write("    Plu::RegisterMathTypes(m);\n\n")

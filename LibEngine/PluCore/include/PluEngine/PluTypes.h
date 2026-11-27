@@ -5,7 +5,7 @@
 #ifndef PLUENGINE_PLUTYPES_H
 #define PLUENGINE_PLUTYPES_H
 
-// Vec2/3/4, IVec2/3/4, Matrix4 and Quaternion (with their DefaultHash) live in PluBase.
+// Vec2/3/4, IVec2/3/4, UVec2/3/4, Matrix4 and Quaternion (with their DefaultHash) live in PluBase.
 #include "PluBase/Types.h"
 
 // Spelled out rather than left to the engine PCH: targets without it (PluRuntime) include this too.
