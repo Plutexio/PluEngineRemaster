@@ -109,15 +109,6 @@ namespace Plu
             return;
         }
 
-        mApplicationInfo.AppWindowsManager->RegisterWindow(
-            mObjectManager->GetObjectAsOwner<IWindow>(*mApplicationInfo.AppWindow->GetEngineObjectHandle()));
-        mApplicationInfo.AppWindow->GetObjectEventDispatcher()->Subscribe("WindowCloseRequested", [this](void*) {
-            OnRequestedWindowClose(mApplicationInfo.AppWindow);
-        });
-        mApplicationInfo.AppInputBackend = mApplicationInfo.AppInputManager->GetInputBackend().GetRaw();
-        mApplicationInfo.AppInputManager->GetInputBackend()->Init();
-        //mApplicationInfo.AppPlatform->SpawnConsoleWindow();
-
         //I think its safe to Initialize Graphics here
         try {
             mApplicationInfo.AppGraphicsApiController = GraphicsApiController::CreateApiController(VulkanGraphicsController::GetStaticClass(), &mApplicationInfo);
@@ -127,12 +118,21 @@ namespace Plu
             return;
         }
 
+        mApplicationInfo.AppWindowsManager->RegisterWindow(
+            mObjectManager->GetObjectAsOwner<IWindow>(*mApplicationInfo.AppWindow->GetEngineObjectHandle()));
+        mApplicationInfo.AppWindow->GetObjectEventDispatcher()->Subscribe("WindowCloseRequested", [this](void*) {
+            OnRequestedWindowClose(mApplicationInfo.AppWindow);
+        });
+        mApplicationInfo.AppInputBackend = mApplicationInfo.AppInputManager->GetInputBackend().GetRaw();
+        mApplicationInfo.AppInputManager->GetInputBackend()->Init();
+        //mApplicationInfo.AppPlatform->SpawnConsoleWindow();
+
         JoltPhysics::Init(&mApplicationInfo);
 
         mApplicationInfo.AppScenesManager->Initialize(&mApplicationInfo);
         OnPostInit();
 
-        PLU_CORE_TRACE("Initialized Successfully!");
+        PLU_CORE_TRACE("Engine Initialized Successfully!");
         PLU_TIMER_END("EngineInit");
 
         std::chrono::high_resolution_clock::time_point lastFrame = std::chrono::high_resolution_clock::now();
@@ -154,6 +154,16 @@ namespace Plu
                 PLU_CORE_ERROR("Profiler export to {} failed", profilerExportPath.CStr());
             }
         };
+
+        if (!mApplicationInfo.AppGraphicsApiController->IsReadyToRender()) {
+            PLU_CORE_TRACE("Waiting for Graphics API to be ready...");
+            while (true) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                if (mApplicationInfo.AppGraphicsApiController->IsReadyToRender()) {
+                    break;
+                }
+            }
+        }
 
         while (mApplicationInfo.AppWindow && mApplicationInfo.AppWindow->IsRunning()) {
             bool waitedForEvents = false;

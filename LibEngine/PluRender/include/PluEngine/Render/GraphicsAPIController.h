@@ -23,6 +23,8 @@ namespace Plu
 
         static TOwningPointer<GraphicsApiController> CreateApiController(TClassPointer<GraphicsApiController> controllerClass, ApplicationInfo *appInfo);
 
+        virtual bool IsReadyToRender() = 0;
+
         virtual void Init() = 0;
         virtual void Shutdown() = 0;
     };

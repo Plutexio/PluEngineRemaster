@@ -11,6 +11,7 @@
 
 namespace Plu
 {
+    class TextureView;
     PLU_ENUM(PyNamespace=Plu)
     enum class PhysicalDevicePreference
     {
@@ -25,6 +26,8 @@ namespace Plu
         REFLECTION_BODY_VULKANGRAPHICSCONTROLLER()
     private:
         PluVkContext mPluVkContext = {};
+        DynamicArray<TOwningPointer<TextureView>> mSwapchainImageViews;
+        std::atomic_bool mIsReadyToRender = false;
 
         void CreateInstance();
         void ChoosePhysicalDevice(PhysicalDevicePreference preference);
@@ -33,12 +36,15 @@ namespace Plu
         void CreateSurface();
 
         void CreateSwapchain();
+        void CreateSwapchainImageViews();
     public:
         VulkanGraphicsController() = default;
         ~VulkanGraphicsController() override = default;
 
         //Some constants
         static constexpr VkFormat SwapchainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
+
+        bool IsReadyToRender() override;
 
         void Init() override;
         void Shutdown() override;

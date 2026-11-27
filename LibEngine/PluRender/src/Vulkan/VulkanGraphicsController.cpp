@@ -2,12 +2,16 @@
 // Created by Plutex on 11/25/26.
 //
 
+#define VMA_IMPLEMENTATION
 #include "PluEngine/Vulkan/VulkanGraphicsController.h"
 
+#include "PluEngine/Vulkan/Images/TextureView.h"
 #include "PluEngine/Core/ApplicationInfo.h"
 #include "PluEngine/Platform/Platform.h"
 #include "PluEngine/Platform/Window.h"
 #include "PluBase/Types.h"
+#include "PluEngine/ThreadPool/ThreadPool.h"
+
 
 void Plu::VulkanGraphicsController::CreateInstance()
 {
@@ -218,18 +222,47 @@ void Plu::VulkanGraphicsController::CreateSwapchain()
     }
 }
 
+void Plu::VulkanGraphicsController::CreateSwapchainImageViews()
+{
+    UInt32 imageCount = 0;
+    VkResult res = VK_NOT_READY;
+    res = vkGetSwapchainImagesKHR(mPluVkContext.LogicalDevice, mPluVkContext.Swapchain, &imageCount, nullptr);
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error("Swapchain Images Number");
+    }
+    DynamicArray<VkImage> swapchainImages;
+    swapchainImages.Resize(imageCount);
+    res = vkGetSwapchainImagesKHR(mPluVkContext.LogicalDevice, mPluVkContext.Swapchain, &imageCount, swapchainImages.Data());
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error("Swapchain Images Gathering");
+    }
+
+    mSwapchainImageViews.Resize(imageCount);
+    for (UInt32 i = 0; i < imageCount; i++) {
+        mSwapchainImageViews[i] = CreateOwning<TextureView>(swapchainImages[i], SwapchainImageFormat, mPluVkContext);
+    }
+}
+
+bool Plu::VulkanGraphicsController::IsReadyToRender()
+{
+    return mIsReadyToRender.load();
+}
+
 void Plu::VulkanGraphicsController::Init()
 {
-    PLU_CORE_INFO("Initializing Vulkan Graphics API...");
+    mAppInfo->AppThreadPool->Run([this]() {
+        PLU_CORE_INFO("Initializing Vulkan Graphics API...");
 
-    CreateInstance();
-    ChoosePhysicalDevice(PhysicalDevicePreference::Discrete);
-    CreateLogicalDeviceAndQueues();
-    CreateAllocator();
-    CreateSurface();
-    CreateSurface();
+        CreateInstance();
+        ChoosePhysicalDevice(PhysicalDevicePreference::Discrete);
+        CreateLogicalDeviceAndQueues();
+        CreateAllocator();
+        CreateSurface();
+        CreateSurface();
 
-    PLU_CORE_INFO("Initialized Vulkan Graphics API");
+        PLU_CORE_INFO("Initialized Vulkan Graphics API");
+        mIsReadyToRender.store(true);
+    });
 }
 
 void Plu::VulkanGraphicsController::Shutdown()

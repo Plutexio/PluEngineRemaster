@@ -117,7 +117,7 @@ void Plu::PluEditor::OnPostInit()
     // Saved Display settings (VSync / window mode / resolution). Must run after
     // AppWindow->Init(), on the main thread.
     EditorSettingsManager::GetInstance()->ApplyDisplaySettings(mApplicationInfo.AppWindow);
-    SetPowerSavingEnabled(EditorSettingsManager::GetInstance()->GetSettings()->PowerSaving);
+    //SetPowerSavingEnabled(EditorSettingsManager::GetInstance()->GetSettings()->PowerSaving);
 
     mEditorAppContext->EditorSceneCamera = mObjectManager->CreateObject(EditorSceneCamera::GetStaticClass());
     mApplicationInfo.AppScenesManager->GetObjectEventDispatcher()->Subscribe("EditorCameraWanted", [this](void* data) {
@@ -158,6 +158,7 @@ void Plu::PluEditor::OnPostInit()
     });
 
 
+    return;
     ImGui::SetCurrentContext(mApplicationInfo.AppWindow->GetImGuiContext());
     //Fonts
     ImGuiIO& io = ImGui::GetIO();
@@ -671,7 +672,7 @@ void Plu::PluEditor::OnTick(float deltaTime)
             }
         }
     }
-
+    return;
     // Build this frame's ImGui UI on the Main thread. Nothing draws the result until the Vulkan
     // renderer takes it over.
     if (ImGuiContext* ctx = mApplicationInfo.AppWindow->GetImGuiContext()) {
